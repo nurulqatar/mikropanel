@@ -22,3 +22,15 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Production secrets
+.env
+.env.*
+!.env.example
+
+# Runtime / generated
+/vendor
+/node_modules
+/public/build
+/storage/logs/*
+/bootstrap/cache/*

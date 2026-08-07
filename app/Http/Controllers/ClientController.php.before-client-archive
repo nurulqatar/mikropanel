@@ -1,0 +1,430 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\ClientRequest;
+use App\Models\Client;
+use App\Models\ClientMonthlyUsage;
+use App\Models\IpRange;
+use App\Models\Package;
+use App\Models\Router;
+use App\Services\ClientProvisionService;
+use App\Services\ClientUsageService;
+use App\Services\IpAllocatorService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Log;
+use Inertia\Inertia;
+use Inertia\Response;
+use Throwable;
+
+class ClientController extends Controller
+{
+    public function index(): Response
+    {
+        return Inertia::render('Clients/Index', [
+            'clients' => Client::query()
+                ->with([
+                    'router',
+                    'package',
+                    'ipRange',
+                ])
+                ->withSum(
+                    [
+                        'invoices as total_due' =>
+                            function ($query) {
+                                $query->where(
+                                    'status',
+                                    '!=',
+                                    'cancelled'
+                                );
+                            },
+                    ],
+                    'due_amount'
+                )
+                ->latest()
+                ->get(),
+        ]);
+    }
+
+    public function create(): Response
+    {
+        return Inertia::render('Clients/Create', [
+            'routers' => Router::query()
+                ->where('enabled', true)
+                ->orderBy('name')
+                ->get([
+                    'id',
+                    'name',
+                ]),
+
+            'packages' => Package::query()
+                ->where('enabled', true)
+                ->orderBy('name')
+                ->get([
+                    'id',
+                    'name',
+                    'price',
+                    'validity_days',
+                    'speed_download',
+                    'speed_upload',
+                ]),
+
+            'ipRanges' => IpRange::query()
+                ->where('enabled', true)
+                ->orderBy('name')
+                ->get([
+                    'id',
+                    'router_id',
+                    'name',
+                    'network',
+                    'gateway',
+                    'start_ip',
+                    'end_ip',
+                ]),
+        ]);
+    }
+
+    public function store(
+        ClientRequest $request,
+        IpAllocatorService $allocator,
+        ClientProvisionService $provision
+    ): RedirectResponse {
+        $data = $request->validated();
+
+        /*
+         * Selected Router অবশ্যই enabled হতে হবে।
+         */
+        $router = Router::query()
+            ->where('id', $data['router_id'])
+            ->where('enabled', true)
+            ->first();
+
+        if (!$router) {
+            return back()
+                ->withErrors([
+                    'router_id' =>
+                        'Selected Router is not available.',
+                ])
+                ->withInput();
+        }
+
+        /*
+         * Selected IP Range অবশ্যই selected Router-এর হতে হবে।
+         */
+        $range = IpRange::query()
+            ->where('id', $data['ip_range_id'])
+            ->where('router_id', $router->id)
+            ->where('enabled', true)
+            ->first();
+
+        if (!$range) {
+            return back()
+                ->withErrors([
+                    'ip_range_id' =>
+                        'Selected IP Range does not belong to this Router.',
+                ])
+                ->withInput();
+        }
+
+        /*
+         * Panel IP Range থেকে free IP automatic নেওয়া হবে।
+         */
+        $ip = $allocator->allocate($range);
+
+        if (!$ip) {
+            return back()
+                ->withErrors([
+                    'ip_range_id' =>
+                        'No free IP is available in this IP Range.',
+                ])
+                ->withInput();
+        }
+
+        $package = Package::query()
+            ->where('id', $data['package_id'])
+            ->where('enabled', true)
+            ->first();
+
+        if (!$package) {
+            return back()
+                ->withErrors([
+                    'package_id' =>
+                        'Selected Package is not available.',
+                ])
+                ->withInput();
+        }
+
+        $validityDays = (int) $package->validity_days;
+
+        if ($validityDays < 1) {
+            return back()
+                ->withErrors([
+                    'package_id' =>
+                        'Package validity days are missing.',
+                ])
+                ->withInput();
+        }
+
+        $startDate = today();
+
+        /*
+         * 30 Days package হলে পরের মাসের একই তারিখ।
+         * যেমন 8 August থেকে 8 September।
+         */
+        $expiryDate = $validityDays === 30
+            ? $startDate->copy()->addMonthNoOverflow()
+            : $startDate->copy()->addDays($validityDays);
+
+        $data['router_id'] = $router->id;
+        $data['ip_range_id'] = $range->id;
+        $data['ip_address'] = $ip;
+        $data['installed_at'] = $startDate->toDateString();
+        $data['expiry_date'] = $expiryDate->toDateString();
+        $data['billing_day'] = $startDate->day;
+        $data['enabled'] = true;
+        $data['connected'] = false;
+
+        $nextId = (Client::max('id') ?? 0) + 1;
+
+        $data['client_code'] = 'CLI-' . str_pad(
+            $nextId,
+            5,
+            '0',
+            STR_PAD_LEFT
+        );
+
+        $client = Client::create($data);
+
+        /*
+         * MikroTik:
+         * DHCP Lease + Static ARP + Simple Queue
+         */
+        $provision->provision($client);
+
+        return redirect()
+            ->route('clients.index')
+            ->with(
+                'success',
+                "Client created successfully. IP: {$ip}, Expiry: "
+                . $expiryDate->format('Y-m-d')
+            );
+    }
+
+    public function show(
+        Client $client,
+        ClientUsageService $usageService
+    ): Response {
+        /*
+         * Details page খোলার সময়ও একটি live sync
+         * চেষ্টা করা হবে।
+         */
+        try {
+            $usageService->syncClient($client);
+        } catch (Throwable $exception) {
+            Log::warning(
+                'Live client usage sync failed.',
+                [
+                    'client_id' => $client->id,
+                    'message' =>
+                        $exception->getMessage(),
+                ]
+            );
+        }
+
+        $client->load([
+            'router',
+            'package',
+            'ipRange',
+
+            'invoices' => function ($query) {
+                $query
+                    ->orderByDesc('issue_date')
+                    ->orderByDesc('id');
+            },
+
+            'payments' => function ($query) {
+                $query
+                    ->with('invoice:id,invoice_no')
+                    ->orderByDesc('payment_date')
+                    ->orderByDesc('id');
+            },
+        ]);
+
+        $totalBilled = $client->invoices->sum(
+            function ($invoice) {
+                return (float) $invoice->amount
+                    - (float) $invoice->discount;
+            }
+        );
+
+        $usage = ClientMonthlyUsage::query()
+            ->where('client_id', $client->id)
+            ->where(
+                'usage_month',
+                today()
+                    ->startOfMonth()
+                    ->toDateString()
+            )
+            ->first();
+
+        $uploadBytes = (int) (
+            $usage?->upload_bytes ?? 0
+        );
+
+        $downloadBytes = (int) (
+            $usage?->download_bytes ?? 0
+        );
+
+        return Inertia::render('Clients/Show', [
+            'client' => $client,
+
+            'billingSummary' => [
+                'invoice_count' =>
+                    $client->invoices->count(),
+
+                'total_billed' =>
+                    $totalBilled,
+
+                'total_paid' =>
+                    (float) $client
+                        ->payments
+                        ->sum('amount'),
+
+                'total_due' =>
+                    (float) $client
+                        ->invoices
+                        ->sum('due_amount'),
+            ],
+
+            'usageSummary' => [
+                'month' => now()->format('F Y'),
+                'upload_bytes' => $uploadBytes,
+                'download_bytes' => $downloadBytes,
+                'total_bytes' =>
+                    $uploadBytes + $downloadBytes,
+
+                'last_synced_at' =>
+                    $usage?->last_synced_at
+                        ?->format('Y-m-d H:i:s'),
+            ],
+        ]);
+    }
+
+    public function edit(Client $client): Response
+    {
+        return Inertia::render('Clients/Edit', [
+            'client' => $client,
+
+            'routers' => Router::query()
+                ->orderBy('name')
+                ->get([
+                    'id',
+                    'name',
+                ]),
+
+            'packages' => Package::query()
+                ->orderBy('name')
+                ->get([
+                    'id',
+                    'name',
+                    'speed_download',
+                    'speed_upload',
+                    'mikrotik_profile',
+                ]),
+
+            'ipRanges' => IpRange::query()
+                ->orderBy('name')
+                ->get([
+                    'id',
+                    'router_id',
+                    'name',
+                    'network',
+                    'gateway',
+                    'start_ip',
+                    'end_ip',
+                ]),
+        ]);
+    }
+
+    public function update(
+        ClientRequest $request,
+        Client $client,
+        ClientProvisionService $provision
+    ): RedirectResponse {
+        $data = $request->validated();
+
+        $range = IpRange::query()
+            ->where('id', $data['ip_range_id'])
+            ->where('router_id', $data['router_id'])
+            ->first();
+
+        if (!$range) {
+            return back()
+                ->withErrors([
+                    'ip_range_id' =>
+                        'Selected IP Range does not belong to this Router.',
+                ])
+                ->withInput();
+        }
+
+        $client->update($data);
+
+        $client->load([
+            'router',
+            'package',
+            'ipRange',
+        ]);
+
+        $provision->update($client);
+
+        $redirectRoute =
+            $request->query('from') === 'dashboard'
+                ? 'dashboard'
+                : 'clients.index';
+
+        return redirect()
+            ->route($redirectRoute)
+            ->with(
+                'success',
+                'Client updated successfully.'
+            );
+    }
+
+    public function suspend(
+        Client $client,
+        ClientProvisionService $provision
+    ): RedirectResponse {
+        $provision->suspend($client);
+
+        return back()->with(
+            'success',
+            'Client suspended successfully.'
+        );
+    }
+
+    public function unsuspend(
+        Client $client,
+        ClientProvisionService $provision
+    ): RedirectResponse {
+        $provision->unsuspend($client);
+
+        return back()->with(
+            'success',
+            'Client activated successfully.'
+        );
+    }
+
+    public function destroy(
+        Client $client,
+        ClientProvisionService $provision
+    ): RedirectResponse {
+        $provision->remove($client);
+
+        $client->delete();
+
+        return back()->with(
+            'success',
+            'Client deleted successfully.'
+        );
+    }
+}

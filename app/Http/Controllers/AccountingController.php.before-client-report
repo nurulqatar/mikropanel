@@ -1,0 +1,1077 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Expense;
+use App\Models\Invoice;
+use App\Models\Payment;
+use App\Models\Setting;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class AccountingController extends Controller
+{
+    private const REPORTS = [
+        'full',
+        'profit-loss',
+        'collections',
+        'expenses',
+        'receivables',
+        'transactions',
+    ];
+
+    public function index(
+        Request $request
+    ): Response {
+        $range = $this->resolveRange($request);
+
+        return Inertia::render(
+            'Accounting/Index',
+            $this->buildReportData($range)
+        );
+    }
+
+    public function print(
+        Request $request
+    ): View {
+        $range = $this->resolveRange($request);
+        $report = $this->resolveReport($request);
+
+        return view('accounting.report', [
+            ...$this->buildReportData($range),
+
+            'report' => $report,
+            'reportTitle' =>
+                $this->reportTitle($report),
+
+            'pdfMode' => false,
+        ]);
+    }
+
+    public function download(
+        Request $request
+    ) {
+        $range = $this->resolveRange($request);
+        $report = $this->resolveReport($request);
+
+        $data = [
+            ...$this->buildReportData($range),
+
+            'report' => $report,
+            'reportTitle' =>
+                $this->reportTitle($report),
+
+            'pdfMode' => true,
+        ];
+
+        $fileName = 'accounting-'
+            . $report
+            . '-'
+            . $range['start']->format('Y-m-d')
+            . '-to-'
+            . $range['end']->format('Y-m-d')
+            . '.pdf';
+
+        return Pdf::loadView(
+            'accounting.report',
+            $data
+        )
+            ->setPaper('a4', 'landscape')
+            ->setOption('dpi', 96)
+            ->setOption(
+                'defaultFont',
+                'DejaVu Sans'
+            )
+            ->setOption(
+                'isHtml5ParserEnabled',
+                true
+            )
+            ->download($fileName);
+    }
+
+    private function buildReportData(
+        array $range
+    ): array {
+        $startDate = $range['start']
+            ->toDateString();
+
+        $endDate = $range['end']
+            ->toDateString();
+
+        $invoiceQuery = Invoice::query()
+            ->where('status', '!=', 'cancelled')
+            ->whereBetween('issue_date', [
+                $startDate,
+                $endDate,
+            ]);
+
+        $paymentQuery = Payment::query()
+            ->whereBetween('payment_date', [
+                $startDate,
+                $endDate,
+            ]);
+
+        $expenseQuery = Expense::query()
+            ->whereBetween('expense_date', [
+                $startDate,
+                $endDate,
+            ]);
+
+        $grossBilled = round(
+            (float) (
+                clone $invoiceQuery
+            )->sum('amount'),
+            2
+        );
+
+        $discount = round(
+            (float) (
+                clone $invoiceQuery
+            )->sum('discount'),
+            2
+        );
+
+        $netBilled = max(
+            0,
+            round(
+                $grossBilled - $discount,
+                2
+            )
+        );
+
+        $collection = round(
+            (float) (
+                clone $paymentQuery
+            )->sum('amount'),
+            2
+        );
+
+        $expensesTotal = round(
+            (float) (
+                clone $expenseQuery
+            )->sum('amount'),
+            2
+        );
+
+        /*
+         * Cash-basis profit/loss:
+         * Collected money - paid expenses.
+         */
+        $netProfit = round(
+            $collection - $expensesTotal,
+            2
+        );
+
+        $periodDue = round(
+            (float) (
+                clone $invoiceQuery
+            )->sum('due_amount'),
+            2
+        );
+
+        $currentReceivable = round(
+            (float) Invoice::query()
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->where(
+                    'due_amount',
+                    '>',
+                    0
+                )
+                ->sum('due_amount'),
+            2
+        );
+
+        $overdueAmount = round(
+            (float) Invoice::query()
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->where(
+                    'due_amount',
+                    '>',
+                    0
+                )
+                ->whereDate(
+                    'due_date',
+                    '<',
+                    Carbon::today(
+                        'Asia/Qatar'
+                    )->toDateString()
+                )
+                ->sum('due_amount'),
+            2
+        );
+
+        $profitMargin = $collection > 0
+            ? round(
+                (
+                    $netProfit
+                    / $collection
+                ) * 100,
+                2
+            )
+            : 0;
+
+        $collections =
+            $this->collectionRows(
+                $startDate,
+                $endDate
+            );
+
+        $expenses =
+            $this->expenseRows(
+                $startDate,
+                $endDate
+            );
+
+        $receivables =
+            $this->receivableRows();
+
+        return [
+            'company' => [
+                'name' =>
+                    Setting::getValue(
+                        'company_name',
+                        'Genius Information Technology W.L.L'
+                    ),
+
+                'mobile' =>
+                    Setting::getValue(
+                        'company_phone',
+                        '+974 6633 2403'
+                    ),
+
+                'email' =>
+                    Setting::getValue(
+                        'company_email',
+                        'qatarhighspeedwifi@gmail.com'
+                    ),
+            ],
+
+            'filters' => [
+                'preset' => $range['preset'],
+
+                'start_date' =>
+                    $startDate,
+
+                'end_date' =>
+                    $endDate,
+
+                'label' =>
+                    $range['label'],
+            ],
+
+            'summary' => [
+                'gross_billed' =>
+                    $grossBilled,
+
+                'discount' =>
+                    $discount,
+
+                'net_billed' =>
+                    $netBilled,
+
+                'collection' =>
+                    $collection,
+
+                'expenses' =>
+                    $expensesTotal,
+
+                'net_profit' =>
+                    $netProfit,
+
+                'profit_margin' =>
+                    $profitMargin,
+
+                'period_due' =>
+                    $periodDue,
+
+                'current_receivable' =>
+                    $currentReceivable,
+
+                'overdue_amount' =>
+                    $overdueAmount,
+
+                'invoice_count' =>
+                    (
+                        clone $invoiceQuery
+                    )->count(),
+
+                'payment_count' =>
+                    (
+                        clone $paymentQuery
+                    )->count(),
+
+                'expense_count' =>
+                    (
+                        clone $expenseQuery
+                    )->count(),
+
+                'due_client_count' =>
+                    count($receivables),
+            ],
+
+            'monthlyTrend' =>
+                $this->monthlyTrend(
+                    $range['start'],
+                    $range['end']
+                ),
+
+            'paymentMethods' =>
+                $this->paymentMethodSummary(
+                    $startDate,
+                    $endDate
+                ),
+
+            'expenseCategories' =>
+                $this->expenseCategorySummary(
+                    $startDate,
+                    $endDate
+                ),
+
+            'invoiceStatuses' =>
+                $this->invoiceStatusSummary(
+                    $startDate,
+                    $endDate
+                ),
+
+            'collections' =>
+                $collections,
+
+            'expenses' =>
+                $expenses,
+
+            'receivables' =>
+                $receivables,
+
+            'transactions' =>
+                $this->transactionRows(
+                    $collections,
+                    $expenses
+                ),
+
+            'generatedAt' =>
+                Carbon::now('Asia/Qatar')
+                    ->format(
+                        'Y-m-d H:i:s'
+                    ),
+        ];
+    }
+
+    private function collectionRows(
+        string $startDate,
+        string $endDate
+    ): Collection {
+        return Payment::query()
+            ->with([
+                'client:id,name,client_code,phone',
+                'invoice:id,invoice_no',
+            ])
+            ->whereBetween('payment_date', [
+                $startDate,
+                $endDate,
+            ])
+            ->orderByDesc('payment_date')
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (
+                Payment $payment
+            ): array {
+                return [
+                    'id' => $payment->id,
+
+                    'date' =>
+                        $payment->payment_date
+                            ?->format('Y-m-d'),
+
+                    'client_id' =>
+                        $payment->client_id,
+
+                    'client_name' =>
+                        $payment->client?->name,
+
+                    'client_code' =>
+                        $payment->client
+                            ?->client_code,
+
+                    'phone' =>
+                        $payment->client?->phone,
+
+                    'invoice_no' =>
+                        $payment->invoice
+                            ?->invoice_no,
+
+                    'amount' =>
+                        (float) $payment->amount,
+
+                    'method' =>
+                        $payment->payment_method,
+
+                    'transaction_id' =>
+                        $payment->transaction_id,
+
+                    'notes' =>
+                        $payment->notes,
+                ];
+            });
+    }
+
+    private function expenseRows(
+        string $startDate,
+        string $endDate
+    ): Collection {
+        return Expense::query()
+            ->whereBetween('expense_date', [
+                $startDate,
+                $endDate,
+            ])
+            ->orderByDesc('expense_date')
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (
+                Expense $expense
+            ): array {
+                return [
+                    'id' => $expense->id,
+
+                    'date' =>
+                        $expense->expense_date
+                            ?->format('Y-m-d'),
+
+                    'category' =>
+                        $expense->category,
+
+                    'title' =>
+                        $expense->title,
+
+                    'amount' =>
+                        (float) $expense->amount,
+
+                    'method' =>
+                        $expense->payment_method,
+
+                    'notes' =>
+                        $expense->notes,
+                ];
+            });
+    }
+
+    private function receivableRows(): array
+    {
+        $today = Carbon::today(
+            'Asia/Qatar'
+        )->toDateString();
+
+        return Invoice::query()
+            ->selectRaw(
+                '
+                    client_id,
+                    COUNT(*) AS invoice_count,
+                    SUM(due_amount) AS total_due,
+                    MIN(due_date) AS oldest_due_date,
+                    SUM(
+                        CASE
+                            WHEN due_date < ?
+                            THEN due_amount
+                            ELSE 0
+                        END
+                    ) AS overdue_due
+                ',
+                [$today]
+            )
+            ->where(
+                'status',
+                '!=',
+                'cancelled'
+            )
+            ->where(
+                'due_amount',
+                '>',
+                0
+            )
+            ->with([
+                'client:id,name,client_code,phone,expiry_date,enabled',
+            ])
+            ->groupBy('client_id')
+            ->orderByDesc('total_due')
+            ->get()
+            ->map(function (
+                Invoice $row
+            ): array {
+                return [
+                    'client_id' =>
+                        $row->client_id,
+
+                    'client_name' =>
+                        $row->client?->name,
+
+                    'client_code' =>
+                        $row->client
+                            ?->client_code,
+
+                    'phone' =>
+                        $row->client?->phone,
+
+                    'invoice_count' =>
+                        (int) $row
+                            ->invoice_count,
+
+                    'total_due' =>
+                        (float) $row
+                            ->total_due,
+
+                    'overdue_due' =>
+                        (float) $row
+                            ->overdue_due,
+
+                    'oldest_due_date' =>
+                        $row->oldest_due_date
+                            ? Carbon::parse(
+                                $row->oldest_due_date
+                            )->format('Y-m-d')
+                            : null,
+
+                    'expiry_date' =>
+                        $row->client
+                            ?->expiry_date
+                            ?->format('Y-m-d'),
+
+                    'enabled' =>
+                        (bool) (
+                            $row->client
+                                ?->enabled
+                            ?? false
+                        ),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function paymentMethodSummary(
+        string $startDate,
+        string $endDate
+    ): array {
+        return Payment::query()
+            ->selectRaw(
+                '
+                    payment_method,
+                    COUNT(*) AS transaction_count,
+                    SUM(amount) AS total
+                '
+            )
+            ->whereBetween('payment_date', [
+                $startDate,
+                $endDate,
+            ])
+            ->groupBy('payment_method')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($row): array => [
+                'name' =>
+                    $row->payment_method
+                    ?: 'Unknown',
+
+                'transaction_count' =>
+                    (int) $row
+                        ->transaction_count,
+
+                'total' =>
+                    (float) $row->total,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function expenseCategorySummary(
+        string $startDate,
+        string $endDate
+    ): array {
+        return Expense::query()
+            ->selectRaw(
+                '
+                    category,
+                    COUNT(*) AS transaction_count,
+                    SUM(amount) AS total
+                '
+            )
+            ->whereBetween('expense_date', [
+                $startDate,
+                $endDate,
+            ])
+            ->groupBy('category')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($row): array => [
+                'name' =>
+                    $row->category
+                    ?: 'Other',
+
+                'transaction_count' =>
+                    (int) $row
+                        ->transaction_count,
+
+                'total' =>
+                    (float) $row->total,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function invoiceStatusSummary(
+        string $startDate,
+        string $endDate
+    ): array {
+        return Invoice::query()
+            ->selectRaw(
+                '
+                    status,
+                    COUNT(*) AS invoice_count,
+                    SUM(amount) AS gross_amount,
+                    SUM(discount) AS discount_amount,
+                    SUM(paid_amount) AS paid_amount,
+                    SUM(due_amount) AS due_amount
+                '
+            )
+            ->where(
+                'status',
+                '!=',
+                'cancelled'
+            )
+            ->whereBetween('issue_date', [
+                $startDate,
+                $endDate,
+            ])
+            ->groupBy('status')
+            ->orderBy('status')
+            ->get()
+            ->map(fn ($row): array => [
+                'status' =>
+                    $row->status,
+
+                'invoice_count' =>
+                    (int) $row
+                        ->invoice_count,
+
+                'gross_amount' =>
+                    (float) $row
+                        ->gross_amount,
+
+                'discount_amount' =>
+                    (float) $row
+                        ->discount_amount,
+
+                'paid_amount' =>
+                    (float) $row
+                        ->paid_amount,
+
+                'due_amount' =>
+                    (float) $row
+                        ->due_amount,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function monthlyTrend(
+        Carbon $start,
+        Carbon $end
+    ): array {
+        $startDate = $start->toDateString();
+        $endDate = $end->toDateString();
+
+        $collections = Payment::query()
+            ->selectRaw(
+                "
+                    DATE_FORMAT(
+                        payment_date,
+                        '%Y-%m'
+                    ) AS month,
+                    SUM(amount) AS total
+                "
+            )
+            ->whereBetween('payment_date', [
+                $startDate,
+                $endDate,
+            ])
+            ->groupBy('month')
+            ->pluck('total', 'month');
+
+        $expenses = Expense::query()
+            ->selectRaw(
+                "
+                    DATE_FORMAT(
+                        expense_date,
+                        '%Y-%m'
+                    ) AS month,
+                    SUM(amount) AS total
+                "
+            )
+            ->whereBetween('expense_date', [
+                $startDate,
+                $endDate,
+            ])
+            ->groupBy('month')
+            ->pluck('total', 'month');
+
+        $billing = Invoice::query()
+            ->selectRaw(
+                "
+                    DATE_FORMAT(
+                        issue_date,
+                        '%Y-%m'
+                    ) AS month,
+                    SUM(amount - discount) AS total
+                "
+            )
+            ->where(
+                'status',
+                '!=',
+                'cancelled'
+            )
+            ->whereBetween('issue_date', [
+                $startDate,
+                $endDate,
+            ])
+            ->groupBy('month')
+            ->pluck('total', 'month');
+
+        $rows = [];
+
+        $cursor = $start
+            ->copy()
+            ->startOfMonth();
+
+        $lastMonth = $end
+            ->copy()
+            ->startOfMonth();
+
+        while (
+            $cursor->lessThanOrEqualTo(
+                $lastMonth
+            )
+        ) {
+            $month = $cursor->format(
+                'Y-m'
+            );
+
+            $collected = round(
+                (float) (
+                    $collections[$month]
+                    ?? 0
+                ),
+                2
+            );
+
+            $spent = round(
+                (float) (
+                    $expenses[$month]
+                    ?? 0
+                ),
+                2
+            );
+
+            $rows[] = [
+                'month' => $month,
+
+                'label' =>
+                    $cursor->format(
+                        'M Y'
+                    ),
+
+                'billed' => round(
+                    (float) (
+                        $billing[$month]
+                        ?? 0
+                    ),
+                    2
+                ),
+
+                'collection' =>
+                    $collected,
+
+                'expenses' =>
+                    $spent,
+
+                'profit' => round(
+                    $collected - $spent,
+                    2
+                ),
+            ];
+
+            $cursor->addMonth();
+        }
+
+        return $rows;
+    }
+
+    private function transactionRows(
+        Collection $collections,
+        Collection $expenses
+    ): array {
+        $collectionRows =
+            $collections->map(
+                function (array $row): array {
+                    return [
+                        'sort_key' =>
+                            $row['date']
+                            . '-2-'
+                            . str_pad(
+                                (string) $row['id'],
+                                10,
+                                '0',
+                                STR_PAD_LEFT
+                            ),
+
+                        'id' => $row['id'],
+                        'date' => $row['date'],
+                        'type' => 'collection',
+
+                        'description' =>
+                            $row['client_name']
+                            ?: 'Client Payment',
+
+                        'category' =>
+                            $row['method'],
+
+                        'reference' =>
+                            $row['invoice_no'],
+
+                        'money_in' =>
+                            $row['amount'],
+
+                        'money_out' => 0,
+                    ];
+                }
+            );
+
+        $expenseRows =
+            $expenses->map(
+                function (array $row): array {
+                    return [
+                        'sort_key' =>
+                            $row['date']
+                            . '-1-'
+                            . str_pad(
+                                (string) $row['id'],
+                                10,
+                                '0',
+                                STR_PAD_LEFT
+                            ),
+
+                        'id' => $row['id'],
+                        'date' => $row['date'],
+                        'type' => 'expense',
+
+                        'description' =>
+                            $row['title'],
+
+                        'category' =>
+                            $row['category'],
+
+                        'reference' =>
+                            $row['method'],
+
+                        'money_in' => 0,
+
+                        'money_out' =>
+                            $row['amount'],
+                    ];
+                }
+            );
+
+        $runningBalance = 0;
+
+        return $collectionRows
+            ->concat($expenseRows)
+            ->sortBy('sort_key')
+            ->values()
+            ->map(function (
+                array $row
+            ) use (
+                &$runningBalance
+            ): array {
+                $runningBalance +=
+                    (float) $row['money_in']
+                    - (float) $row['money_out'];
+
+                unset($row['sort_key']);
+
+                $row['balance'] =
+                    round(
+                        $runningBalance,
+                        2
+                    );
+
+                return $row;
+            })
+            ->reverse()
+            ->values()
+            ->all();
+    }
+
+    private function resolveRange(
+        Request $request
+    ): array {
+        $data = $request->validate([
+            'preset' => [
+                'nullable',
+                Rule::in([
+                    'today',
+                    'this_month',
+                    'last_month',
+                    'this_year',
+                    'custom',
+                ]),
+            ],
+
+            'start_date' => [
+                'nullable',
+                'date',
+            ],
+
+            'end_date' => [
+                'nullable',
+                'date',
+                'after_or_equal:start_date',
+            ],
+        ]);
+
+        $preset = $data['preset']
+            ?? 'this_month';
+
+        $today = Carbon::today(
+            'Asia/Qatar'
+        );
+
+        switch ($preset) {
+            case 'today':
+                $start = $today->copy();
+                $end = $today->copy();
+                break;
+
+            case 'last_month':
+                $start = $today
+                    ->copy()
+                    ->subMonthNoOverflow()
+                    ->startOfMonth();
+
+                $end = $today
+                    ->copy()
+                    ->subMonthNoOverflow()
+                    ->endOfMonth();
+                break;
+
+            case 'this_year':
+                $start = $today
+                    ->copy()
+                    ->startOfYear();
+
+                $end = $today
+                    ->copy()
+                    ->endOfYear();
+                break;
+
+            case 'custom':
+                if (
+                    empty($data['start_date'])
+                    || empty($data['end_date'])
+                ) {
+                    throw ValidationException::withMessages([
+                        'start_date' =>
+                            'Start and end dates are required for a custom report.',
+                    ]);
+                }
+
+                $start = Carbon::parse(
+                    $data['start_date'],
+                    'Asia/Qatar'
+                )->startOfDay();
+
+                $end = Carbon::parse(
+                    $data['end_date'],
+                    'Asia/Qatar'
+                )->endOfDay();
+                break;
+
+            case 'this_month':
+            default:
+                $preset = 'this_month';
+
+                $start = $today
+                    ->copy()
+                    ->startOfMonth();
+
+                $end = $today
+                    ->copy()
+                    ->endOfMonth();
+                break;
+        }
+
+        return [
+            'preset' => $preset,
+            'start' => $start,
+            'end' => $end,
+
+            'label' =>
+                $start->format('d M Y')
+                . ' - '
+                . $end->format('d M Y'),
+        ];
+    }
+
+    private function resolveReport(
+        Request $request
+    ): string {
+        $report = (string)
+            $request->query(
+                'report',
+                'full'
+            );
+
+        return in_array(
+            $report,
+            self::REPORTS,
+            true
+        )
+            ? $report
+            : 'full';
+    }
+
+    private function reportTitle(
+        string $report
+    ): string {
+        return match ($report) {
+            'profit-loss' =>
+                'Profit and Loss Report',
+
+            'collections' =>
+                'Collection Report',
+
+            'expenses' =>
+                'Expense Report',
+
+            'receivables' =>
+                'Customer Due Report',
+
+            'transactions' =>
+                'Cash Flow and Transaction Report',
+
+            default =>
+                'Complete Accounting Report',
+        };
+    }
+}

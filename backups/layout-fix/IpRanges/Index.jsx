@@ -1,0 +1,128 @@
+import { Link, router } from '@inertiajs/react';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+
+export default function Index({ ranges }) {
+
+    const deleteRange = (id) => {
+        if (confirm('Delete this IP Range?')) {
+            router.delete(route('ip-ranges.destroy', id));
+        }
+    };
+
+    return (
+        <AuthenticatedLayout>
+
+            <div className="p-6">
+
+                <div className="flex justify-between mb-6">
+
+                    <h1 className="text-2xl font-bold">
+                        IP Ranges
+                    </h1>
+
+                    <Link
+                        href={route('ip-ranges.create')}
+                        className="bg-blue-600 text-white px-4 py-2 rounded"
+                    >
+                        Add IP Range
+                    </Link>
+
+                </div>
+
+
+                <div className="bg-white shadow rounded">
+
+                    <table className="w-full">
+
+                        <thead>
+                            <tr className="border-b">
+                                <th className="p-3 text-left">
+                                    Name
+                                </th>
+
+                                <th className="p-3">
+                                    Router
+                                </th>
+
+                                <th className="p-3">
+                                    Network
+                                </th>
+
+                                <th className="p-3">
+                                    Range
+                                </th>
+
+                                <th className="p-3">
+                                    Action
+                                </th>
+                            </tr>
+                        </thead>
+
+
+                        <tbody>
+
+                        {ranges.map((range) => (
+
+                            <tr
+                                key={range.id}
+                                className="border-b"
+                            >
+
+                                <td className="p-3">
+                                    {range.name}
+                                </td>
+
+                                <td className="p-3 text-center">
+                                    {range.router?.name}
+                                </td>
+
+                                <td className="p-3 text-center">
+                                    {range.network}
+                                </td>
+
+                                <td className="p-3 text-center">
+                                    {range.start_ip}
+                                    {' - '}
+                                    {range.end_ip}
+                                </td>
+
+
+                                <td className="p-3 text-center">
+
+                                    <Link
+                                        href={route(
+                                            'ip-ranges.edit',
+                                            range.id
+                                        )}
+                                        className="text-blue-600 mr-3"
+                                    >
+                                        Edit
+                                    </Link>
+
+
+                                    <button
+                                        onClick={() =>
+                                            deleteRange(range.id)
+                                        }
+                                        className="text-red-600"
+                                    >
+                                        Delete
+                                    </button>
+
+                                </td>
+
+                            </tr>
+
+                        ))}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+
+        </AuthenticatedLayout>
+    );
+}

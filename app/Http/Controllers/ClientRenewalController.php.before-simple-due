@@ -1,0 +1,201 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Client;
+use App\Models\Invoice;
+use App\Models\Payment;
+use App\Services\ClientProvisionService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Throwable;
+
+class ClientRenewalController extends Controller
+{
+    public function store(
+        Request $request,
+        Client $client,
+        ClientProvisionService $provision
+    ): RedirectResponse {
+        $data = $request->validate([
+            'payment_method' => [
+                'required',
+                'string',
+                Rule::in([
+                    'Cash',
+                    'Bank Transfer',
+                    'bKash',
+                    'Nagad',
+                    'Rocket',
+                    'Upay',
+                    'Ooredoo Money',
+                    'iPay',
+                    'Stripe',
+                    'PayPal',
+                    'Manual Adjustment',
+                ]),
+            ],
+
+            'transaction_id' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'notes' => [
+                'nullable',
+                'string',
+                'max:2000',
+            ],
+        ]);
+
+        $client->load('package');
+
+        if (!$client->package) {
+            throw ValidationException::withMessages([
+                'renewal' => 'This client does not have a package.',
+            ]);
+        }
+
+        if ((float) $client->package->price <= 0) {
+            throw ValidationException::withMessages([
+                'renewal' => 'Package price must be greater than zero.',
+            ]);
+        }
+
+        if ((int) $client->package->validity_days < 1) {
+            throw ValidationException::withMessages([
+                'renewal' => 'Package validity days are missing.',
+            ]);
+        }
+
+        $clientId = DB::transaction(function () use (
+            $client,
+            $data
+        ): int {
+            $lockedClient = Client::query()
+                ->with('package')
+                ->lockForUpdate()
+                ->findOrFail($client->id);
+
+            $package = $lockedClient->package;
+
+            if (!$package) {
+                throw ValidationException::withMessages([
+                    'renewal' => 'Client package was not found.',
+                ]);
+            }
+
+            $price = round((float) $package->price, 2);
+            $validityDays = (int) $package->validity_days;
+
+$paymentDate = \Carbon\Carbon::today(
+    'Asia/Qatar'
+);
+
+$currentExpiry = $lockedClient->expiry_date
+    ? \Carbon\Carbon::createFromFormat(
+        'Y-m-d',
+        $lockedClient->expiry_date->format('Y-m-d'),
+        'Asia/Qatar'
+    )->startOfDay()
+    : null;
+
+/*
+ * Client suspended অথবা expiry শেষ হলে
+ * payment date থেকে নতুন মেয়াদ শুরু হবে।
+ *
+ * Client active এবং expiry ভবিষ্যতে থাকলে
+ * বর্তমান expiry থেকে মেয়াদ বাড়বে।
+ */
+$startFromPaymentDate =
+    !$lockedClient->enabled
+    || !$currentExpiry
+    || $currentExpiry->lt($paymentDate);
+
+$baseDate = $startFromPaymentDate
+    ? $paymentDate
+    : $currentExpiry;
+
+/*
+ * 30 দিনের package-কে calendar month ধরা হচ্ছে।
+ * যেমন: 8 August → 8 September
+ */
+$newExpiry = $validityDays === 30
+    ? $baseDate->copy()->addMonthNoOverflow()
+    : $baseDate->copy()->addDays($validityDays);
+            $invoiceNo = 'INV-'
+                . now()->format('YmdHis')
+                . '-'
+                . $lockedClient->id
+                . '-'
+                . Str::upper(Str::random(4));
+
+            $invoice = Invoice::create([
+                'client_id' => $lockedClient->id,
+                'invoice_no' => $invoiceNo,
+                'billing_month' => today()->startOfMonth(),
+                'amount' => $price,
+                'discount' => 0,
+                'paid_amount' => $price,
+                'due_amount' => 0,
+                'issue_date' => today(),
+                'due_date' => today(),
+                'status' => 'paid',
+                'notes' => $data['notes'] ?? 'Quick Pay & Renew',
+                'created_by' => auth()->id(),
+            ]);
+
+            Payment::create([
+                'invoice_id' => $invoice->id,
+                'client_id' => $lockedClient->id,
+                'amount' => $price,
+                'payment_date' => today(),
+                'payment_method' => $data['payment_method'],
+                'transaction_id' =>
+                    $data['transaction_id'] ?? null,
+                'notes' => $data['notes'] ?? 'Quick Pay & Renew',
+                'received_by' => auth()->id(),
+            ]);
+
+            $lockedClient->update([
+                'expiry_date' => $newExpiry,
+            ]);
+
+            return $lockedClient->id;
+        });
+
+        try {
+            $renewedClient = Client::with([
+                'router',
+                'package',
+                'ipRange',
+            ])->findOrFail($clientId);
+
+            $provision->unsuspend($renewedClient);
+        } catch (Throwable $exception) {
+            Log::error(
+                'Quick renewal saved but MikroTik activation failed.',
+                [
+                    'client_id' => $clientId,
+                    'message' => $exception->getMessage(),
+                ]
+            );
+
+            return back()->withErrors([
+                'renewal' =>
+                    'Payment saved and expiry renewed, but MikroTik activation failed. Do not pay again; use the Activate button after checking the router.',
+            ]);
+        }
+
+        return back()->with(
+            'success',
+            'Payment completed and client renewed successfully.'
+        );
+    }
+}

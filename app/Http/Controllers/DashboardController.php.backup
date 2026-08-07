@@ -1,0 +1,84 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Client;
+use App\Models\Router;
+use App\Models\Package;
+use App\Models\IpRange;
+use App\Models\Invoice;
+use App\Models\Payment;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class DashboardController extends Controller
+{
+    public function index(): Response
+    {
+        return Inertia::render('Dashboard', [
+
+            'stats' => [
+
+                'clients' => [
+                    'total' => Client::count(),
+                    'active' => Client::where('enabled', true)->count(),
+                    'disabled' => Client::where('enabled', false)->count(),
+                    'expired' => Client::whereDate('expiry_date', '<', now())->count(),
+                ],
+
+                'routers' => Router::count(),
+
+                'packages' => Package::count(),
+
+                'ipRanges' => IpRange::count(),
+
+                'billing' => [
+
+                    'totalInvoices' => Invoice::count(),
+
+                    'unpaidInvoices' => Invoice::where('status', 'unpaid')->count(),
+
+                    'partialInvoices' => Invoice::where('status', 'partial')->count(),
+
+                    'paidInvoices' => Invoice::where('status', 'paid')->count(),
+
+                    'totalDue' => Invoice::sum('due_amount'),
+
+                    'monthlyCollection' => Payment::whereMonth(
+                        'payment_date',
+                        now()->month
+                    )->sum('amount'),
+
+                    'todayCollection' => Payment::whereDate(
+                        'payment_date',
+                        today()
+                    )->sum('amount'),
+
+                ],
+
+            ],
+
+            'recentClients' => Client::latest()
+                ->take(10)
+                ->get([
+                    'id',
+                    'client_code',
+                    'name',
+                    'ip_address',
+                    'enabled',
+                    'created_at',
+                ]),
+
+            'recentPayments' => Payment::with('client')
+                ->latest()
+                ->take(10)
+                ->get(),
+
+            'recentInvoices' => Invoice::with('client')
+                ->latest()
+                ->take(10)
+                ->get(),
+
+        ]);
+    }
+}

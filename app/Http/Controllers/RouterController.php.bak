@@ -1,0 +1,76 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\RouterRequest;
+use App\Models\Router;
+use App\Services\MikroTik\MikroTikService;
+use Illuminate\Http\RedirectResponse;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class RouterController extends Controller
+{
+    public function index(): Response
+    {
+        return Inertia::render('Routers/Index', [
+            'routers' => Router::latest()->get(),
+        ]);
+    }
+
+    public function create(): Response
+    {
+        return Inertia::render('Routers/Create');
+    }
+
+    public function store(
+        RouterRequest $request,
+        MikroTikService $mikrotik
+    ): RedirectResponse {
+
+        $data = $request->validated();
+if (empty($data['password'])) {
+    unset($data['password']);
+}
+
+        Router::create($data);
+
+        return redirect()
+            ->route('routers.index')
+            ->with('success', 'Router added successfully.');
+    }
+
+    public function show(Router $router): RedirectResponse
+    {
+        return redirect()->route('routers.index');
+    }
+
+    public function edit(Router $router): Response
+    {
+        return Inertia::render('Routers/Edit', [
+            'router' => $router,
+        ]);
+    }
+
+    public function update(
+        RouterRequest $request,
+        Router $router,
+        MikroTikService $mikrotik
+    ): RedirectResponse {
+
+        $data = $request->validated();
+
+        $router->update($data);
+
+        return redirect()
+            ->route('routers.index')
+            ->with('success', 'Router updated successfully.');
+    }
+
+    public function destroy(Router $router): RedirectResponse
+    {
+        $router->delete();
+
+        return back()->with('success', 'Router deleted.');
+    }
+}

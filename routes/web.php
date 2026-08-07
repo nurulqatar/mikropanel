@@ -4,6 +4,15 @@ use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use App\Http\Controllers\RouterController;
+use App\Http\Controllers\PackageController;
+use App\Http\Controllers\ClientController;
+use App\Http\Controllers\IpRangeController;
+use App\Http\Controllers\InvoiceController;
+use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\ClientRenewalController;
+use App\Http\Controllers\SettingController;
+use App\Http\Controllers\AccountingController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -14,14 +23,151 @@ Route::get('/', function () {
     ]);
 });
 
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+use App\Http\Controllers\DashboardController;
 
-Route::middleware('auth')->group(function () {
+Route::get('/dashboard', [DashboardController::class, 'index'])
+    ->middleware([
+        'auth',
+        'verified',
+        'active.panel.user',
+        'panel.permission',
+    ])
+    ->name('dashboard');
+
+Route::middleware([
+    'auth',
+    'active.panel.user',
+    'panel.permission',
+])->group(function () {
+
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-});
+Route::post(
+    'routers/{router}/ping',
+    [RouterController::class, 'ping']
+)->name('routers.ping');
 
+Route::post(
+    'routers/{router}/sync',
+    [RouterController::class, 'sync']
+)->name('routers.sync');
+
+    Route::resource('routers', RouterController::class);
+    Route::resource('packages', PackageController::class);
+Route::get(
+    'invoices/print-all',
+    [
+        \App\Http\Controllers\InvoiceDocumentController::class,
+        'printAll',
+    ]
+)->name('invoices.print-all');
+
+Route::get(
+    'invoices/download-all',
+    [
+        \App\Http\Controllers\InvoiceDocumentController::class,
+        'downloadAll',
+    ]
+)->name('invoices.download-all');
+
+Route::get(
+    'invoices/{invoice}/print',
+    [
+        \App\Http\Controllers\InvoiceDocumentController::class,
+        'print',
+    ]
+)->name('invoices.print');
+
+Route::get(
+    'invoices/{invoice}/download',
+    [
+        \App\Http\Controllers\InvoiceDocumentController::class,
+        'download',
+    ]
+)->name('invoices.download');
+
+    Route::get(
+        'clients/{client}/invoices/print',
+        [
+            \App\Http\Controllers\InvoiceDocumentController::class,
+            'printClient',
+        ]
+    )->name('clients.invoices.print');
+
+    Route::get(
+        'clients/{client}/invoices/download',
+        [
+            \App\Http\Controllers\InvoiceDocumentController::class,
+            'downloadClient',
+        ]
+    )->name('clients.invoices.download');
+
+    Route::resource('clients', ClientController::class);
+    Route::resource('invoices', \App\Http\Controllers\InvoiceController::class)
+    ->except(['show']);
+    Route::resource('ip-ranges', IpRangeController::class);
+
+    Route::post('/clients/{client}/suspend', [ClientController::class, 'suspend'])
+        ->name('clients.suspend');
+
+    Route::post('/clients/{client}/unsuspend', [ClientController::class, 'unsuspend'])
+        ->name('clients.unsuspend');
+    Route::resource('payments', \App\Http\Controllers\PaymentController::class)
+    ->except(['show', 'edit', 'update']);
+
+    Route::get(
+        'accounting/print',
+        [AccountingController::class, 'print']
+    )->name('accounting.print');
+
+    Route::get(
+        'accounting/download',
+        [AccountingController::class, 'download']
+    )->name('accounting.download');
+
+    Route::get(
+        'accounting',
+        [AccountingController::class, 'index']
+    )->name('accounting.index');
+
+
+    Route::get(
+        'settings',
+        [SettingController::class, 'index']
+    )->name('settings.index');
+
+    Route::post(
+        'settings',
+        [SettingController::class, 'update']
+    )->name('settings.update');
+
+    Route::delete(
+        'settings/logo',
+        [SettingController::class, 'removeLogo']
+    )->name('settings.logo.destroy');
+
+    Route::post(
+        'settings/clear-cache',
+        [SettingController::class, 'clearCache']
+    )->name('settings.cache.clear');
+
+    Route::get(
+        'settings/export',
+        [SettingController::class, 'export']
+    )->name('settings.export');
+
+    Route::resource('expenses', ExpenseController::class);
+    Route::post(
+    '/clients/{client}/renew',
+    [ClientRenewalController::class, 'store']
+)->name('clients.renew');
+
+
+    Route::resource(
+        'users',
+        \App\Http\Controllers\UserManagementController::class
+    )->except(['show']);
+
+});
 require __DIR__.'/auth.php';

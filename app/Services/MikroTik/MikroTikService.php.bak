@@ -1,0 +1,60 @@
+<?php
+
+namespace App\Services\MikroTik;
+
+use RouterOS\Client;
+use RouterOS\Config;
+use RouterOS\Query;
+use Exception;
+
+class MikroTikService
+{
+    protected Client $client;
+
+    public function connect(array $router): bool
+    {
+        try {
+
+            $config = new Config([
+                'host' => $router['host'],
+                'user' => $router['username'],
+                'pass' => $router['password'],
+                'port' => $router['api_port'],
+                'ssl'  => $router['use_ssl'],
+                'timeout' => 5,
+            ]);
+
+            $this->client = new Client($config);
+
+            return true;
+
+        } catch (Exception $e) {
+
+            return false;
+
+        }
+    }
+
+    public function test(): array
+    {
+        try {
+
+            $query = new Query('/system/resource/print');
+
+            $result = $this->client->query($query)->read();
+
+            return [
+                'success' => true,
+                'data' => $result[0] ?? [],
+            ];
+
+        } catch (Exception $e) {
+
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+
+        }
+    }
+}
