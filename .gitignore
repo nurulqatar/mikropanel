@@ -34,3 +34,6 @@ Thumbs.db
 /public/build
 /storage/logs/*
 /bootstrap/cache/*
+/storage/app/installer-bootstrap.json
+/storage/app/mikropanel-installed.lock
+/storage/app/install-uploads/
