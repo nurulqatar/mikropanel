@@ -23,6 +23,19 @@ class RouterRequest extends FormRequest
             'api_port' => ['required', 'integer', 'between:1,65535'],
             'username' => ['required', 'string', 'max:100'],
             'password' => $passwordRule,
+
+            'client_interface' => [
+                'required',
+                'string',
+                'max:100',
+            ],
+
+            'dhcp_server' => [
+                'required',
+                'string',
+                'max:100',
+            ],
+
             'use_ssl' => ['nullable', 'boolean'],
             'enabled' => ['nullable', 'boolean'],
         ];
@@ -37,6 +50,12 @@ class RouterRequest extends FormRequest
             'api_port.required' => 'API port is required.',
             'username.required' => 'Username is required.',
             'password.required' => 'Password is required.',
+
+            'client_interface.required' =>
+                'Client Interface is required.',
+
+            'dhcp_server.required' =>
+                'DHCP Server is required.',
         ];
     }
 }

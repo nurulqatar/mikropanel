@@ -607,6 +607,14 @@ export default function Show({
                                     </TableHead>
 
                                     <TableHead>
+                                        Received By
+                                    </TableHead>
+
+                                    <TableHead>
+                                        Collected At
+                                    </TableHead>
+
+                                    <TableHead>
                                         Notes
                                     </TableHead>
                                 </tr>
@@ -655,6 +663,39 @@ export default function Show({
                                                 </TableCell>
 
                                                 <TableCell>
+                                                    <span className="font-semibold text-slate-700">
+                                                        {payment.receiver?.name ||
+                                                            (payment.received_by
+                                                                ? `User #${payment.received_by}`
+                                                                : '-')}
+                                                    </span>
+                                                </TableCell>
+
+                                                <TableCell>
+                                                    <span className="whitespace-nowrap text-sm text-slate-600">
+                                                        {payment.created_at
+                                                            ? new Date(
+                                                                  payment.created_at,
+                                                              ).toLocaleString(
+                                                                  'en-GB',
+                                                                  {
+                                                                      day:
+                                                                          '2-digit',
+                                                                      month:
+                                                                          'short',
+                                                                      year:
+                                                                          'numeric',
+                                                                      hour:
+                                                                          '2-digit',
+                                                                      minute:
+                                                                          '2-digit',
+                                                                  },
+                                                              )
+                                                            : '-'}
+                                                    </span>
+                                                </TableCell>
+
+                                                <TableCell>
                                                     {payment.notes ||
                                                         '-'}
                                                 </TableCell>
@@ -664,7 +705,7 @@ export default function Show({
                                 ) : (
                                     <tr>
                                         <td
-                                            colSpan="6"
+                                            colSpan="8"
                                             className="px-6 py-12 text-center text-slate-500"
                                         >
                                             No payments found for this client.

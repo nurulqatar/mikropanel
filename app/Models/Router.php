@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Router extends Model
 {
@@ -14,8 +15,14 @@ class Router extends Model
         'password',
         'use_ssl',
         'enabled',
+        'client_interface',
+        'dhcp_server',
         'connected',
         'last_checked_at',
+    ];
+
+    protected $hidden = [
+        'password',
     ];
 
     protected $casts = [
@@ -44,4 +51,12 @@ class Router extends Model
             return $value;
         }
     }
+
+    public function clientBindings(): HasMany
+    {
+        return $this->hasMany(
+            ClientRouterBinding::class
+        );
+    }
+
 }

@@ -13,6 +13,7 @@ use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\ClientRenewalController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\AccountingController;
+use App\Http\Controllers\NotificationController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -156,6 +157,26 @@ Route::get(
         'settings/export',
         [SettingController::class, 'export']
     )->name('settings.export');
+
+    Route::get(
+        'notifications',
+        [NotificationController::class, 'index']
+    )->name('notifications.index');
+
+    Route::post(
+        'notifications/read-all',
+        [NotificationController::class, 'readAll']
+    )->name('notifications.read-all');
+
+    Route::delete(
+        'notifications/clear-read',
+        [NotificationController::class, 'clearRead']
+    )->name('notifications.clear-read');
+
+    Route::post(
+        'notifications/{notification}/read',
+        [NotificationController::class, 'read']
+    )->name('notifications.read');
 
     Route::resource('expenses', ExpenseController::class);
     Route::post(

@@ -87,4 +87,12 @@ class Client extends Model
             ClientMonthlyUsage::class
         );
     }
+
+    public function routerBindings(): HasMany
+    {
+        return $this->hasMany(
+            ClientRouterBinding::class
+        );
+    }
+
 }

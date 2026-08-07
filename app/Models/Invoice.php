@@ -20,6 +20,8 @@ class Invoice extends Model
         'issue_date',
         'due_date',
         'status',
+        'applies_service_period',
+        'service_applied_at',
         'notes',
         'created_by',
     ];
@@ -32,6 +34,8 @@ class Invoice extends Model
         'discount' => 'decimal:2',
         'paid_amount' => 'decimal:2',
         'due_amount' => 'decimal:2',
+        'applies_service_period' => 'boolean',
+        'service_applied_at' => 'datetime',
     ];
 
     public function client()

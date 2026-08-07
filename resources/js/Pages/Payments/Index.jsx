@@ -249,9 +249,10 @@ export default function Index({
                                             </td>
 
                                             <td className="whitespace-nowrap px-5 py-4 text-sm text-slate-600">
-                                                {payment.received_by
-                                                    ? `User #${payment.received_by}`
-                                                    : '-'}
+                                                {payment.receiver?.name ||
+                                                    (payment.received_by
+                                                        ? `User #${payment.received_by}`
+                                                        : '-')}
                                             </td>
 
                                             <td className="px-5 py-4">

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\RouterRequest;
 use App\Models\Router;
 use App\Services\MikroTik\MikroTikService;
+use App\Services\RouterClientSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
@@ -58,28 +59,86 @@ class RouterController extends Controller
 
     public function store(
         RouterRequest $request,
-        MikroTikService $mikrotik
+        MikroTikService $mikrotik,
+        RouterClientSyncService $clientSync
     ): RedirectResponse {
         $data = $request->validated();
 
-        $router = Router::create($data);
+        $router = Router::create(
+            $data
+        );
 
-        $live = $mikrotik->inspect($router);
+        $live = $mikrotik->inspect(
+            $router
+        );
 
         $this->saveLiveStatus(
             $router,
             $live
         );
 
-        $message = $live['success']
-            ? 'Router added and MikroTik API connected successfully.'
-            : 'Router added, but MikroTik API connection failed: '
-                . ($live['message'] ?? 'Unknown error');
+        $sync = $clientSync
+            ->emptyResult();
+
+        if ($router->enabled) {
+            if ($live['success'] ?? false) {
+                /*
+                 * Immediate first convergence.
+                 * No scheduler wait required.
+                 */
+                $sync = $clientSync
+                    ->syncAll(
+                        $router
+                    );
+
+            } else {
+                /*
+                 * Router is offline/unreachable.
+                 * Seed retryable failed bindings.
+                 */
+                $sync = $clientSync
+                    ->markRouterFailed(
+                        $router,
+                        $live['message']
+                            ?? 'MikroTik API connection failed.'
+                    );
+            }
+        }
+
+        if (!($live['success'] ?? false)) {
+            $message =
+                'Router saved, but MikroTik API connection failed: '
+                . (
+                    $live['message']
+                    ?? 'Unknown error'
+                )
+                . '. Client sync will retry automatically.';
+
+            $flashType = 'error';
+
+        } elseif ($sync['failed'] > 0) {
+            $message =
+                'Router connected. '
+                . $sync['synced']
+                . ' client(s) synced, '
+                . $sync['failed']
+                . ' failed and will retry automatically.';
+
+            $flashType = 'error';
+
+        } else {
+            $message =
+                'Router added successfully. '
+                . $sync['synced']
+                . ' existing client(s) synchronized.';
+
+            $flashType = 'success';
+        }
 
         return redirect()
             ->route('routers.index')
             ->with(
-                $live['success'] ? 'success' : 'error',
+                $flashType,
                 $message
             );
     }
@@ -102,65 +161,165 @@ class RouterController extends Controller
     public function update(
         RouterRequest $request,
         Router $router,
-        MikroTikService $mikrotik
+        MikroTikService $mikrotik,
+        RouterClientSyncService $clientSync
     ): RedirectResponse {
         $data = $request->validated();
 
         /*
-         * Blank password দিলে পুরোনো password থাকবে।
+         * Blank password keeps the old
+         * encrypted MikroTik password.
          */
         if (empty($data['password'])) {
-            unset($data['password']);
+            unset(
+                $data['password']
+            );
         }
 
-        $router->update($data);
+        $router->update(
+            $data
+        );
+
         $router->refresh();
 
-        $live = $mikrotik->inspect($router);
+        $live = $mikrotik->inspect(
+            $router
+        );
 
         $this->saveLiveStatus(
             $router,
             $live
         );
 
-        $message = $live['success']
-            ? 'Router updated and MikroTik sync completed.'
-            : 'Router updated, but connection failed: '
-                . ($live['message'] ?? 'Unknown error');
+        $sync = $clientSync
+            ->emptyResult();
+
+        if ($router->enabled) {
+            if ($live['success'] ?? false) {
+                /*
+                 * Force convergence after any
+                 * credential/interface/DHCP
+                 * mapping change.
+                 */
+                $sync = $clientSync
+                    ->syncAll(
+                        $router
+                    );
+
+            } else {
+                $sync = $clientSync
+                    ->markRouterFailed(
+                        $router,
+                        $live['message']
+                            ?? 'MikroTik API connection failed.'
+                    );
+            }
+        }
+
+        if (!($live['success'] ?? false)) {
+            $message =
+                'Router updated, but MikroTik connection failed: '
+                . (
+                    $live['message']
+                    ?? 'Unknown error'
+                )
+                . '. Client sync will retry automatically.';
+
+            $flashType = 'error';
+
+        } elseif ($sync['failed'] > 0) {
+            $message =
+                'Router updated. '
+                . $sync['synced']
+                . ' client(s) synced, '
+                . $sync['failed']
+                . ' failed and will retry automatically.';
+
+            $flashType = 'error';
+
+        } else {
+            $message =
+                'Router updated successfully. '
+                . $sync['synced']
+                . ' client(s) synchronized.';
+
+            $flashType = 'success';
+        }
 
         return redirect()
             ->route('routers.index')
             ->with(
-                $live['success'] ? 'success' : 'error',
+                $flashType,
                 $message
             );
     }
 
     public function sync(
         Router $router,
-        MikroTikService $mikrotik
+        MikroTikService $mikrotik,
+        RouterClientSyncService $clientSync
     ): RedirectResponse {
-        $live = $mikrotik->inspect($router);
+        $live = $mikrotik->inspect(
+            $router
+        );
 
         $this->saveLiveStatus(
             $router,
             $live
         );
 
-        if (!$live['success']) {
+        if (!($live['success'] ?? false)) {
+            if ($router->enabled) {
+                $clientSync
+                    ->markRouterFailed(
+                        $router,
+                        $live['message']
+                            ?? 'MikroTik API connection failed.'
+                    );
+            }
+
             return back()->with(
                 'error',
                 'MikroTik sync failed: '
-                    . ($live['message'] ?? 'Unknown error')
+                . (
+                    $live['message']
+                    ?? 'Unknown error'
+                )
+            );
+        }
+
+        $sync = $router->enabled
+            ? $clientSync->syncAll(
+                $router
+            )
+            : $clientSync
+                ->emptyResult();
+
+        if ($sync['failed'] > 0) {
+            return back()->with(
+                'error',
+                'Router connected. '
+                . $sync['synced']
+                . ' client(s) synced, '
+                . $sync['failed']
+                . ' failed and will retry automatically.'
             );
         }
 
         return back()->with(
             'success',
-            'MikroTik sync completed. Identity: '
-                . ($live['identity'] ?? $router->name)
-                . ', RouterOS: '
-                . ($live['version'] ?? 'Unknown')
+            'MikroTik sync completed. '
+            . $sync['synced']
+            . ' client(s) synchronized. Identity: '
+            . (
+                $live['identity']
+                ?? $router->name
+            )
+            . ', RouterOS: '
+            . (
+                $live['version']
+                ?? 'Unknown'
+            )
         );
     }
 

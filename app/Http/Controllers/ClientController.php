@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ClientProvisioningException;
 use App\Http\Requests\ClientRequest;
 use App\Models\Client;
 use App\Models\ClientMonthlyUsage;
@@ -92,57 +93,51 @@ class ClientController extends Controller
         $data = $request->validated();
 
         /*
-         * Selected Router অবশ্যই enabled হতে হবে।
-         */
-        $router = Router::query()
-            ->where('id', $data['router_id'])
-            ->where('enabled', true)
-            ->first();
-
-        if (!$router) {
-            return back()
-                ->withErrors([
-                    'router_id' =>
-                        'Selected Router is not available.',
-                ])
-                ->withInput();
-        }
-
-        /*
-         * Selected IP Range অবশ্যই selected Router-এর হতে হবে।
+         * IP Pool is global.
+         * It is NOT tied to a selected router.
          */
         $range = IpRange::query()
-            ->where('id', $data['ip_range_id'])
-            ->where('router_id', $router->id)
-            ->where('enabled', true)
+            ->where(
+                'id',
+                $data['ip_range_id']
+            )
+            ->where(
+                'enabled',
+                true
+            )
             ->first();
 
         if (!$range) {
             return back()
                 ->withErrors([
                     'ip_range_id' =>
-                        'Selected IP Range does not belong to this Router.',
+                        'Selected IP Pool is not available.',
                 ])
                 ->withInput();
         }
 
-        /*
-         * Panel IP Range থেকে free IP automatic নেওয়া হবে।
-         */
-        $ip = $allocator->allocate($range);
+        $ip = $allocator->allocate(
+            $range
+        );
 
         if (!$ip) {
             return back()
                 ->withErrors([
                     'ip_range_id' =>
-                        'No free IP is available in this IP Range.',
+                        'No free IP is available in this IP Pool.',
                 ])
                 ->withInput();
         }
 
         $package = Package::query()
-            ->where('id', $data['package_id'])
-            ->where('enabled', true)
+            ->where(
+                'id',
+                $data['package_id']
+            )
+            ->where(
+                'enabled',
+                true
+            )
             ->first();
 
         if (!$package) {
@@ -154,7 +149,8 @@ class ClientController extends Controller
                 ->withInput();
         }
 
-        $validityDays = (int) $package->validity_days;
+        $validityDays =
+            (int) $package->validity_days;
 
         if ($validityDays < 1) {
             return back()
@@ -165,48 +161,193 @@ class ClientController extends Controller
                 ->withInput();
         }
 
+        /*
+         * clients.router_id remains an internal
+         * legacy primary-router reference only.
+         *
+         * Operator no longer selects it.
+         */
+        $primaryRouter = Router::query()
+            ->where(
+                'enabled',
+                true
+            )
+            ->orderBy('id')
+            ->first();
+
+        if (!$primaryRouter) {
+            return back()
+                ->withErrors([
+                    'ip_range_id' =>
+                        'At least one enabled MikroTik router is required.',
+                ])
+                ->withInput();
+        }
+
         $startDate = today();
 
-        /*
-         * 30 Days package হলে পরের মাসের একই তারিখ।
-         * যেমন 8 August থেকে 8 September।
-         */
-        $expiryDate = $validityDays === 30
-            ? $startDate->copy()->addMonthNoOverflow()
-            : $startDate->copy()->addDays($validityDays);
+        $expiryDate =
+            $validityDays === 30
+                ? $startDate
+                    ->copy()
+                    ->addMonthNoOverflow()
+                : $startDate
+                    ->copy()
+                    ->addDays(
+                        $validityDays
+                    );
 
-        $data['router_id'] = $router->id;
-        $data['ip_range_id'] = $range->id;
-        $data['ip_address'] = $ip;
-        $data['installed_at'] = $startDate->toDateString();
-        $data['expiry_date'] = $expiryDate->toDateString();
-        $data['billing_day'] = $startDate->day;
+        $data['router_id'] =
+            $primaryRouter->id;
+
+        $data['ip_range_id'] =
+            $range->id;
+
+        $data['ip_address'] =
+            $ip;
+
+        $data['mac_address'] =
+            strtoupper(
+                trim(
+                    $data['mac_address']
+                )
+            );
+
+        $data['installed_at'] =
+            $startDate->toDateString();
+
+        $data['expiry_date'] =
+            $expiryDate->toDateString();
+
+        $data['billing_day'] =
+            $startDate->day;
+
         $data['enabled'] = true;
         $data['connected'] = false;
 
-        $nextId = (Client::max('id') ?? 0) + 1;
+        $nextId =
+            (
+                Client::withTrashed()
+                    ->max('id')
+                ?? 0
+            ) + 1;
 
-        $data['client_code'] = 'CLI-' . str_pad(
-            $nextId,
-            5,
-            '0',
-            STR_PAD_LEFT
-        );
+        $data['client_code'] =
+            'CLI-'
+            . str_pad(
+                (string) $nextId,
+                5,
+                '0',
+                STR_PAD_LEFT
+            );
 
-        $client = Client::create($data);
+        $client = null;
 
-        /*
-         * MikroTik:
-         * DHCP Lease + Static ARP + Simple Queue
-         */
-        $provision->provision($client);
+        try {
+            $client = Client::create(
+                $data
+            );
+
+            /*
+             * Multi-router service synchronizes
+             * this global client to every
+             * enabled MikroTik.
+             */
+            $provision->provision(
+                $client
+            );
+
+        } catch (
+            ClientProvisioningException $exception
+        ) {
+            if ($client) {
+                try {
+                    if (
+                        $exception
+                            ->compensationComplete
+                    ) {
+                        $client->forceDelete();
+                    } else {
+                        $client->forceFill([
+                            'enabled' => false,
+                            'connected' => false,
+                        ])->save();
+                    }
+                } catch (Throwable $cleanupError) {
+                    Log::critical(
+                        'Failed to clean up client after provisioning error.',
+                        [
+                            'client_id' =>
+                                $client->id,
+
+                            'message' =>
+                                $cleanupError
+                                    ->getMessage(),
+                        ]
+                    );
+                }
+            }
+
+            Log::error(
+                'Global client provisioning failed.',
+                [
+                    'client_id' =>
+                        $client?->id,
+
+                    'message' =>
+                        $exception
+                            ->getMessage(),
+
+                    'compensation_complete' =>
+                        $exception
+                            ->compensationComplete,
+                ]
+            );
+
+            return back()
+                ->withErrors([
+                    'mac_address' =>
+                        'Client could not be synchronized to MikroTik. Please try again.',
+                ])
+                ->withInput();
+
+        } catch (Throwable $exception) {
+            if ($client) {
+                try {
+                    $client->forceFill([
+                        'enabled' => false,
+                        'connected' => false,
+                    ])->save();
+                } catch (Throwable) {
+                    // Preserve original exception.
+                }
+            }
+
+            Log::error(
+                'Client creation failed.',
+                [
+                    'client_id' =>
+                        $client?->id,
+
+                    'message' =>
+                        $exception
+                            ->getMessage(),
+                ]
+            );
+
+            return back()
+                ->withErrors([
+                    'mac_address' =>
+                        'Client could not be created. Please try again.',
+                ])
+                ->withInput();
+        }
 
         return redirect()
             ->route('clients.index')
             ->with(
                 'success',
-                "Client created successfully. IP: {$ip}, Expiry: "
-                . $expiryDate->format('Y-m-d')
+                'Client created successfully and multi-router synchronization started.'
             );
     }
 
@@ -244,7 +385,10 @@ class ClientController extends Controller
 
             'payments' => function ($query) {
                 $query
-                    ->with('invoice:id,invoice_no')
+                    ->with([
+                        'invoice:id,invoice_no',
+                        'receiver:id,name',
+                    ])
                     ->orderByDesc('payment_date')
                     ->orderByDesc('id');
             },
@@ -353,40 +497,197 @@ class ClientController extends Controller
     ): RedirectResponse {
         $data = $request->validated();
 
+        unset(
+            $data['router_id'],
+            $data['enabled']
+        );
+
+        $data['mac_address'] =
+            strtoupper(
+                trim(
+                    $data['mac_address']
+                )
+            );
+
+        /*
+         * IP Pool is global, but changing an
+         * existing client's pool would also
+         * require a controlled IP re-allocation.
+         *
+         * Keep the current pool/IP fixed here.
+         */
         $range = IpRange::query()
-            ->where('id', $data['ip_range_id'])
-            ->where('router_id', $data['router_id'])
-            ->first();
+            ->find(
+                $data['ip_range_id']
+            );
 
         if (!$range) {
             return back()
                 ->withErrors([
                     'ip_range_id' =>
-                        'Selected IP Range does not belong to this Router.',
+                        'Selected IP Pool does not exist.',
                 ])
                 ->withInput();
         }
 
-        $client->update($data);
+        if (
+            (int) $range->id
+            !== (int) $client->ip_range_id
+        ) {
+            return back()
+                ->withErrors([
+                    'ip_range_id' =>
+                        'IP Pool cannot be changed for an existing client.',
+                ])
+                ->withInput();
+        }
+
+        $package = Package::query()
+            ->find(
+                $data['package_id']
+            );
+
+        if (
+            !$package
+            || (
+                !$package->enabled
+                && (int) $package->id
+                    !== (int) $client->package_id
+            )
+        ) {
+            return back()
+                ->withErrors([
+                    'package_id' =>
+                        'Selected Package is not available.',
+                ])
+                ->withInput();
+        }
 
         $client->load([
-            'router',
             'package',
             'ipRange',
         ]);
 
-        $provision->update($client);
+        $before = clone $client;
 
-        $redirectRoute =
-            $request->query('from') === 'dashboard'
-                ? 'dashboard'
-                : 'clients.index';
+        $before->setRelations(
+            $client->getRelations()
+        );
+
+        $candidate = clone $client;
+
+        $candidate->setRelations(
+            $client->getRelations()
+        );
+
+        $candidate->fill(
+            $data
+        );
+
+        $candidate->setRelation(
+            'package',
+            $package
+        );
+
+        $candidate->setRelation(
+            'ipRange',
+            $range
+        );
+
+        /*
+         * MikroTik FIRST.
+         * Multi-router service converges every
+         * enabled router to the new client state.
+         */
+        try {
+            $provision->update(
+                $candidate,
+                $before
+            );
+
+        } catch (
+            ClientProvisioningException $exception
+        ) {
+            Log::error(
+                'Global client update failed.',
+                [
+                    'client_id' =>
+                        $client->id,
+
+                    'message' =>
+                        $exception
+                            ->getMessage(),
+
+                    'compensation_complete' =>
+                        $exception
+                            ->compensationComplete,
+                ]
+            );
+
+            return back()
+                ->withErrors([
+                    'mac_address' =>
+                        'MikroTik synchronization failed. Client was not saved.',
+                ])
+                ->withInput();
+        }
+
+        /*
+         * Save DB only after MikroTik update.
+         */
+        try {
+            $client->update(
+                $data
+            );
+
+        } catch (Throwable $exception) {
+            try {
+                $provision->update(
+                    $before
+                );
+            } catch (Throwable $rollbackError) {
+                Log::critical(
+                    'Database update failed and MikroTik rollback also failed.',
+                    [
+                        'client_id' =>
+                            $client->id,
+
+                        'db_error' =>
+                            $exception
+                                ->getMessage(),
+
+                        'rollback_error' =>
+                            $rollbackError
+                                ->getMessage(),
+                    ]
+                );
+            }
+
+            Log::error(
+                'Client database update failed.',
+                [
+                    'client_id' =>
+                        $client->id,
+
+                    'message' =>
+                        $exception
+                            ->getMessage(),
+                ]
+            );
+
+            return back()
+                ->withErrors([
+                    'mac_address' =>
+                        'Client update could not be saved.',
+                ])
+                ->withInput();
+        }
 
         return redirect()
-            ->route($redirectRoute)
+            ->route('clients.index')
             ->with(
                 'success',
-                'Client updated successfully.'
+                'Client updated across enabled MikroTik routers.'
             );
     }
 
@@ -394,7 +695,40 @@ class ClientController extends Controller
         Client $client,
         ClientProvisionService $provision
     ): RedirectResponse {
-        $provision->suspend($client);
+        try {
+            $provision->suspend(
+                $client
+            );
+
+        } catch (
+            ClientProvisioningException
+            $exception
+        ) {
+            Log::error(
+                'Manual client suspension failed.',
+                [
+                    'client_id' =>
+                        $client->id,
+
+                    'compensation_complete' =>
+                        $exception
+                            ->compensationComplete,
+
+                    'message' =>
+                        $exception
+                            ->getMessage(),
+                ]
+            );
+
+            return back()
+                ->withErrors([
+                    'client' =>
+                        $exception
+                            ->compensationComplete
+                            ? 'Suspension failed. Previous MikroTik state was restored automatically.'
+                            : 'Suspension failed and MikroTik rollback was incomplete. Check this client before retrying.',
+                ]);
+        }
 
         return back()->with(
             'success',
@@ -406,7 +740,40 @@ class ClientController extends Controller
         Client $client,
         ClientProvisionService $provision
     ): RedirectResponse {
-        $provision->unsuspend($client);
+        try {
+            $provision->unsuspend(
+                $client
+            );
+
+        } catch (
+            ClientProvisioningException
+            $exception
+        ) {
+            Log::error(
+                'Manual client activation failed.',
+                [
+                    'client_id' =>
+                        $client->id,
+
+                    'compensation_complete' =>
+                        $exception
+                            ->compensationComplete,
+
+                    'message' =>
+                        $exception
+                            ->getMessage(),
+                ]
+            );
+
+            return back()
+                ->withErrors([
+                    'client' =>
+                        $exception
+                            ->compensationComplete
+                            ? 'Activation failed. Client was kept suspended on MikroTik.'
+                            : 'Activation failed and MikroTik rollback was incomplete. Check this client before retrying.',
+                ]);
+        }
 
         return back()->with(
             'success',
@@ -418,30 +785,129 @@ class ClientController extends Controller
         Client $client,
         ClientProvisionService $provision
     ): RedirectResponse {
-        /*
-         * MikroTik থেকে DHCP Lease,
-         * ARP ও Simple Queue remove হবে।
-         */
-        $provision->remove($client);
+        try {
+            /*
+             * MikroTik first:
+             * Queue + ARP + DHCP Lease.
+             */
+            $provision->remove(
+                $client
+            );
 
-        /*
-         * Client account বন্ধ করা হবে।
-         */
-        $client->forceFill([
-            'enabled' => false,
-            'connected' => false,
-        ])->save();
+        } catch (
+            ClientProvisioningException
+            $exception
+        ) {
+            Log::error(
+                'Client archive blocked because MikroTik cleanup was incomplete.',
+                [
+                    'client_id' =>
+                        $client->id,
 
-        /*
-         * এটি Soft Delete।
-         * Invoice, Payment ও Accounting
-         * history delete হবে না।
-         */
-        $client->delete();
+                    'message' =>
+                        $exception
+                            ->getMessage(),
+                ]
+            );
+
+            /*
+             * Never hide/archive a panel record
+             * while Router objects may remain.
+             */
+            return back()
+                ->withErrors([
+                    'client' =>
+                        'Client was not archived because MikroTik cleanup was incomplete.',
+                ]);
+        }
+
+        try {
+            $client->forceFill([
+                'enabled' => false,
+                'connected' => false,
+            ])->save();
+
+            /*
+             * Soft delete only.
+             * Invoice/payment/accounting history
+             * remains attached.
+             */
+            $client->delete();
+
+        } catch (Throwable $exception) {
+            Log::error(
+                'Client DB archive failed after MikroTik removal.',
+                [
+                    'client_id' =>
+                        $client->id,
+
+                    'message' =>
+                        $exception
+                            ->getMessage(),
+                ]
+            );
+
+            /*
+             * Router objects were removed but
+             * DB archive failed. Try restoring
+             * normal MikroTik service.
+             */
+            try {
+                $client->refresh();
+
+                $client->load([
+                    'router',
+                    'package',
+                    'ipRange',
+                ]);
+
+                $provision->provision(
+                    $client
+                );
+
+                Log::warning(
+                    'MikroTik service restored after DB archive failure.',
+                    [
+                        'client_id' =>
+                            $client->id,
+                    ]
+                );
+
+            } catch (Throwable $restoreError) {
+                Log::critical(
+                    'DB archive failed and MikroTik restore also failed.',
+                    [
+                        'client_id' =>
+                            $client->id,
+
+                        'archive_error' =>
+                            $exception
+                                ->getMessage(),
+
+                        'restore_error' =>
+                            $restoreError
+                                ->getMessage(),
+                    ]
+                );
+
+                return back()
+                    ->withErrors([
+                        'client' =>
+                            'Archive failed and MikroTik restoration was incomplete. Check this client before continuing.',
+                    ]);
+            }
+
+            return back()
+                ->withErrors([
+                    'client' =>
+                        'Archive was not saved. MikroTik service was restored automatically.',
+                ]);
+        }
 
         return back()->with(
             'success',
             'Client archived successfully. Invoice, payment and accounting history have been preserved.'
         );
     }
+
 }

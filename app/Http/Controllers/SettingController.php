@@ -289,6 +289,11 @@ class SettingController extends Controller
                 'max:90',
             ],
 
+            'auto_billing_enabled' => [
+                'required',
+                'boolean',
+            ],
+
             'tax_enabled' => [
                 'required',
                 'boolean',
@@ -761,6 +766,7 @@ class SettingController extends Controller
             'receipt_prefix' => 'RCP-',
             'default_due_days' => 0,
             'grace_days' => 0,
+            'auto_billing_enabled' => false,
             'tax_enabled' => false,
             'tax_name' => 'Tax',
             'tax_rate' => 0,
@@ -851,6 +857,7 @@ class SettingController extends Controller
     {
         $boolean = [
             'tax_enabled',
+            'auto_billing_enabled',
             'allow_partial_payment',
             'allow_credit_renewal',
             'show_previous_due',
@@ -916,6 +923,7 @@ class SettingController extends Controller
                 'receipt_prefix',
                 'default_due_days',
                 'grace_days',
+                'auto_billing_enabled',
                 'tax_enabled',
                 'tax_name',
                 'tax_rate',

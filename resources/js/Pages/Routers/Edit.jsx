@@ -18,6 +18,10 @@ export default function Edit({ router }) {
         api_port: router.api_port ?? 8728,
         username: router.username ?? '',
         password: '',
+        client_interface:
+            router.client_interface ?? '',
+        dhcp_server:
+            router.dhcp_server ?? '',
         use_ssl: Boolean(router.use_ssl),
         enabled: Boolean(router.enabled),
     });
@@ -133,6 +137,46 @@ export default function Edit({ router }) {
                                 }
                                 placeholder="Leave blank to keep current password"
                             />
+                        </Field>
+
+                        <Field
+                            label="Client Interface"
+                            error={errors.client_interface}
+                        >
+                            <input
+                                className={inputClass}
+                                value={data.client_interface}
+                                onChange={(event) =>
+                                    setData(
+                                        'client_interface',
+                                        event.target.value,
+                                    )
+                                }
+                            />
+
+                            <p className="mt-1 text-xs text-slate-500">
+                                Router-specific LAN/bridge interface.
+                            </p>
+                        </Field>
+
+                        <Field
+                            label="DHCP Server"
+                            error={errors.dhcp_server}
+                        >
+                            <input
+                                className={inputClass}
+                                value={data.dhcp_server}
+                                onChange={(event) =>
+                                    setData(
+                                        'dhcp_server',
+                                        event.target.value,
+                                    )
+                                }
+                            />
+
+                            <p className="mt-1 text-xs text-slate-500">
+                                Router-specific DHCP server name.
+                            </p>
                         </Field>
                     </div>
 

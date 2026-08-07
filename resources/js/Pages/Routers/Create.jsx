@@ -18,6 +18,8 @@ export default function Create() {
         api_port: 8728,
         username: '',
         password: '',
+        client_interface: '',
+        dhcp_server: '',
         use_ssl: false,
         enabled: true,
     });
@@ -134,6 +136,48 @@ export default function Create() {
                                     )
                                 }
                             />
+                        </Field>
+
+                        <Field
+                            label="Client Interface"
+                            error={errors.client_interface}
+                        >
+                            <input
+                                className={inputClass}
+                                value={data.client_interface}
+                                onChange={(event) =>
+                                    setData(
+                                        'client_interface',
+                                        event.target.value,
+                                    )
+                                }
+                                placeholder="bridge-LAN"
+                            />
+
+                            <p className="mt-1 text-xs text-slate-500">
+                                LAN/bridge interface used for static ARP.
+                            </p>
+                        </Field>
+
+                        <Field
+                            label="DHCP Server"
+                            error={errors.dhcp_server}
+                        >
+                            <input
+                                className={inputClass}
+                                value={data.dhcp_server}
+                                onChange={(event) =>
+                                    setData(
+                                        'dhcp_server',
+                                        event.target.value,
+                                    )
+                                }
+                                placeholder="dhcp-client-server"
+                            />
+
+                            <p className="mt-1 text-xs text-slate-500">
+                                Existing RouterOS DHCP server name.
+                            </p>
                         </Field>
                     </div>
 

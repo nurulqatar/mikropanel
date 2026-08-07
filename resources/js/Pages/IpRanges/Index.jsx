@@ -1,41 +1,28 @@
 import AppLayout from '@/Layouts/AppLayout';
-import { Head, Link, router } from '@inertiajs/react';
+import {
+    Head,
+    Link,
+    router,
+} from '@inertiajs/react';
 
 export default function Index({
     ranges = [],
-    flash = {},
+    summary = {},
 }) {
-    const enabledCount = ranges.filter(
-        (range) => Boolean(range.enabled),
-    ).length;
-
-    const routerCount = new Set(
-        ranges
-            .map((range) => range.router_id)
-            .filter(Boolean),
-    ).size;
-
-    const totalCapacity = ranges.reduce(
-        (total, range) =>
-            total +
-            calculateCapacity(
-                range.start_ip,
-                range.end_ip,
-            ),
-        0,
-    );
-
-    const deleteRange = (range) => {
+    const removeRange = (id) => {
         if (
             !confirm(
-                `Delete IP Pool "${range.name}"?`,
+                'Delete this IP Pool?',
             )
         ) {
             return;
         }
 
         router.delete(
-            route('ip-ranges.destroy', range.id),
+            route(
+                'ip-ranges.destroy',
+                id,
+            ),
             {
                 preserveScroll: true,
             },
@@ -50,334 +37,291 @@ export default function Index({
                 <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
                         <h1 className="text-3xl font-bold text-slate-800">
-                            IP Pools
+                            Global IP Pools
                         </h1>
 
                         <p className="mt-1 text-slate-500">
-                            Manage client IP ranges for your MikroTik routers
+                            Panel-managed client IP allocation shared
+                            across all enabled MikroTik routers.
                         </p>
                     </div>
 
                     <Link
-                        href={route('ip-ranges.create')}
-                        className="inline-flex items-center gap-2 rounded-xl bg-cyan-600 px-5 py-3 font-semibold text-white shadow-sm transition hover:bg-cyan-700"
+                        href={route(
+                            'ip-ranges.create',
+                        )}
+                        className="rounded-lg bg-cyan-600 px-5 py-3 font-semibold text-white shadow hover:bg-cyan-700"
                     >
-                        <span className="text-lg">+</span>
-                        Add IP Pool
+                        + Add IP Pool
                     </Link>
                 </div>
 
-                {flash?.success && (
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-700">
-                        {flash.success}
-                    </div>
-                )}
-
-                {flash?.error && (
-                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">
-                        {flash.error}
-                    </div>
-                )}
-
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <SummaryCard
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                    <Stat
                         label="Total Pools"
-                        value={ranges.length}
-                        description="Configured IP ranges"
-                        icon="🌐"
+                        value={
+                            summary.total_pools ?? 0
+                        }
                     />
 
-                    <SummaryCard
+                    <Stat
                         label="Enabled Pools"
-                        value={enabledCount}
-                        description="Available for clients"
-                        icon="✅"
+                        value={
+                            summary.enabled_pools ?? 0
+                        }
                     />
 
-                    <SummaryCard
-                        label="Routers"
-                        value={routerCount}
-                        description="Routers with IP pools"
-                        icon="📡"
+                    <Stat
+                        label="Total IPs"
+                        value={
+                            formatNumber(
+                                summary.total_ips,
+                            )
+                        }
                     />
 
-                    <SummaryCard
-                        label="Total Capacity"
-                        value={totalCapacity.toLocaleString()}
-                        description="IP addresses in all pools"
-                        icon="🔢"
+                    <Stat
+                        label="Used IPs"
+                        value={
+                            formatNumber(
+                                summary.used_ips,
+                            )
+                        }
+                    />
+
+                    <Stat
+                        label="Free IPs"
+                        value={
+                            formatNumber(
+                                summary.free_ips,
+                            )
+                        }
                     />
                 </div>
 
-                {ranges.length === 0 ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-sm">
-                        <div className="text-6xl">
-                            🌐
-                        </div>
+                <div className="overflow-hidden rounded-xl bg-white shadow">
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-slate-50 text-left text-sm text-slate-500">
+                                <tr>
+                                    <th className="px-5 py-4">
+                                        Pool
+                                    </th>
 
-                        <h2 className="mt-5 text-2xl font-bold text-slate-800">
-                            No IP Pool Found
-                        </h2>
+                                    <th className="px-5 py-4">
+                                        Network
+                                    </th>
 
-                        <p className="mx-auto mt-2 max-w-md text-slate-500">
-                            Create an IP pool to automatically assign free IP addresses to new clients.
-                        </p>
+                                    <th className="px-5 py-4">
+                                        IP Range
+                                    </th>
 
-                        <Link
-                            href={route('ip-ranges.create')}
-                            className="mt-6 inline-flex rounded-xl bg-cyan-600 px-6 py-3 font-semibold text-white hover:bg-cyan-700"
-                        >
-                            Create First IP Pool
-                        </Link>
-                    </div>
-                ) : (
-                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                        <div className="border-b border-slate-200 px-6 py-5">
-                            <h2 className="text-lg font-bold text-slate-800">
-                                Configured IP Pools
-                            </h2>
+                                    <th className="px-5 py-4 text-center">
+                                        Total IP
+                                    </th>
 
-                            <p className="mt-1 text-sm text-slate-500">
-                                Free IP addresses are allocated automatically from these ranges.
-                            </p>
-                        </div>
+                                    <th className="px-5 py-4 text-center">
+                                        Used
+                                    </th>
 
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full">
-                                <thead className="bg-slate-50">
+                                    <th className="px-5 py-4 text-center">
+                                        Free
+                                    </th>
+
+                                    <th className="min-w-48 px-5 py-4">
+                                        Usage
+                                    </th>
+
+                                    <th className="px-5 py-4">
+                                        Status
+                                    </th>
+
+                                    <th className="px-5 py-4 text-right">
+                                        Actions
+                                    </th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+                                {ranges.length === 0 ? (
                                     <tr>
-                                        <TableHead>
-                                            Pool
-                                        </TableHead>
-
-                                        <TableHead>
-                                            Router
-                                        </TableHead>
-
-                                        <TableHead>
-                                            Network
-                                        </TableHead>
-
-                                        <TableHead>
-                                            Address Range
-                                        </TableHead>
-
-                                        <TableHead>
-                                            Gateway
-                                        </TableHead>
-
-                                        <TableHead>
-                                            Capacity
-                                        </TableHead>
-
-                                        <TableHead>
-                                            Status
-                                        </TableHead>
-
-                                        <TableHead>
-                                            Actions
-                                        </TableHead>
+                                        <td
+                                            colSpan="9"
+                                            className="px-5 py-10 text-center text-slate-500"
+                                        >
+                                            No IP Pool found.
+                                        </td>
                                     </tr>
-                                </thead>
+                                ) : (
+                                    ranges.map(
+                                        (item) => {
+                                            const usage =
+                                                Number(
+                                                    item.usage_percent ??
+                                                        0,
+                                                );
 
-                                <tbody className="divide-y divide-slate-200">
-                                    {ranges.map((range) => {
-                                        const capacity =
-                                            calculateCapacity(
-                                                range.start_ip,
-                                                range.end_ip,
-                                            );
+                                            return (
+                                                <tr
+                                                    key={item.id}
+                                                    className="border-t border-slate-100"
+                                                >
+                                                    <td className="px-5 py-4">
+                                                        <p className="font-semibold text-slate-800">
+                                                            {item.name}
+                                                        </p>
 
-                                        return (
-                                            <tr
-                                                key={range.id}
-                                                className="transition hover:bg-slate-50"
-                                            >
-                                                <td className="px-5 py-4">
-                                                    <div className="font-bold text-slate-800">
-                                                        {range.name}
-                                                    </div>
+                                                        <p className="mt-1 font-mono text-xs text-slate-400">
+                                                            Gateway:{' '}
+                                                            {item.gateway}
+                                                        </p>
+                                                    </td>
 
-                                                    <div className="mt-1 text-xs text-slate-500">
-                                                        Interface:{' '}
-                                                        <span className="font-mono">
-                                                            {range.interface ||
-                                                                '-'}
-                                                        </span>
-                                                    </div>
-                                                </td>
+                                                    <td className="px-5 py-4 font-mono text-sm">
+                                                        {item.network}
+                                                    </td>
 
-                                                <td className="px-5 py-4">
-                                                    <div className="font-semibold text-slate-700">
-                                                        {range.router?.name ||
-                                                            'Unknown Router'}
-                                                    </div>
-                                                </td>
+                                                    <td className="px-5 py-4 font-mono text-sm whitespace-nowrap">
+                                                        {item.start_ip}
+                                                        {' - '}
+                                                        {item.end_ip}
+                                                    </td>
 
-                                                <td className="whitespace-nowrap px-5 py-4 font-mono text-sm text-slate-700">
-                                                    {range.network}
-                                                </td>
-
-                                                <td className="px-5 py-4">
-                                                    <div className="whitespace-nowrap rounded-lg bg-slate-100 px-3 py-2 font-mono text-sm text-slate-700">
-                                                        {range.start_ip}
-                                                        <span className="mx-2 text-slate-400">
-                                                            →
-                                                        </span>
-                                                        {range.end_ip}
-                                                    </div>
-                                                </td>
-
-                                                <td className="whitespace-nowrap px-5 py-4 font-mono text-sm text-slate-700">
-                                                    {range.gateway ||
-                                                        '-'}
-                                                </td>
-
-                                                <td className="px-5 py-4">
-                                                    <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-bold text-blue-700">
-                                                        {capacity.toLocaleString()}{' '}
-                                                        IPs
-                                                    </span>
-                                                </td>
-
-                                                <td className="px-5 py-4">
-                                                    <StatusBadge
-                                                        enabled={Boolean(
-                                                            range.enabled,
+                                                    <td className="px-5 py-4 text-center text-lg font-bold text-slate-800">
+                                                        {formatNumber(
+                                                            item.total_ips,
                                                         )}
-                                                    />
-                                                </td>
+                                                    </td>
 
-                                                <td className="px-5 py-4">
-                                                    <div className="flex flex-wrap gap-2">
-                                                        <Link
-                                                            href={route(
-                                                                'ip-ranges.edit',
-                                                                range.id,
+                                                    <td className="px-5 py-4 text-center">
+                                                        <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-700">
+                                                            {formatNumber(
+                                                                item.used_ips,
                                                             )}
-                                                            className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-600"
-                                                        >
-                                                            Edit
-                                                        </Link>
+                                                        </span>
+                                                    </td>
 
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                deleteRange(
-                                                                    range,
-                                                                )
+                                                    <td className="px-5 py-4 text-center">
+                                                        <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-700">
+                                                            {formatNumber(
+                                                                item.free_ips,
+                                                            )}
+                                                        </span>
+                                                    </td>
+
+                                                    <td className="px-5 py-4">
+                                                        <div className="flex items-center justify-between gap-3 text-xs">
+                                                            <span className="font-semibold text-slate-600">
+                                                                {usage}%
+                                                            </span>
+
+                                                            <span className="text-slate-400">
+                                                                {formatNumber(
+                                                                    item.used_ips,
+                                                                )}
+                                                                {' / '}
+                                                                {formatNumber(
+                                                                    item.total_ips,
+                                                                )}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                                                            <div
+                                                                className="h-full rounded-full bg-cyan-600 transition-all"
+                                                                style={{
+                                                                    width: `${Math.min(
+                                                                        100,
+                                                                        Math.max(
+                                                                            0,
+                                                                            usage,
+                                                                        ),
+                                                                    )}%`,
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    </td>
+
+                                                    <td className="px-5 py-4">
+                                                        <span
+                                                            className={
+                                                                item.enabled
+                                                                    ? 'rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700'
+                                                                    : 'rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600'
                                                             }
-                                                            className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
                                                         >
-                                                            Delete
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
+                                                            {item.enabled
+                                                                ? 'Enabled'
+                                                                : 'Disabled'}
+                                                        </span>
+                                                    </td>
+
+                                                    <td className="px-5 py-4">
+                                                        <div className="flex justify-end gap-2">
+                                                            <Link
+                                                                href={route(
+                                                                    'ip-ranges.edit',
+                                                                    item.id,
+                                                                )}
+                                                                className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-600"
+                                                            >
+                                                                Edit
+                                                            </Link>
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    removeRange(
+                                                                        item.id,
+                                                                    )
+                                                                }
+                                                                className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        },
+                                    )
+                                )}
+                            </tbody>
+                        </table>
                     </div>
-                )}
+                </div>
             </div>
         </AppLayout>
     );
 }
 
-function SummaryCard({
+function Stat({
     label,
     value,
-    description,
-    icon,
 }) {
     return (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-start justify-between gap-4">
-                <div>
-                    <p className="text-sm font-semibold text-slate-500">
-                        {label}
-                    </p>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-sm font-medium text-slate-500">
+                {label}
+            </p>
 
-                    <p className="mt-2 text-3xl font-bold text-slate-800">
-                        {value}
-                    </p>
-
-                    <p className="mt-1 text-xs text-slate-400">
-                        {description}
-                    </p>
-                </div>
-
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-50 text-2xl">
-                    {icon}
-                </div>
-            </div>
+            <p className="mt-2 text-3xl font-bold text-slate-800">
+                {value}
+            </p>
         </div>
     );
 }
 
-function TableHead({ children }) {
-    return (
-        <th className="whitespace-nowrap px-5 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-500">
-            {children}
-        </th>
+function formatNumber(value) {
+    const number = Number(
+        value ?? 0,
     );
-}
 
-function StatusBadge({ enabled }) {
-    return (
-        <span
-            className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
-                enabled
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-red-100 text-red-700'
-            }`}
-        >
-            {enabled ? '● Enabled' : '● Disabled'}
-        </span>
-    );
-}
-
-function calculateCapacity(startIp, endIp) {
-    const start = ipv4ToNumber(startIp);
-    const end = ipv4ToNumber(endIp);
-
-    if (
-        start === null ||
-        end === null ||
-        end < start
-    ) {
-        return 0;
+    if (!Number.isFinite(number)) {
+        return '0';
     }
 
-    return end - start + 1;
-}
-
-function ipv4ToNumber(ip) {
-    if (!ip) {
-        return null;
-    }
-
-    const parts = String(ip)
-        .trim()
-        .split('.')
-        .map(Number);
-
-    if (
-        parts.length !== 4 ||
-        parts.some(
-            (part) =>
-                !Number.isInteger(part) ||
-                part < 0 ||
-                part > 255,
-        )
-    ) {
-        return null;
-    }
-
-    return parts.reduce(
-        (total, part) => total * 256 + part,
-        0,
-    );
+    return new Intl.NumberFormat(
+        'en-US',
+    ).format(number);
 }

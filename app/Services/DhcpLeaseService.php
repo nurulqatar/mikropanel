@@ -3,101 +3,279 @@
 namespace App\Services;
 
 use App\Models\Client;
+use RuntimeException;
 use RouterOS\Client as RouterClient;
 use RouterOS\Query;
 
 class DhcpLeaseService
 {
-    protected function api(Client $client): RouterClient
-    {
+    protected function api(
+        Client $client
+    ): RouterClient {
         $router = $client->router;
+
+        if (!$router) {
+            throw new RuntimeException(
+                'Router is missing for DHCP operation.'
+            );
+        }
 
         return new RouterClient([
             'host' => $router->host,
             'user' => $router->username,
             'pass' => $router->password,
-            'port' => $router->api_port ?? 8728,
+            'port' =>
+                (int) (
+                    $router->api_port
+                    ?? 8728
+                ),
+            'ssl' =>
+                (bool) $router->use_ssl,
+            'timeout' => 10,
         ]);
     }
 
-    public function create(Client $client): ?string
-    {
+    public function create(
+        Client $client
+    ): string {
         $api = $this->api($client);
 
-        $query = (new Query('/ip/dhcp-server/lease/add'))
-            ->equal('address', $client->ip_address)
-            ->equal('mac-address', $client->mac_address)
-            ->equal('comment', $client->client_code)
-            ->equal('disabled', 'false');
+        $server = trim(
+            (string) (
+                $client
+                    ->router
+                    ?->dhcp_server
+                ?? ''
+            )
+        );
 
-        $api->query($query)->read();
+        $existing = $this->findId(
+            $api,
+            $client
+        );
 
-        $leases = $api->query(
-            (new Query('/ip/dhcp-server/lease/print'))
-                ->where('address', $client->ip_address)
+        if ($existing) {
+            return $existing;
+        }
+
+        $query = (new Query(
+            '/ip/dhcp-server/lease/add'
+        ))
+            ->equal(
+                'address',
+                $client->ip_address
+            )
+            ->equal(
+                'mac-address',
+                $client->mac_address
+            )
+            ->equal(
+                'comment',
+                $client->client_code
+            )
+            ->equal(
+                'disabled',
+                'false'
+            );
+
+        if ($server !== '') {
+            $query = $query->equal(
+                'server',
+                $server
+            );
+        }
+
+        $api->query(
+            $query
         )->read();
 
-        return $leases[0]['.id'] ?? null;
+        $id = $this->findId(
+            $api,
+            $client
+        );
+
+        if (!$id) {
+            throw new RuntimeException(
+                'DHCP lease was created but its MikroTik ID could not be verified.'
+            );
+        }
+
+        return $id;
     }
 
-    public function update(Client $client): void
-    {
-        if (!$client->mikrotik_lease_id) {
+    public function update(
+        Client $client
+    ): void {
+        $api = $this->api($client);
+
+        $server = trim(
+            (string) (
+                $client
+                    ->router
+                    ?->dhcp_server
+                ?? ''
+            )
+        );
+
+        $id = $this->resolveId(
+            $api,
+            $client
+        );
+
+        if (!$id) {
+            throw new RuntimeException(
+                'DHCP lease could not be found on MikroTik.'
+            );
+        }
+
+        $query = (new Query(
+            '/ip/dhcp-server/lease/set'
+        ))
+            ->equal('.id', $id)
+            ->equal(
+                'address',
+                $client->ip_address
+            )
+            ->equal(
+                'mac-address',
+                $client->mac_address
+            )
+            ->equal(
+                'comment',
+                $client->client_code
+            );
+
+        if ($server !== '') {
+            $query = $query->equal(
+                'server',
+                $server
+            );
+        }
+
+        $api->query(
+            $query
+        )->read();
+    }
+
+    public function disable(
+        Client $client
+    ): void {
+        $api = $this->api($client);
+
+        $id = $this->resolveId(
+            $api,
+            $client
+        );
+
+        if (!$id) {
             return;
         }
 
-        $api = $this->api($client);
-
         $api->query(
-            (new Query('/ip/dhcp-server/lease/set'))
-                ->equal('.id', $client->mikrotik_lease_id)
-                ->equal('address', $client->ip_address)
-                ->equal('mac-address', $client->mac_address)
-                ->equal('comment', $client->client_code)
+            (new Query(
+                '/ip/dhcp-server/lease/set'
+            ))
+                ->equal('.id', $id)
+                ->equal(
+                    'disabled',
+                    'yes'
+                )
         )->read();
     }
 
-    public function disable(Client $client): void
-    {
-        if (!$client->mikrotik_lease_id) {
-            return;
-        }
-
+    public function enable(
+        Client $client
+    ): void {
         $api = $this->api($client);
 
+        $id = $this->resolveId(
+            $api,
+            $client
+        );
+
+        if (!$id) {
+            throw new RuntimeException(
+                'DHCP lease is missing on MikroTik.'
+            );
+        }
+
         $api->query(
-            (new Query('/ip/dhcp-server/lease/set'))
-                ->equal('.id', $client->mikrotik_lease_id)
-                ->equal('disabled', 'yes')
+            (new Query(
+                '/ip/dhcp-server/lease/set'
+            ))
+                ->equal('.id', $id)
+                ->equal(
+                    'disabled',
+                    'no'
+                )
         )->read();
     }
 
-    public function enable(Client $client): void
-    {
-        if (!$client->mikrotik_lease_id) {
+    public function remove(
+        Client $client
+    ): void {
+        $api = $this->api($client);
+
+        /*
+         * Search the Router instead of blindly
+         * trusting a possibly stale saved .id.
+         */
+        $id = $this->findId(
+            $api,
+            $client
+        );
+
+        if (!$id) {
             return;
         }
 
-        $api = $this->api($client);
-
         $api->query(
-            (new Query('/ip/dhcp-server/lease/set'))
-                ->equal('.id', $client->mikrotik_lease_id)
-                ->equal('disabled', 'no')
+            (new Query(
+                '/ip/dhcp-server/lease/remove'
+            ))
+                ->equal('.id', $id)
         )->read();
     }
 
-    public function remove(Client $client): void
-    {
-        if (!$client->mikrotik_lease_id) {
-            return;
+    private function resolveId(
+        RouterClient $api,
+        Client $client
+    ): ?string {
+        if ($client->mikrotik_lease_id) {
+            return $client
+                ->mikrotik_lease_id;
         }
 
-        $api = $this->api($client);
+        return $this->findId(
+            $api,
+            $client
+        );
+    }
 
-        $api->query(
-            (new Query('/ip/dhcp-server/lease/remove'))
-                ->equal('.id', $client->mikrotik_lease_id)
+    private function findId(
+        RouterClient $api,
+        Client $client
+    ): ?string {
+        $rows = $api->query(
+            (new Query(
+                '/ip/dhcp-server/lease/print'
+            ))
+                ->where(
+                    'comment',
+                    $client->client_code
+                )
         )->read();
+
+        foreach ($rows as $row) {
+            if (
+                ($row['comment'] ?? null)
+                    === $client->client_code
+            ) {
+                return $row['.id']
+                    ?? null;
+            }
+        }
+
+        return null;
     }
 }

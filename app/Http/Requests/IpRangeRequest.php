@@ -14,9 +14,9 @@ class IpRangeRequest extends FormRequest
     public function rules(): array
     {
         return [
-
             'router_id' => [
-                'required',
+                'nullable',
+                'integer',
                 'exists:routers,id',
             ],
 
@@ -25,9 +25,8 @@ class IpRangeRequest extends FormRequest
                 'string',
                 'max:100',
             ],
-
             'interface' => [
-                'required',
+                'nullable',
                 'string',
                 'max:100',
             ],

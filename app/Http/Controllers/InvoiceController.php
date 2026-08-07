@@ -250,7 +250,7 @@ class InvoiceController extends Controller
                     )->startOfDay()
                 )
             ) {
-                $status = 'overdue';
+                $status = 'unpaid';
             } else {
                 $status = 'unpaid';
             }

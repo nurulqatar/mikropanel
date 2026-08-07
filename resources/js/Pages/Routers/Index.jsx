@@ -158,6 +158,18 @@ function RouterCard({
                                 : ' • API'}
                         </p>
 
+                        <p className="mt-1 text-xs text-slate-500">
+                            Client Interface:{' '}
+                            <span className="font-mono">
+                                {item.client_interface || '-'}
+                            </span>
+                            {' • '}
+                            DHCP Server:{' '}
+                            <span className="font-mono">
+                                {item.dhcp_server || '-'}
+                            </span>
+                        </p>
+
                         <p
                             className={`mt-2 text-sm ${
                                 online

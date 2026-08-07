@@ -31,4 +31,13 @@ class Payment extends Model
     {
         return $this->belongsTo(Client::class)->withTrashed();
     }
+
+    public function receiver()
+    {
+        return $this->belongsTo(
+            User::class,
+            'received_by'
+        );
+    }
+
 }

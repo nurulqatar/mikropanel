@@ -12,6 +12,8 @@ export default function Index({
     flash = {},
 }) {
     const [search, setSearch] = useState('');
+    const [page, setPage] = useState(1);
+    const [perPage, setPerPage] = useState(10);
     const [filter, setFilter] =
         useState('all');
 
@@ -222,6 +224,38 @@ export default function Index({
         payableAmount - receivedAmount,
     );
 
+
+    const totalPages = Math.max(
+        1,
+        Math.ceil(
+            filteredClients.length /
+                perPage,
+        ),
+    );
+
+    const safePage = Math.min(
+        page,
+        totalPages,
+    );
+
+    const pagedClients =
+        filteredClients.slice(
+            (safePage - 1) * perPage,
+            safePage * perPage,
+        );
+
+    const firstVisible =
+        filteredClients.length === 0
+            ? 0
+            : (safePage - 1) *
+                  perPage +
+              1;
+
+    const lastVisible = Math.min(
+        safePage * perPage,
+        filteredClients.length,
+    );
+
     return (
         <AppLayout title="Clients">
             <Head title="Clients" />
@@ -316,7 +350,7 @@ export default function Index({
                 </div>
 
                 <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <table className="min-w-full">
+                    <table className="min-w-full text-sm whitespace-nowrap text-xs [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-xs [&_td]:px-2 [&_td]:py-0.5 [&_td]:text-xs [&_td]:leading-tight [&_td]:align-middle [&_td_a]:py-0 [&_td_button]:px-2 [&_td_button]:py-0.5 [&_td_button]:text-xs">
                         <thead className="bg-slate-800 text-white">
                             <tr>
                                 <TableHead>
@@ -366,13 +400,13 @@ export default function Index({
                                 </tr>
                             )}
 
-                            {filteredClients.map(
+                            {pagedClients.map(
                                 (client) => (
                                     <tr
                                         key={client.id}
                                         className="border-t hover:bg-slate-50"
                                     >
-                                        <td className="px-5 py-4">
+                                        <td className="px-2 py-0.5">
                                             <Link
                                                 href={route(
                                                     'clients.show',
@@ -391,7 +425,7 @@ export default function Index({
                                                 }
                                             </div>
 
-                                            <div className="mt-1 text-xs text-slate-400">
+                                            <div className="mt-0 text-xs leading-none text-slate-400">
                                                 {client
                                                     .router
                                                     ?.name ??
@@ -399,13 +433,13 @@ export default function Index({
                                             </div>
                                         </td>
 
-                                        <td className="whitespace-nowrap px-5 py-4 font-mono text-sm">
+                                        <td className="whitespace-nowrap px-2 py-0.5 font-mono text-sm">
                                             {
                                                 client.ip_address
                                             }
                                         </td>
 
-                                        <td className="px-5 py-4">
+                                        <td className="px-2 py-0.5">
                                             <div className="font-semibold text-slate-800">
                                                 {client
                                                     .package
@@ -413,7 +447,7 @@ export default function Index({
                                                     '-'}
                                             </div>
 
-                                            <div className="mt-1 text-sm text-slate-500">
+                                            <div className="mt-0 text-xs leading-none text-slate-500">
                                                 QAR{' '}
                                                 {formatMoney(
                                                     client
@@ -431,13 +465,13 @@ export default function Index({
                                             </div>
                                         </td>
 
-                                        <td className="whitespace-nowrap px-5 py-4">
+                                        <td className="whitespace-nowrap px-2 py-0.5">
                                             {formatDate(
                                                 client.expiry_date,
                                             )}
                                         </td>
 
-                                        <td className="whitespace-nowrap px-5 py-4">
+                                        <td className="whitespace-nowrap px-2 py-0.5">
                                             {hasDue(
                                                 client,
                                             ) ? (
@@ -451,7 +485,7 @@ export default function Index({
                                                         )}
                                                     </span>
 
-                                                    <p className="mt-1 text-xs font-semibold text-red-500">
+                                                    <p className="mt-0 text-xs leading-none font-semibold text-red-500">
                                                         Payment due
                                                     </p>
                                                 </div>
@@ -462,7 +496,7 @@ export default function Index({
                                             )}
                                         </td>
 
-                                        <td className="px-5 py-4">
+                                        <td className="px-2 py-0.5">
                                             <AccountBadge
                                                 enabled={
                                                     client.enabled
@@ -470,7 +504,7 @@ export default function Index({
                                             />
                                         </td>
 
-                                        <td className="px-5 py-4">
+                                        <td className="px-2 py-0.5">
                                             <ConnectionBadge
                                                 connected={
                                                     client.connected
@@ -478,7 +512,7 @@ export default function Index({
                                             />
                                         </td>
 
-                                        <td className="px-5 py-4">
+                                        <td className="px-2 py-0.5">
                                             <div className="flex min-w-[340px] flex-wrap gap-2">
                                                 <button
                                                     type="button"
@@ -487,7 +521,7 @@ export default function Index({
                                                             client,
                                                         )
                                                     }
-                                                    className={`rounded-lg px-3 py-2 text-sm font-bold text-white ${
+                                                    className={`rounded-lg px-2 py-0.5 text-sm font-bold text-white ${
                                                         hasDue(
                                                             client,
                                                         )
@@ -511,7 +545,7 @@ export default function Index({
                                                         'clients.edit',
                                                         client.id,
                                                     )}
-                                                    className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-600"
+                                                    className="rounded-lg bg-amber-500 px-2 py-0.5 text-sm font-semibold text-white hover:bg-amber-600"
                                                 >
                                                     Edit
                                                 </Link>
@@ -524,7 +558,7 @@ export default function Index({
                                                                 client.id,
                                                             )
                                                         }
-                                                        className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                                                        className="rounded-lg bg-red-600 px-2 py-0.5 text-sm font-semibold text-white hover:bg-red-700"
                                                     >
                                                         Suspend
                                                     </button>
@@ -536,7 +570,7 @@ export default function Index({
                                                                 client.id,
                                                             )
                                                         }
-                                                        className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                                                        className="rounded-lg bg-emerald-600 px-2 py-0.5 text-sm font-semibold text-white hover:bg-emerald-700"
                                                     >
                                                         Activate
                                                     </button>
@@ -549,7 +583,7 @@ export default function Index({
                                                             client.id,
                                                         )
                                                     }
-                                                    className="rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                                                    className="rounded-lg bg-slate-700 px-2 py-0.5 text-sm font-semibold text-white hover:bg-slate-800"
                                                 >
                                                     Archive
                                                 </button>
@@ -560,6 +594,101 @@ export default function Index({
                             )}
                         </tbody>
                     </table>
+
+                    <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="text-sm text-slate-500">
+                            Showing{' '}
+                            <span className="font-semibold text-slate-700">
+                                {firstVisible}
+                            </span>
+                            {' - '}
+                            <span className="font-semibold text-slate-700">
+                                {lastVisible}
+                            </span>
+                            {' of '}
+                            <span className="font-semibold text-slate-700">
+                                {filteredClients.length}
+                            </span>
+                            {' clients'}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+                            <label className="flex items-center gap-2 text-sm text-slate-600">
+                                Rows per page
+
+                                <select
+                                    value={perPage}
+                                    onChange={(event) => {
+                                        setPerPage(
+                                            Number(
+                                                event.target.value,
+                                            ),
+                                        );
+                                        setPage(1);
+                                    }}
+                                    className="rounded-lg border border-slate-300 bg-white px-2 py-1.5"
+                                >
+                                    <option value={10}>
+                                        10
+                                    </option>
+
+                                    <option value={25}>
+                                        25
+                                    </option>
+
+                                    <option value={50}>
+                                        50
+                                    </option>
+                                </select>
+                            </label>
+
+                            <button
+                                type="button"
+                                disabled={
+                                    safePage <= 1
+                                }
+                                onClick={() =>
+                                    setPage(
+                                        Math.max(
+                                            1,
+                                            safePage -
+                                                1,
+                                        ),
+                                    )
+                                }
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                Previous
+                            </button>
+
+                            <span className="min-w-24 text-center text-sm font-semibold text-slate-600">
+                                Page {safePage}
+                                {' / '}
+                                {totalPages}
+                            </span>
+
+                            <button
+                                type="button"
+                                disabled={
+                                    safePage >=
+                                    totalPages
+                                }
+                                onClick={() =>
+                                    setPage(
+                                        Math.min(
+                                            totalPages,
+                                            safePage +
+                                                1,
+                                        ),
+                                    )
+                                }
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
             </div>
 

@@ -528,6 +528,20 @@ export default function Index({
                                     required
                                 />
 
+                                <Toggle
+                                    label="Automatic Monthly Billing"
+                                    description="Generate each client's monthly invoice automatically on their billing day"
+                                    checked={
+                                        data.auto_billing_enabled
+                                    }
+                                    onChange={(value) =>
+                                        setData(
+                                            'auto_billing_enabled',
+                                            value,
+                                        )
+                                    }
+                                />
+
                                 <Input
                                     label="Default Due Days"
                                     type="number"

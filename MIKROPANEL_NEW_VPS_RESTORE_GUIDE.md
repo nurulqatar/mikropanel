@@ -1,11 +1,11 @@
 # MikroPanel - GitHub থেকে নতুন VPS-এ Full Restore Guide
 
-**Project:** MikroPanel (Laravel + React/Inertia + MikroTik API)  
-**GitHub Repository:** `git@github.com:nurulqatar/mikropanel.git`  
-**Target OS:** Ubuntu Server 24.04  
-**Web Server:** Nginx, Port 80  
-**PHP:** 8.3  
-**Database:** MySQL  
+**Project:** MikroPanel (Laravel + React/Inertia + MikroTik API)
+**GitHub Repository:** `git@github.com:nurulqatar/mikropanel.git`
+**Target OS:** Ubuntu Server 24.04
+**Web Server:** Nginx, Port 80
+**PHP:** 8.3
+**Database:** MySQL
 **Prepared:** 2026-08-07
 
 ---

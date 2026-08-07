@@ -1,6 +1,5 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
-import { useMemo } from 'react';
 
 export default function Create({
     routers,
@@ -14,7 +13,6 @@ export default function Create({
         processing,
         errors,
     } = useForm({
-        router_id: '',
         ip_range_id: '',
         package_id: '',
         name: '',
@@ -22,28 +20,11 @@ export default function Create({
         phone: '',
     });
 
-    const filteredIpRanges = useMemo(() => {
-        if (!data.router_id) {
-            return [];
-        }
-
-        return ipRanges.filter(
-            (range) =>
-                String(range.router_id) ===
-                String(data.router_id),
-        );
-    }, [data.router_id, ipRanges]);
-
     const selectedPackage = packages.find(
         (pkg) =>
             String(pkg.id) ===
             String(data.package_id),
     );
-
-    const changeRouter = (event) => {
-        setData('router_id', event.target.value);
-        setData('ip_range_id', '');
-    };
 
     const submit = (event) => {
         event.preventDefault();
@@ -79,32 +60,8 @@ export default function Create({
                         </h2>
 
                         <div className="grid gap-5 md:grid-cols-2">
-                            <Field
-                                label="Router"
-                                error={errors.router_id}
-                            >
-                                <select
-                                    value={data.router_id}
-                                    onChange={changeRouter}
-                                    className={inputClass}
-                                >
-                                    <option value="">
-                                        Select Router
-                                    </option>
-
-                                    {routers.map((router) => (
-                                        <option
-                                            key={router.id}
-                                            value={router.id}
-                                        >
-                                            {router.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </Field>
-
-                            <Field
-                                label="IP Range"
+<Field
+                                label="IP Pool"
                                 error={errors.ip_range_id}
                             >
                                 <select
@@ -115,14 +72,13 @@ export default function Create({
                                             event.target.value,
                                         )
                                     }
-                                    disabled={!data.router_id}
                                     className={inputClass}
                                 >
                                     <option value="">
-                                        Select IP Range
+                                        Select IP Pool
                                     </option>
 
-                                    {filteredIpRanges.map(
+                                    {ipRanges.map(
                                         (range) => (
                                             <option
                                                 key={range.id}

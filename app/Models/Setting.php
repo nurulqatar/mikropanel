@@ -139,6 +139,17 @@ class Setting extends Model
     ): mixed {
         $value = $setting->value;
 
+        /*
+         * Preserve database NULL values.
+         *
+         * Without this guard, nullable integer settings
+         * such as default_router_id become integer 0,
+         * causing exists validation to fail.
+         */
+        if ($value === null) {
+            return $default;
+        }
+
         if (
             $setting->is_encrypted
             && filled($value)

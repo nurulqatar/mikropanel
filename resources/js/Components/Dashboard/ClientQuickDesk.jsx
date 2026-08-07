@@ -1158,4 +1158,3 @@ function formatDate(value) {
         ? String(value).slice(0, 10)
         : '-';
 }
-

@@ -22,11 +22,6 @@ class ClientRequest extends FormRequest
             : $routeClient;
 
         return [
-            'router_id' => [
-                'required',
-                'integer',
-                'exists:routers,id',
-            ],
 
             'ip_range_id' => [
                 'required',

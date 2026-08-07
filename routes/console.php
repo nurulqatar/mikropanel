@@ -16,6 +16,48 @@ Artisan::command(
     'Display an inspiring quote'
 );
 
+/*
+|--------------------------------------------------------------------------
+| Automatic Monthly Billing
+|--------------------------------------------------------------------------
+|
+| প্রথম install-এ default FALSE।
+| Dry-run verify করার পরে setting enable করা হবে।
+|
+*/
+Schedule::command(
+    'billing:generate-monthly'
+)
+    ->hourlyAt(5)
+    ->timezone('Asia/Qatar')
+    ->withoutOverlapping(30)
+    ->when(
+        fn (): bool =>
+            Setting::bool(
+                'auto_billing_enabled',
+                false
+            )
+    );
+
+/*
+|--------------------------------------------------------------------------
+| Automatic Expiry Suspension
+|--------------------------------------------------------------------------
+*/
+Schedule::command(
+    'notifications:prepare-external'
+)
+    ->everyFiveMinutes()
+    ->timezone('Asia/Qatar')
+    ->withoutOverlapping(10);
+
+Schedule::command(
+    'notifications:generate-panel'
+)
+    ->everyFiveMinutes()
+    ->timezone('Asia/Qatar')
+    ->withoutOverlapping(10);
+
 Schedule::command(
     'clients:suspend-expired'
 )
@@ -29,6 +71,11 @@ Schedule::command(
             )
     );
 
+/*
+|--------------------------------------------------------------------------
+| Client Connection Sync
+|--------------------------------------------------------------------------
+*/
 Schedule::command(
     'clients:sync-connection'
 )
@@ -42,6 +89,11 @@ Schedule::command(
             )
     );
 
+/*
+|--------------------------------------------------------------------------
+| Client Usage Sync
+|--------------------------------------------------------------------------
+*/
 Schedule::command(
     'clients:sync-usage'
 )
@@ -54,3 +106,16 @@ Schedule::command(
                 true
             )
     );
+
+/*
+ * Multi-router convergence:
+ * retries failed/offline routers and
+ * automatically discovers newly added
+ * enabled MikroTik routers.
+ */
+\Illuminate\Support\Facades\Schedule::command(
+    'clients:sync-routers'
+)
+    ->everyMinute()
+    ->timezone('Asia/Qatar')
+    ->withoutOverlapping(10);

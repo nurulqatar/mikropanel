@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Services\ClientProvisionService;
+use App\Services\InvoiceServicePeriodService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,7 +22,8 @@ class ClientRenewalController extends Controller
     public function store(
         Request $request,
         Client $client,
-        ClientProvisionService $provision
+        ClientProvisionService $provision,
+        InvoiceServicePeriodService $servicePeriods
     ): RedirectResponse {
         $data = $request->validate([
             'received_amount' => [
@@ -65,7 +67,8 @@ class ClientRenewalController extends Controller
         $result = DB::transaction(
             function () use (
                 $client,
-                $data
+                $data,
+                $servicePeriods
             ): array {
                 $lockedClient = Client::query()
                     ->with('package')
@@ -147,7 +150,8 @@ class ClientRenewalController extends Controller
                         $dueInvoices,
                         $totalDue,
                         $data,
-                        $paymentDate
+                        $paymentDate,
+                        $servicePeriods
                     );
                 }
 
@@ -166,7 +170,13 @@ class ClientRenewalController extends Controller
          * শুধু নতুন renewal-এর সময় MikroTik activate হবে।
          * পুরোনো due payment-এ দ্বিতীয়বার renew হবে না।
          */
-        if ($result['mode'] === 'renewal') {
+        if (
+            $result['mode'] === 'renewal'
+            || (
+                $result['service_applied']
+                ?? false
+            )
+        ) {
             try {
                 $renewedClient = Client::with([
                     'router',
@@ -243,7 +253,8 @@ class ClientRenewalController extends Controller
         $dueInvoices,
         float $totalDue,
         array $data,
-        Carbon $paymentDate
+        Carbon $paymentDate,
+        InvoiceServicePeriodService $servicePeriods
     ): array {
         $receivedAmount = round(
             (float) $data['received_amount'],
@@ -267,6 +278,7 @@ class ClientRenewalController extends Controller
         }
 
         $remainingPayment = $receivedAmount;
+        $serviceApplied = false;
 
         foreach ($dueInvoices as $invoice) {
             if ($remainingPayment <= 0) {
@@ -351,6 +363,18 @@ class ClientRenewalController extends Controller
                     : 'partial',
             ]);
 
+            if ($newDueAmount <= 0) {
+                $appliedClientId =
+                    $servicePeriods
+                        ->applyIfNeeded(
+                            $invoice
+                        );
+
+                if ($appliedClientId) {
+                    $serviceApplied = true;
+                }
+            }
+
             $remainingPayment = round(
                 $remainingPayment
                 - $appliedAmount,
@@ -363,6 +387,9 @@ class ClientRenewalController extends Controller
             'client_id' => $client->id,
             'received_amount' =>
                 $receivedAmount,
+
+            'service_applied' =>
+                $serviceApplied,
 
             'remaining_due' => max(
                 0,
@@ -510,6 +537,19 @@ class ClientRenewalController extends Controller
                 ),
 
             'created_by' => auth()->id(),
+
+            /*
+             * Quick Renew already extends the
+             * client's expiry immediately.
+             * Mark this invoice as applied so
+             * later due payment cannot renew
+             * the same period twice.
+             */
+            'applies_service_period' => true,
+            'service_applied_at' =>
+                Carbon::now(
+                    'Asia/Qatar'
+                ),
         ]);
 
         /*

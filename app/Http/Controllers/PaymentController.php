@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Services\ClientProvisionService;
+use App\Services\InvoiceServicePeriodService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +24,7 @@ class PaymentController extends Controller
             'payments' => Payment::with([
                 'client',
                 'invoice',
+                'receiver:id,name',
             ])
                 ->latest()
                 ->get(),
@@ -52,7 +54,8 @@ class PaymentController extends Controller
 
     public function store(
         Request $request,
-        ClientProvisionService $provision
+        ClientProvisionService $provision,
+        InvoiceServicePeriodService $servicePeriods
     ): RedirectResponse {
         $data = $request->validate([
             'invoice_id' => [
@@ -102,7 +105,10 @@ class PaymentController extends Controller
          * transaction-এর মধ্যে হবে।
          */
         $clientIdToActivate = DB::transaction(
-            function () use ($data): ?int {
+            function () use (
+                $data,
+                $servicePeriods
+            ): ?int {
                 $invoice = Invoice::query()
                     ->lockForUpdate()
                     ->findOrFail($data['invoice_id']);
@@ -196,8 +202,6 @@ class PaymentController extends Controller
                     )
                 );
 
-                $previousStatus = $invoice->status;
-
                 $newStatus = $this->resolveInvoiceStatus(
                     $invoice,
                     $newPaidAmount,
@@ -211,59 +215,20 @@ class PaymentController extends Controller
                 ]);
 
                 /*
-                 * Invoice প্রথমবার fully paid হলে
-                 * expiry renew হবে।
+                 * Fully-paid service invoice applies
+                 * exactly one service period.
+                 *
+                 * InvoiceServicePeriodService contains
+                 * the idempotency protection.
                  */
-                $becameFullyPaid =
-                    $previousStatus !== 'paid'
-                    && $newStatus === 'paid';
-
-                if (!$becameFullyPaid) {
+                if ($newStatus !== 'paid') {
                     return null;
                 }
 
-                $client = Client::query()
-                    ->lockForUpdate()
-                    ->findOrFail($invoice->client_id);
-
-                $client->load('package');
-
-                $validityDays = (int) (
-                    $client->package?->validity_days ?? 0
-                );
-
-                if ($validityDays < 1) {
-                    throw ValidationException::withMessages([
-                        'invoice_id' =>
-                            'The client package validity days are missing.',
-                    ]);
-                }
-
-                /*
-                 * Current expiry future হলে সেখান থেকে
-                 * validity যোগ হবে।
-                 *
-                 * Expired হলে আজকের date থেকে validity
-                 * যোগ হবে।
-                 */
-                $currentExpiry = $client->expiry_date
-                    ? $client->expiry_date->copy()->startOfDay()
-                    : null;
-
-                $baseDate = $currentExpiry
-                    && $currentExpiry->greaterThanOrEqualTo(
-                        today()
-                    )
-                        ? $currentExpiry
-                        : today();
-
-                $client->update([
-                    'expiry_date' => $baseDate
-                        ->copy()
-                        ->addDays($validityDays),
-                ]);
-
-                return $client->id;
+                return $servicePeriods
+                    ->applyIfNeeded(
+                        $invoice
+                    );
             }
         );
 
@@ -409,7 +374,7 @@ class PaymentController extends Controller
             $invoice->due_date
             && $invoice->due_date->isBefore(today())
         ) {
-            return 'overdue';
+            return 'unpaid';
         }
 
         return 'unpaid';
