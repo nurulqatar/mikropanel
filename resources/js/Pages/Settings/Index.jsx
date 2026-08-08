@@ -131,6 +131,16 @@ export default function Index({
                     </div>
 
                     <div className="flex flex-wrap gap-2">
+                        {/* CLIENT_FORM_BUILDER_SETTINGS_LINK */}
+                        <a
+                            href={route(
+                                'settings.client-form-builder.index',
+                            )}
+                            className="rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm font-bold text-cyan-700 hover:bg-cyan-100"
+                        >
+                            Client Form Builder
+                        </a>
+
                         <a
                             href={route(
                                 'settings.export',

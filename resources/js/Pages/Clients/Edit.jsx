@@ -1,5 +1,6 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
+import ClientCustomFieldsForm from '@/Components/Clients/ClientCustomFieldsForm';
 
 export default function Edit({
     client,
@@ -14,6 +15,7 @@ export default function Edit({
         processing,
         errors,
     } = useForm({
+        custom_fields: {},
         ip_range_id: client.ip_range_id ?? '',
         package_id: client.package_id ?? '',
         name: client.name ?? '',
@@ -49,6 +51,9 @@ export default function Edit({
                     onSubmit={submit}
                     className="space-y-6"
                 >
+
+
+
                     <section className="rounded-xl bg-white p-6 shadow">
                         <h2 className="mb-5 text-xl font-bold text-slate-800">
                             Network Configuration
@@ -185,6 +190,20 @@ export default function Edit({
                             </Field>
                         </div>
                     </section>
+
+                    {/* CLIENT_CUSTOM_FIELDS_EDIT */}
+                                        <ClientCustomFieldsForm
+                                            clientId={client.id}
+                                            values={data.custom_fields || {}}
+                                            onChange={(values) =>
+                                                setData(
+                                                    'custom_fields',
+                                                    values,
+                                                )
+                                            }
+                                            errors={errors}
+                                        />
+
 
                     <div className="rounded-lg bg-cyan-50 px-4 py-3 text-sm text-cyan-800">
                         Package বা MAC পরিবর্তন করলে MikroTik DHCP

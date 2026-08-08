@@ -1,5 +1,6 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
+import ClientCustomFieldsForm from '@/Components/Clients/ClientCustomFieldsForm';
 
 export default function Create({
     routers,
@@ -13,6 +14,7 @@ export default function Create({
         processing,
         errors,
     } = useForm({
+        custom_fields: {},
         ip_range_id: '',
         package_id: '',
         name: '',
@@ -54,6 +56,9 @@ export default function Create({
                     onSubmit={submit}
                     className="space-y-6"
                 >
+
+
+
                     <section className="rounded-xl bg-white p-6 shadow">
                         <h2 className="mb-5 text-xl font-bold text-slate-800">
                             Network Configuration
@@ -201,6 +206,19 @@ export default function Create({
                             </div>
                         )}
                     </section>
+
+                    {/* CLIENT_CUSTOM_FIELDS_CREATE */}
+                                        <ClientCustomFieldsForm
+                                            values={data.custom_fields || {}}
+                                            onChange={(values) =>
+                                                setData(
+                                                    'custom_fields',
+                                                    values,
+                                                )
+                                            }
+                                            errors={errors}
+                                        />
+
 
                     <div className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-600">
                         Free IP, Client Code, installation date,

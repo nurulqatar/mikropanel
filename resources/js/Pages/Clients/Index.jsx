@@ -6,6 +6,7 @@ import {
     useForm,
 } from '@inertiajs/react';
 import { useState } from 'react';
+import ClientCustomListColumns from '@/Components/Clients/ClientCustomListColumns';
 
 export default function Index({
     clients = [],
@@ -381,7 +382,10 @@ export default function Index({
                                     Connection
                                 </TableHead>
 
-                                <TableHead>
+                                                                {/* CLIENT_CUSTOM_LIST_HEADER */}
+                                <ClientCustomListColumns mode="header" />
+
+<TableHead>
                                     Action
                                 </TableHead>
                             </tr>
@@ -511,6 +515,12 @@ export default function Index({
                                                 }
                                             />
                                         </td>
+
+                                        {/* CLIENT_CUSTOM_LIST_ROW */}
+                                        <ClientCustomListColumns
+                                            mode="row"
+                                            clientId={client.id}
+                                        />
 
                                         <td className="px-2 py-0.5">
                                             <div className="flex min-w-[340px] flex-wrap gap-2">

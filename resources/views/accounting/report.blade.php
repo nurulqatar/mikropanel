@@ -1172,6 +1172,9 @@
         @endif
 
         <footer class="footer">
+            {{-- CLIENT_CUSTOM_FIELDS_ACCOUNTING_REPORT --}}
+            @include('partials.client-custom-fields-report')
+
             <table class="footer-table">
                 <tr>
                     <td>
