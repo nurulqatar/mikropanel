@@ -164,7 +164,11 @@ export default function Edit({
                                     onChange={(event) =>
                                         setData(
                                             'mac_address',
-                                            event.target.value.toUpperCase(),
+                                            event.target.value
+                                                .toUpperCase()
+                                                .replace(/[^0-9A-F]/g, '')
+                                                .slice(0, 12)
+                                                .replace(/(.{2})(?=.)/g, '$1:'),
                                         )
                                     }
                                     placeholder="AA:BB:CC:DD:EE:FF"
