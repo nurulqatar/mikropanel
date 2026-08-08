@@ -95,4 +95,25 @@ class Client extends Model
         );
     }
 
+
+    public function customFieldValues()
+    {
+        return $this->hasMany(
+            \App\Models\ClientCustomFieldValue::class,
+            'client_id'
+        );
+    }
+
+    public function customFields()
+    {
+        return $this->belongsToMany(
+            \App\Models\ClientCustomField::class,
+            'client_custom_field_values',
+            'client_id',
+            'custom_field_id'
+        )
+        ->withPivot('value')
+        ->withTimestamps();
+    }
+
 }

@@ -192,3 +192,231 @@ Route::get(
 
 });
 require __DIR__.'/auth.php';
+
+
+/*
+|--------------------------------------------------------------------------
+| CLIENT_FORM_BUILDER_ROUTES
+|--------------------------------------------------------------------------
+| Dynamic Client Information / Form Builder.
+| Core MikroTik and billing fields remain outside this builder.
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth'])
+    ->prefix('settings')
+    ->group(function () {
+        Route::get(
+            '/client-form-builder',
+            [
+                \App\Http\Controllers\ClientCustomFieldController::class,
+                'index',
+            ]
+        )->name(
+            'settings.client-form-builder.index'
+        );
+
+        Route::post(
+            '/client-form-builder',
+            [
+                \App\Http\Controllers\ClientCustomFieldController::class,
+                'store',
+            ]
+        )->name(
+            'settings.client-form-builder.store'
+        );
+
+        Route::put(
+            '/client-form-builder/{clientCustomField}',
+            [
+                \App\Http\Controllers\ClientCustomFieldController::class,
+                'update',
+            ]
+        )->name(
+            'settings.client-form-builder.update'
+        );
+
+        Route::patch(
+            '/client-form-builder/{clientCustomField}/toggle',
+            [
+                \App\Http\Controllers\ClientCustomFieldController::class,
+                'toggle',
+            ]
+        )->name(
+            'settings.client-form-builder.toggle'
+        );
+
+        Route::patch(
+            '/client-form-builder/{clientCustomField}/order',
+            [
+                \App\Http\Controllers\ClientCustomFieldController::class,
+                'order',
+            ]
+        )->name(
+            'settings.client-form-builder.order'
+        );
+
+        Route::delete(
+            '/client-form-builder/{clientCustomField}',
+            [
+                \App\Http\Controllers\ClientCustomFieldController::class,
+                'destroy',
+            ]
+        )->name(
+            'settings.client-form-builder.destroy'
+        );
+    });
+
+
+/*
+|--------------------------------------------------------------------------
+| CLIENT_CUSTOM_FIELD_DATA_ROUTE
+|--------------------------------------------------------------------------
+| Read-only field definitions and saved client values.
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth'])
+    ->get(
+        '/client-custom-fields/data',
+        [
+            \App\Http\Controllers\ClientCustomFieldController::class,
+            'data',
+        ]
+    )
+    ->name(
+        'client-custom-fields.data'
+    );
+
+
+/*
+|--------------------------------------------------------------------------
+| CLIENT_CUSTOM_FIELD_LIST_DATA_ROUTE
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth'])
+    ->get(
+        '/client-custom-fields/list-data',
+        [
+            \App\Http\Controllers\ClientCustomFieldController::class,
+            'listData',
+        ]
+    )
+    ->name(
+        'client-custom-fields.list-data'
+    );
+
+/* MIKROPANEL_PERMISSION_ROUTE_HARDENING_START */
+
+/*
+|--------------------------------------------------------------------------
+| MikroPanel Permission Route Hardening
+|--------------------------------------------------------------------------
+|
+| Some features were added after the original route group.
+| This final pass ensures every current panel module receives:
+|
+|   auth
+|   active.panel.user
+|   panel.permission
+|
+| even when a route was registered outside the older protected group.
+|
+*/
+
+$mikropanelProtectedRoute = static function (
+    ?string $routeName
+): bool {
+    if (!$routeName) {
+        return false;
+    }
+
+    if ($routeName === 'dashboard') {
+        return true;
+    }
+
+    foreach (
+        [
+            'dashboard.',
+            'clients.',
+            'routers.',
+            'packages.',
+            'ip-ranges.',
+            'invoices.',
+            'payments.',
+            'expenses.',
+            'accounting.',
+            'notifications.',
+            'notification.',
+            'settings.',
+            'users.',
+            'client-custom-fields.',
+        ]
+        as $prefix
+    ) {
+        if (
+            str_starts_with(
+                $routeName,
+                $prefix
+            )
+        ) {
+            return true;
+        }
+    }
+
+    return false;
+};
+
+foreach (
+    Route::getRoutes()
+    as $mikropanelRoute
+) {
+    $mikropanelRouteName =
+        $mikropanelRoute->getName();
+
+    if (
+        !$mikropanelProtectedRoute(
+            $mikropanelRouteName
+        )
+    ) {
+        continue;
+    }
+
+    $currentMiddleware =
+        $mikropanelRoute->middleware();
+
+    foreach (
+        [
+            'auth',
+            'active.panel.user',
+            'panel.permission',
+        ]
+        as $requiredMiddleware
+    ) {
+        if (
+            !in_array(
+                $requiredMiddleware,
+                $currentMiddleware,
+                true
+            )
+        ) {
+            $mikropanelRoute->middleware(
+                $requiredMiddleware
+            );
+
+            $currentMiddleware[] =
+                $requiredMiddleware;
+        }
+    }
+}
+
+unset(
+    $mikropanelProtectedRoute,
+    $mikropanelRoute,
+    $mikropanelRouteName,
+    $currentMiddleware,
+    $requiredMiddleware
+);
+
+/* MIKROPANEL_PERMISSION_ROUTE_HARDENING_END */

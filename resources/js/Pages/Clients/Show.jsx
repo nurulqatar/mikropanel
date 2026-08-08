@@ -4,6 +4,7 @@ import {
     Link,
     router,
 } from '@inertiajs/react';
+import ClientCustomFieldsPanel from '@/Components/Clients/ClientCustomFieldsPanel';
 
 export default function Show({
     client,
@@ -717,7 +718,13 @@ export default function Show({
                     </div>
                 </section>
 
-                <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+
+                {/* CLIENT_CUSTOM_FIELDS_SHOW */}
+                <ClientCustomFieldsPanel
+                    clientId={client.id}
+                />
+
+<div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                     {client.enabled ? (
                         <button
                             type="button"

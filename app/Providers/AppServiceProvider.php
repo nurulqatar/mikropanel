@@ -20,6 +20,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        \App\Models\Client::observe(\App\Observers\ClientCustomFieldObserver::class);
         Vite::prefetch(concurrency: 3);
     }
 }

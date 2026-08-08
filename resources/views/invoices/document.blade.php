@@ -643,6 +643,9 @@
 
                 <td>
                     <div class="info-box">
+                        {{-- CLIENT_CUSTOM_FIELDS_INVOICE --}}
+                        @include('partials.client-custom-fields-invoice')
+
                         <div class="section-label">
                             Invoice Details
                         </div>
