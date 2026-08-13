@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\ClientProvisioningException;
 use App\Http\Requests\ClientRequest;
+use App\Jobs\ProvisionClient;
 use App\Models\Client;
 use App\Models\ClientMonthlyUsage;
 use App\Models\IpRange;
@@ -87,8 +88,7 @@ class ClientController extends Controller
 
     public function store(
         ClientRequest $request,
-        IpAllocatorService $allocator,
-        ClientProvisionService $provision
+        IpAllocatorService $allocator
     ): RedirectResponse {
         $data = $request->validated();
 
@@ -241,94 +241,21 @@ class ClientController extends Controller
                 STR_PAD_LEFT
             );
 
-        $client = null;
-
+        /*
+         * Save the panel record first.
+         *
+         * MikroTik network work must NOT block
+         * the browser request.
+         */
         try {
             $client = Client::create(
                 $data
             );
 
-            /*
-             * Multi-router service synchronizes
-             * this global client to every
-             * enabled MikroTik.
-             */
-            $provision->provision(
-                $client
-            );
-
-        } catch (
-            ClientProvisioningException $exception
-        ) {
-            if ($client) {
-                try {
-                    if (
-                        $exception
-                            ->compensationComplete
-                    ) {
-                        $client->forceDelete();
-                    } else {
-                        $client->forceFill([
-                            'enabled' => false,
-                            'connected' => false,
-                        ])->save();
-                    }
-                } catch (Throwable $cleanupError) {
-                    Log::critical(
-                        'Failed to clean up client after provisioning error.',
-                        [
-                            'client_id' =>
-                                $client->id,
-
-                            'message' =>
-                                $cleanupError
-                                    ->getMessage(),
-                        ]
-                    );
-                }
-            }
-
-            Log::error(
-                'Global client provisioning failed.',
-                [
-                    'client_id' =>
-                        $client?->id,
-
-                    'message' =>
-                        $exception
-                            ->getMessage(),
-
-                    'compensation_complete' =>
-                        $exception
-                            ->compensationComplete,
-                ]
-            );
-
-            return back()
-                ->withErrors([
-                    'mac_address' =>
-                        'Client could not be synchronized to MikroTik. Please try again.',
-                ])
-                ->withInput();
-
         } catch (Throwable $exception) {
-            if ($client) {
-                try {
-                    $client->forceFill([
-                        'enabled' => false,
-                        'connected' => false,
-                    ])->save();
-                } catch (Throwable) {
-                    // Preserve original exception.
-                }
-            }
-
             Log::error(
-                'Client creation failed.',
+                'Client database creation failed.',
                 [
-                    'client_id' =>
-                        $client?->id,
-
                     'message' =>
                         $exception
                             ->getMessage(),
@@ -343,11 +270,41 @@ class ClientController extends Controller
                 ->withInput();
         }
 
+        /*
+         * Provision asynchronously.
+         *
+         * If the immediate queue dispatch itself
+         * fails, keep the successfully-created
+         * client. The scheduled clients:sync-routers
+         * command remains the automatic fallback.
+         */
+        try {
+            ProvisionClient::dispatch(
+                $client->id
+            );
+
+        } catch (Throwable $exception) {
+            Log::warning(
+                'Immediate client provisioning dispatch failed; scheduled router synchronization will retry.',
+                [
+                    'client_id' =>
+                        $client->id,
+
+                    'client_code' =>
+                        $client->client_code,
+
+                    'message' =>
+                        $exception
+                            ->getMessage(),
+                ]
+            );
+        }
+
         return redirect()
             ->route('clients.index')
             ->with(
                 'success',
-                'Client created successfully and multi-router synchronization started.'
+                'Client created successfully. MikroTik synchronization is continuing in the background.'
             );
     }
 
