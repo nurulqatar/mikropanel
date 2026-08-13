@@ -6,6 +6,7 @@ export default function Create({
     routers,
     packages,
     ipRanges,
+    canReceivePayment = false,
 }) {
     const {
         data,
@@ -20,6 +21,14 @@ export default function Create({
         name: '',
         mac_address: '',
         phone: '',
+
+        connection_payment_status:
+            canReceivePayment
+                ? 'paid'
+                : 'due',
+
+        connection_payment_method: 'Cash',
+        connection_transaction_id: '',
     });
 
     const selectedPackage = packages.find(
@@ -208,6 +217,173 @@ export default function Create({
                                     value={`${selectedPackage.validity_days} Days`}
                                 />
                             </div>
+                        )}
+                    </section>
+
+                    <section className="rounded-xl bg-white p-6 shadow">
+                        <h2 className="text-xl font-bold text-slate-800">
+                            New Connection Billing
+                        </h2>
+
+                        <p className="mt-1 text-sm text-slate-500">
+                            The selected package price will be recorded as the first connection bill.
+                        </p>
+
+                        <div className="mt-5 grid gap-5 md:grid-cols-2">
+                            <Field label="Connection Amount">
+                                <input
+                                    type="text"
+                                    readOnly
+                                    value={
+                                        selectedPackage
+                                            ? `QAR ${Number(
+                                                  selectedPackage.price ??
+                                                      0,
+                                              ).toFixed(2)}`
+                                            : ''
+                                    }
+                                    placeholder="Select a package"
+                                    className={`${inputClass} bg-slate-50 font-bold`}
+                                />
+                            </Field>
+
+                            <Field
+                                label="Payment Status"
+                                error={
+                                    errors.connection_payment_status
+                                }
+                            >
+                                <select
+                                    value={
+                                        data.connection_payment_status
+                                    }
+                                    onChange={(event) =>
+                                        setData(
+                                            'connection_payment_status',
+                                            event.target.value,
+                                        )
+                                    }
+                                    className={inputClass}
+                                >
+                                    {canReceivePayment && (
+                                        <option value="paid">
+                                            Paid - Money received now
+                                        </option>
+                                    )}
+
+                                    <option value="due">
+                                        Due - Pay later
+                                    </option>
+                                </select>
+                            </Field>
+
+                            {data.connection_payment_status ===
+                                'paid' && (
+                                <>
+                                    <Field
+                                        label="Payment Method"
+                                        error={
+                                            errors.connection_payment_method
+                                        }
+                                    >
+                                        <select
+                                            value={
+                                                data.connection_payment_method
+                                            }
+                                            onChange={(event) =>
+                                                setData(
+                                                    'connection_payment_method',
+                                                    event.target.value,
+                                                )
+                                            }
+                                            className={inputClass}
+                                        >
+                                            <option value="Cash">
+                                                Cash
+                                            </option>
+
+                                            <option value="Bank Transfer">
+                                                Bank Transfer
+                                            </option>
+
+                                            <option value="Ooredoo Money">
+                                                Ooredoo Money
+                                            </option>
+
+                                            <option value="bKash">
+                                                bKash
+                                            </option>
+
+                                            <option value="Nagad">
+                                                Nagad
+                                            </option>
+
+                                            <option value="Rocket">
+                                                Rocket
+                                            </option>
+
+                                            <option value="Upay">
+                                                Upay
+                                            </option>
+
+                                            <option value="iPay">
+                                                iPay
+                                            </option>
+
+                                            <option value="Stripe">
+                                                Stripe
+                                            </option>
+
+                                            <option value="PayPal">
+                                                PayPal
+                                            </option>
+
+                                            <option value="Manual Adjustment">
+                                                Manual Adjustment
+                                            </option>
+                                        </select>
+                                    </Field>
+
+                                    <Field
+                                        label="Transaction ID (Optional)"
+                                        error={
+                                            errors.connection_transaction_id
+                                        }
+                                    >
+                                        <input
+                                            type="text"
+                                            value={
+                                                data.connection_transaction_id
+                                            }
+                                            onChange={(event) =>
+                                                setData(
+                                                    'connection_transaction_id',
+                                                    event.target.value,
+                                                )
+                                            }
+                                            placeholder="Reference / transaction number"
+                                            className={inputClass}
+                                        />
+                                    </Field>
+                                </>
+                            )}
+                        </div>
+
+                        {data.connection_payment_status ===
+                        'paid' ? (
+                            <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                                Paid: a Payment record will be created and the amount will be added to collections/accounting.
+                            </div>
+                        ) : (
+                            <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                                Due: no payment will be recorded now. The full package amount will remain outstanding for this client.
+                            </div>
+                        )}
+
+                        {!canReceivePayment && (
+                            <p className="mt-3 text-sm text-slate-500">
+                                Your account can create clients but does not have Receive Payment permission, so the connection will be recorded as Due.
+                            </p>
                         )}
                     </section>
 
