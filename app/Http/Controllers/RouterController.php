@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\RouterRequest;
+use App\Jobs\SyncRouterStatus;
 use App\Models\Router;
 use App\Services\MikroTik\MikroTikService;
 use App\Services\RouterClientSyncService;
+use App\Services\RouterStatusService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
@@ -16,40 +18,30 @@ use Throwable;
 class RouterController extends Controller
 {
     public function index(
-        MikroTikService $mikrotik
+        RouterStatusService $status
     ): Response {
         $routers = Router::query()
             ->latest()
             ->get()
-            ->map(function (Router $router) use ($mikrotik) {
-                if (!$router->enabled) {
-                    $live = [
-                        'success' => false,
-                        'disabled' => true,
-                        'message' => 'Router is disabled.',
-                        'latency_ms' => null,
-                        'checked_at' => now()->toISOString(),
-                    ];
-                } else {
-                    $live = $mikrotik->inspect($router);
+            ->map(
+                fn (Router $router): array =>
+                    array_merge(
+                        $router->toArray(),
+                        [
+                            'live' =>
+                                $status->stored(
+                                    $router
+                                ),
+                        ]
+                    )
+            );
 
-                    $this->saveLiveStatus(
-                        $router,
-                        $live
-                    );
-                }
-
-                return array_merge(
-                    $router->fresh()->toArray(),
-                    [
-                        'live' => $live,
-                    ]
-                );
-            });
-
-        return Inertia::render('Routers/Index', [
-            'routers' => $routers,
-        ]);
+        return Inertia::render(
+            'Routers/Index',
+            [
+                'routers' => $routers,
+            ]
+        );
     }
 
     public function create(): Response
@@ -58,88 +50,23 @@ class RouterController extends Controller
     }
 
     public function store(
-        RouterRequest $request,
-        MikroTikService $mikrotik,
-        RouterClientSyncService $clientSync
+        RouterRequest $request
     ): RedirectResponse {
-        $data = $request->validated();
-
         $router = Router::create(
-            $data
+            $request->validated()
         );
 
-        $live = $mikrotik->inspect(
-            $router
+        SyncRouterStatus::dispatch(
+            $router->id
         );
-
-        $this->saveLiveStatus(
-            $router,
-            $live
-        );
-
-        $sync = $clientSync
-            ->emptyResult();
-
-        if ($router->enabled) {
-            if ($live['success'] ?? false) {
-                /*
-                 * Immediate first convergence.
-                 * No scheduler wait required.
-                 */
-                $sync = $clientSync
-                    ->syncAll(
-                        $router
-                    );
-
-            } else {
-                /*
-                 * Router is offline/unreachable.
-                 * Seed retryable failed bindings.
-                 */
-                $sync = $clientSync
-                    ->markRouterFailed(
-                        $router,
-                        $live['message']
-                            ?? 'MikroTik API connection failed.'
-                    );
-            }
-        }
-
-        if (!($live['success'] ?? false)) {
-            $message =
-                'Router saved, but MikroTik API connection failed: '
-                . (
-                    $live['message']
-                    ?? 'Unknown error'
-                )
-                . '. Client sync will retry automatically.';
-
-            $flashType = 'error';
-
-        } elseif ($sync['failed'] > 0) {
-            $message =
-                'Router connected. '
-                . $sync['synced']
-                . ' client(s) synced, '
-                . $sync['failed']
-                . ' failed and will retry automatically.';
-
-            $flashType = 'error';
-
-        } else {
-            $message =
-                'Router added successfully. '
-                . $sync['synced']
-                . ' existing client(s) synchronized.';
-
-            $flashType = 'success';
-        }
 
         return redirect()
             ->route('routers.index')
             ->with(
-                $flashType,
-                $message
+                'success',
+                $router->enabled
+                    ? 'Router saved. Background MikroTik status refresh queued. Client synchronization will continue automatically.'
+                    : 'Router saved in disabled state.'
             );
     }
 
@@ -160,15 +87,14 @@ class RouterController extends Controller
 
     public function update(
         RouterRequest $request,
-        Router $router,
-        MikroTikService $mikrotik,
-        RouterClientSyncService $clientSync
+        Router $router
     ): RedirectResponse {
-        $data = $request->validated();
+        $data =
+            $request->validated();
 
         /*
-         * Blank password keeps the old
-         * encrypted MikroTik password.
+         * Blank password keeps the old encrypted
+         * MikroTik password.
          */
         if (empty($data['password'])) {
             unset(
@@ -182,144 +108,32 @@ class RouterController extends Controller
 
         $router->refresh();
 
-        $live = $mikrotik->inspect(
-            $router
+        SyncRouterStatus::dispatch(
+            $router->id
         );
-
-        $this->saveLiveStatus(
-            $router,
-            $live
-        );
-
-        $sync = $clientSync
-            ->emptyResult();
-
-        if ($router->enabled) {
-            if ($live['success'] ?? false) {
-                /*
-                 * Force convergence after any
-                 * credential/interface/DHCP
-                 * mapping change.
-                 */
-                $sync = $clientSync
-                    ->syncAll(
-                        $router
-                    );
-
-            } else {
-                $sync = $clientSync
-                    ->markRouterFailed(
-                        $router,
-                        $live['message']
-                            ?? 'MikroTik API connection failed.'
-                    );
-            }
-        }
-
-        if (!($live['success'] ?? false)) {
-            $message =
-                'Router updated, but MikroTik connection failed: '
-                . (
-                    $live['message']
-                    ?? 'Unknown error'
-                )
-                . '. Client sync will retry automatically.';
-
-            $flashType = 'error';
-
-        } elseif ($sync['failed'] > 0) {
-            $message =
-                'Router updated. '
-                . $sync['synced']
-                . ' client(s) synced, '
-                . $sync['failed']
-                . ' failed and will retry automatically.';
-
-            $flashType = 'error';
-
-        } else {
-            $message =
-                'Router updated successfully. '
-                . $sync['synced']
-                . ' client(s) synchronized.';
-
-            $flashType = 'success';
-        }
 
         return redirect()
             ->route('routers.index')
             ->with(
-                $flashType,
-                $message
+                'success',
+                $router->enabled
+                    ? 'Router updated. Background MikroTik status refresh queued. Client synchronization will continue automatically.'
+                    : 'Router updated in disabled state.'
             );
     }
 
     public function sync(
-        Router $router,
-        MikroTikService $mikrotik,
-        RouterClientSyncService $clientSync
+        Router $router
     ): RedirectResponse {
-        $live = $mikrotik->inspect(
-            $router
+        SyncRouterStatus::dispatch(
+            $router->id
         );
-
-        $this->saveLiveStatus(
-            $router,
-            $live
-        );
-
-        if (!($live['success'] ?? false)) {
-            if ($router->enabled) {
-                $clientSync
-                    ->markRouterFailed(
-                        $router,
-                        $live['message']
-                            ?? 'MikroTik API connection failed.'
-                    );
-            }
-
-            return back()->with(
-                'error',
-                'MikroTik sync failed: '
-                . (
-                    $live['message']
-                    ?? 'Unknown error'
-                )
-            );
-        }
-
-        $sync = $router->enabled
-            ? $clientSync->syncAll(
-                $router
-            )
-            : $clientSync
-                ->emptyResult();
-
-        if ($sync['failed'] > 0) {
-            return back()->with(
-                'error',
-                'Router connected. '
-                . $sync['synced']
-                . ' client(s) synced, '
-                . $sync['failed']
-                . ' failed and will retry automatically.'
-            );
-        }
 
         return back()->with(
             'success',
-            'MikroTik sync completed. '
-            . $sync['synced']
-            . ' client(s) synchronized. Identity: '
-            . (
-                $live['identity']
-                ?? $router->name
-            )
-            . ', RouterOS: '
-            . (
-                $live['version']
-                ?? 'Unknown'
-            )
+            $router->enabled
+                ? 'MikroTik synchronization queued in background. You can continue using the panel.'
+                : 'Router is disabled. Background status refresh queued.'
         );
     }
 

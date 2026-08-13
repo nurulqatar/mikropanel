@@ -30,6 +30,9 @@ class Router extends Model
         'enabled' => 'boolean',
         'connected' => 'boolean',
         'last_checked_at' => 'datetime',
+        'last_seen_at' => 'datetime',
+        'api_latency_ms' => 'integer',
+        'sync_duration_ms' => 'integer',
     ];
 
     public function setPasswordAttribute($value): void

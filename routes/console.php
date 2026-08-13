@@ -119,3 +119,18 @@ Schedule::command(
     ->everyMinute()
     ->timezone('Asia/Qatar')
     ->withoutOverlapping(10);
+
+/* MIKROPANEL_ROUTER_BACKGROUND_SYNC_START */
+
+/*
+ * Background MikroTik health snapshot dispatcher.
+ * The scheduler only queues jobs and never waits for RouterOS.
+ */
+Schedule::command(
+    'routers:queue-health'
+)
+    ->everyMinute()
+    ->timezone('Asia/Qatar')
+    ->withoutOverlapping(2);
+
+/* MIKROPANEL_ROUTER_BACKGROUND_SYNC_END */
