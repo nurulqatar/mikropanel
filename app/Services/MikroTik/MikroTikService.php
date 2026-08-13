@@ -24,6 +24,13 @@ class MikroTikService
 
     protected static array $clientPool = [];
 
+    /*
+     * Identity and RouterBoard metadata rarely change.
+     * Keep them in the long-lived queue worker for
+     * one hour instead of querying RouterOS every minute.
+     */
+    protected static array $staticMetadataCache = [];
+
     public function connect(
         array|Router $router
     ): bool {
@@ -229,21 +236,9 @@ class MikroTikService
                 );
             }
 
-            $identity =
-                $this->queryFirst(
-                    '/system/identity/print',
-                    'name'
-                );
-
-            $routerboard =
-                $this->queryFirst(
-                    '/system/routerboard/print',
-                    implode(',', [
-                        'model',
-                        'factory-firmware',
-                        'current-firmware',
-                        'upgrade-firmware',
-                    ])
+            $staticMetadata =
+                $this->staticMetadata(
+                    $router
                 );
 
             $dhcpServer = null;
@@ -332,12 +327,26 @@ class MikroTikService
                 'connection_reused' =>
                     $this->connectionReused,
 
+                'static_metadata_cached' =>
+                    (bool) (
+                        $staticMetadata[
+                            'cached'
+                        ]
+                        ?? false
+                    ),
+
                 'checked_at' =>
                     now()->toISOString(),
 
                 'identity' =>
-                    $identity['name']
-                    ?? null,
+                    $staticMetadata[
+                        'identity'
+                    ]
+                    ?? (
+                        $router instanceof Router
+                            ? $router->identity
+                            : null
+                    ),
 
                 'version' =>
                     $resource['version']
@@ -345,8 +354,14 @@ class MikroTikService
 
                 'board_name' =>
                     $resource['board-name']
-                    ?? $routerboard['model']
-                    ?? null,
+                    ?? $staticMetadata[
+                        'board_name'
+                    ]
+                    ?? (
+                        $router instanceof Router
+                            ? $router->board_name
+                            : null
+                    ),
 
                 'architecture' =>
                     $resource[
@@ -395,20 +410,20 @@ class MikroTikService
                         : null,
 
                 'factory_firmware' =>
-                    $routerboard[
-                        'factory-firmware'
+                    $staticMetadata[
+                        'factory_firmware'
                     ]
                     ?? null,
 
                 'current_firmware' =>
-                    $routerboard[
-                        'current-firmware'
+                    $staticMetadata[
+                        'current_firmware'
                     ]
                     ?? null,
 
                 'upgrade_firmware' =>
-                    $routerboard[
-                        'upgrade-firmware'
+                    $staticMetadata[
+                        'upgrade_firmware'
                     ]
                     ?? null,
 
@@ -499,6 +514,147 @@ class MikroTikService
         );
 
         return $result;
+    }
+
+    protected function staticMetadata(
+        array|Router $router
+    ): array {
+        $cacheKey =
+            $this->clientKey
+            ?? null;
+
+        if (
+            $cacheKey !== null
+            && isset(
+                self::$staticMetadataCache[
+                    $cacheKey
+                ]
+            )
+        ) {
+            $cached =
+                self::$staticMetadataCache[
+                    $cacheKey
+                ];
+
+            if (
+                isset(
+                    $cached['refreshed_at']
+                )
+                && (
+                    time()
+                    - (int)
+                        $cached['refreshed_at']
+                ) < 3600
+            ) {
+                return array_merge(
+                    $cached['data'],
+                    [
+                        'cached' => true,
+                    ]
+                );
+            }
+
+            unset(
+                self::$staticMetadataCache[
+                    $cacheKey
+                ]
+            );
+        }
+
+        $identityRead =
+            $this->readRowsSafe(
+                '/system/identity/print',
+                'name'
+            );
+
+        $routerboardRead =
+            $this->readRowsSafe(
+                '/system/routerboard/print',
+                implode(',', [
+                    'model',
+                    'factory-firmware',
+                    'current-firmware',
+                    'upgrade-firmware',
+                ])
+            );
+
+        $identity =
+            $identityRead['rows'][0]
+            ?? [];
+
+        $routerboard =
+            $routerboardRead['rows'][0]
+            ?? [];
+
+        $data = [
+            'identity' =>
+                $identity['name']
+                ?? (
+                    $router instanceof Router
+                        ? $router->identity
+                        : null
+                ),
+
+            'board_name' =>
+                $routerboard['model']
+                ?? (
+                    $router instanceof Router
+                        ? $router->board_name
+                        : null
+                ),
+
+            'factory_firmware' =>
+                $routerboard[
+                    'factory-firmware'
+                ]
+                ?? null,
+
+            'current_firmware' =>
+                $routerboard[
+                    'current-firmware'
+                ]
+                ?? null,
+
+            'upgrade_firmware' =>
+                $routerboard[
+                    'upgrade-firmware'
+                ]
+                ?? null,
+        ];
+
+        /*
+         * Only cache a completely successful static
+         * metadata read. Partial errors are retried
+         * on the next cycle.
+         */
+        if (
+            $cacheKey !== null
+            && (
+                $identityRead['success']
+                ?? false
+            )
+            && (
+                $routerboardRead['success']
+                ?? false
+            )
+        ) {
+            self::$staticMetadataCache[
+                $cacheKey
+            ] = [
+                'refreshed_at' =>
+                    time(),
+
+                'data' =>
+                    $data,
+            ];
+        }
+
+        return array_merge(
+            $data,
+            [
+                'cached' => false,
+            ]
+        );
     }
 
     protected function queryFirst(

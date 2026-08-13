@@ -67,6 +67,14 @@ class RouterTelemetryService
                     ?? false
                 ),
 
+            'static_metadata_cached' =>
+                (bool) (
+                    $telemetry[
+                        'static_metadata_cached'
+                    ]
+                    ?? false
+                ),
+
             'connection_stats' =>
                 null,
 
@@ -201,6 +209,11 @@ class RouterTelemetryService
                 'connection_reused' =>
                     $result[
                         'connection_reused'
+                    ],
+
+                'static_metadata_cached' =>
+                    $result[
+                        'static_metadata_cached'
                     ],
 
                 'connection_stats' =>
