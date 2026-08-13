@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Client;
 use App\Models\ClientMonthlyUsage;
+use App\Models\Router;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -24,49 +25,116 @@ class ClientUsageService
             'failed' => 0,
         ];
 
-        $clients = Client::query()
-            ->with('router')
-            ->whereNotNull('router_id')
-            ->whereNotNull('client_code')
-            ->get();
+        $clients =
+            Client::query()
+                ->with('router')
+                ->whereNotNull(
+                    'router_id'
+                )
+                ->whereNotNull(
+                    'client_code'
+                )
+                ->get();
 
-        $groups = $clients->groupBy('router_id');
+        $groups =
+            $clients->groupBy(
+                'router_id'
+            );
 
-        foreach ($groups as $routerClients) {
-            $router = $routerClients
-                ->first()
-                ?->router;
+        foreach (
+            $groups
+            as $routerClients
+        ) {
+            $router =
+                $routerClients
+                    ->first()
+                    ?->router;
 
-            if (!$router || !$router->enabled) {
+            if (
+                !$router
+                || !$router->enabled
+            ) {
                 $stats['failed'] +=
-                    $routerClients->count();
+                    $routerClients
+                        ->count();
 
                 continue;
             }
 
             try {
-                $queues = $this->queueUsage
-                    ->readForRouter($router);
+                $queues =
+                    $this->queueUsage
+                        ->readForRouter(
+                            $router
+                        );
+
             } catch (Throwable $exception) {
                 $stats['failed'] +=
-                    $routerClients->count();
+                    $routerClients
+                        ->count();
 
                 Log::error(
                     'Client usage router sync failed.',
                     [
-                        'router_id' => $router->id,
+                        'router_id' =>
+                            $router->id,
+
                         'message' =>
-                            $exception->getMessage(),
+                            $exception
+                                ->getMessage(),
                     ]
                 );
 
                 continue;
             }
 
-            foreach ($routerClients as $client) {
-                $counter = $queues[
-                    $client->client_code
-                ] ?? null;
+            $routerStats =
+                $this->syncRouterFromQueues(
+                    $router,
+                    $queues
+                );
+
+            foreach (
+                $routerStats
+                as $key => $value
+            ) {
+                $stats[$key] +=
+                    $value;
+            }
+        }
+
+        return $stats;
+    }
+
+    public function syncRouterFromQueues(
+        Router $router,
+        array $queues
+    ): array {
+        $stats = [
+            'synced' => 0,
+            'baselined' => 0,
+            'missing' => 0,
+            'failed' => 0,
+        ];
+
+        $clients =
+            Client::query()
+                ->where(
+                    'router_id',
+                    $router->id
+                )
+                ->whereNotNull(
+                    'client_code'
+                )
+                ->get();
+
+        foreach ($clients as $client) {
+            try {
+                $counter =
+                    $queues[
+                        $client->client_code
+                    ]
+                    ?? null;
 
                 if (!$counter) {
                     $stats['missing']++;
@@ -74,12 +142,31 @@ class ClientUsageService
                     continue;
                 }
 
-                $status = $this->storeCounters(
-                    $client,
-                    $counter
-                );
+                $status =
+                    $this->storeCounters(
+                        $client,
+                        $counter
+                    );
 
                 $stats[$status]++;
+
+            } catch (Throwable $exception) {
+                $stats['failed']++;
+
+                Log::error(
+                    'Client usage snapshot save failed.',
+                    [
+                        'client_id' =>
+                            $client->id,
+
+                        'router_id' =>
+                            $router->id,
+
+                        'message' =>
+                            $exception
+                                ->getMessage(),
+                    ]
+                );
             }
         }
 
@@ -89,18 +176,25 @@ class ClientUsageService
     public function syncClient(
         Client $client
     ): string {
-        $client->loadMissing('router');
+        $client->loadMissing(
+            'router'
+        );
 
         if (!$client->router) {
             return 'missing';
         }
 
-        $queues = $this->queueUsage
-            ->readForRouter($client->router);
+        $queues =
+            $this->queueUsage
+                ->readForRouter(
+                    $client->router
+                );
 
-        $counter = $queues[
-            $client->client_code
-        ] ?? null;
+        $counter =
+            $queues[
+                $client->client_code
+            ]
+            ?? null;
 
         if (!$counter) {
             return 'missing';
@@ -116,23 +210,32 @@ class ClientUsageService
         Client $client,
         array $counter
     ): string {
-        $month = today()
-            ->startOfMonth()
-            ->toDateString();
+        $month =
+            today()
+                ->startOfMonth()
+                ->toDateString();
 
-        $currentUpload = max(
-            0,
-            (int) (
-                $counter['upload_bytes'] ?? 0
-            )
-        );
+        $currentUpload =
+            max(
+                0,
+                (int) (
+                    $counter[
+                        'upload_bytes'
+                    ]
+                    ?? 0
+                )
+            );
 
-        $currentDownload = max(
-            0,
-            (int) (
-                $counter['download_bytes'] ?? 0
-            )
-        );
+        $currentDownload =
+            max(
+                0,
+                (int) (
+                    $counter[
+                        'download_bytes'
+                    ]
+                    ?? 0
+                )
+            );
 
         return DB::transaction(
             function () use (
@@ -141,70 +244,91 @@ class ClientUsageService
                 $currentUpload,
                 $currentDownload
             ): string {
-                $usage = ClientMonthlyUsage::query()
-                    ->where(
-                        'client_id',
-                        $client->id
-                    )
-                    ->where(
-                        'usage_month',
-                        $month
-                    )
-                    ->lockForUpdate()
-                    ->first();
+                $usage =
+                    ClientMonthlyUsage::query()
+                        ->where(
+                            'client_id',
+                            $client->id
+                        )
+                        ->where(
+                            'usage_month',
+                            $month
+                        )
+                        ->lockForUpdate()
+                        ->first();
 
                 /*
-                 * প্রথম sync-এ বর্তমান Queue counter
-                 * baseline হিসেবে রাখা হবে।
-                 *
-                 * পুরোনো মাসের traffic current month-এ
-                 * ভুলভাবে যোগ হবে না।
+                 * First observation becomes the
+                 * current month's baseline.
                  */
                 if (!$usage) {
                     ClientMonthlyUsage::create([
-                        'client_id' => $client->id,
-                        'usage_month' => $month,
-                        'upload_bytes' => 0,
-                        'download_bytes' => 0,
+                        'client_id' =>
+                            $client->id,
+
+                        'usage_month' =>
+                            $month,
+
+                        'upload_bytes' =>
+                            0,
+
+                        'download_bytes' =>
+                            0,
+
                         'last_upload_counter' =>
                             $currentUpload,
 
                         'last_download_counter' =>
                             $currentDownload,
 
-                        'last_synced_at' => now(),
+                        'last_synced_at' =>
+                            now(),
                     ]);
 
                     return 'baselined';
                 }
 
-                $lastUpload = (int)
-                    $usage->last_upload_counter;
+                $lastUpload =
+                    (int)
+                    $usage
+                        ->last_upload_counter;
 
-                $lastDownload = (int)
-                    $usage->last_download_counter;
+                $lastDownload =
+                    (int)
+                    $usage
+                        ->last_download_counter;
 
                 /*
-                 * Current counter ছোট হলে Router অথবা
-                 * Queue counter reset হয়েছে।
+                 * Smaller current counter means
+                 * Router/Queue counter reset.
                  */
                 $uploadDelta =
-                    $currentUpload >= $lastUpload
-                        ? $currentUpload - $lastUpload
-                        : $currentUpload;
+                    $currentUpload
+                        >= $lastUpload
+                            ? (
+                                $currentUpload
+                                - $lastUpload
+                            )
+                            : $currentUpload;
 
                 $downloadDelta =
-                    $currentDownload >= $lastDownload
-                        ? $currentDownload - $lastDownload
-                        : $currentDownload;
+                    $currentDownload
+                        >= $lastDownload
+                            ? (
+                                $currentDownload
+                                - $lastDownload
+                            )
+                            : $currentDownload;
 
                 $usage->update([
                     'upload_bytes' =>
-                        (int) $usage->upload_bytes
+                        (int)
+                        $usage->upload_bytes
                         + $uploadDelta,
 
                     'download_bytes' =>
-                        (int) $usage->download_bytes
+                        (int)
+                        $usage->download_bytes
                         + $downloadDelta,
 
                     'last_upload_counter' =>
@@ -213,7 +337,8 @@ class ClientUsageService
                     'last_download_counter' =>
                         $currentDownload,
 
-                    'last_synced_at' => now(),
+                    'last_synced_at' =>
+                        now(),
                 ]);
 
                 return 'synced';

@@ -4,7 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\ClientProvisioningException;
 use App\Http\Requests\ClientRequest;
+use App\Jobs\ProvisionClient;
 use App\Models\Client;
+use App\Models\Invoice;
+use App\Models\Payment;
+use App\Models\Setting;
 use App\Models\ClientMonthlyUsage;
 use App\Models\IpRange;
 use App\Models\Package;
@@ -12,7 +16,9 @@ use App\Models\Router;
 use App\Services\ClientProvisionService;
 use App\Services\ClientUsageService;
 use App\Services\IpAllocatorService;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -50,6 +56,15 @@ class ClientController extends Controller
     public function create(): Response
     {
         return Inertia::render('Clients/Create', [
+            'canReceivePayment' =>
+                (bool) (
+                    auth()->user()
+                        ?->hasPermission(
+                            'payments.manage'
+                        )
+                    ?? false
+                ),
+
             'routers' => Router::query()
                 ->where('enabled', true)
                 ->orderBy('name')
@@ -87,10 +102,59 @@ class ClientController extends Controller
 
     public function store(
         ClientRequest $request,
-        IpAllocatorService $allocator,
-        ClientProvisionService $provision
+        IpAllocatorService $allocator
     ): RedirectResponse {
         $data = $request->validated();
+
+        /*
+         * New connection billing is separate
+         * from ClientRequest because the same
+         * ClientRequest is also used by Edit.
+         */
+        $billing = $request->validate([
+            'connection_payment_status' => [
+                'required',
+                'in:paid,due',
+            ],
+
+            'connection_payment_method' => [
+                'nullable',
+                'required_if:connection_payment_status,paid',
+                'string',
+                'max:100',
+            ],
+
+            'connection_transaction_id' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+        ]);
+
+        /*
+         * Receiving money is a payment action.
+         * Do not bypass the existing operator
+         * payment permission.
+         */
+        if (
+            $billing[
+                'connection_payment_status'
+            ] === 'paid'
+            && !(
+                auth()->user()
+                    ?->hasPermission(
+                        'payments.manage'
+                    )
+                ?? false
+            )
+        ) {
+            return back()
+                ->withErrors([
+                    'connection_payment_status' =>
+                        'You do not have permission to receive payments. Select Due.',
+                ])
+                ->withInput();
+        }
 
         /*
          * IP Pool is global.
@@ -157,6 +221,20 @@ class ClientController extends Controller
                 ->withErrors([
                     'package_id' =>
                         'Package validity days are missing.',
+                ])
+                ->withInput();
+        }
+
+        $connectionAmount = round(
+            (float) $package->price,
+            2
+        );
+
+        if ($connectionAmount <= 0) {
+            return back()
+                ->withErrors([
+                    'package_id' =>
+                        'New connection requires a package price greater than zero.',
                 ])
                 ->withInput();
         }
@@ -241,94 +319,171 @@ class ClientController extends Controller
                 STR_PAD_LEFT
             );
 
-        $client = null;
+        /*
+         * Client + first invoice + optional
+         * payment are one atomic DB operation.
+         *
+         * If billing creation fails, no partial
+         * client/accounting record is kept.
+         */
+        $paymentDate = Carbon::now(
+            'Asia/Qatar'
+        )->startOfDay();
+
+        $defaultDueDays = max(
+            0,
+            (int) Setting::getValue(
+                'default_due_days',
+                0
+            )
+        );
+
+        $isPaid =
+            $billing[
+                'connection_payment_status'
+            ] === 'paid';
 
         try {
-            $client = Client::create(
-                $data
-            );
+            $result = DB::transaction(
+                function () use (
+                    $data,
+                    $billing,
+                    $connectionAmount,
+                    $paymentDate,
+                    $defaultDueDays,
+                    $package,
+                    $isPaid
+                ): array {
+                    $client = Client::create(
+                        $data
+                    );
 
-            /*
-             * Multi-router service synchronizes
-             * this global client to every
-             * enabled MikroTik.
-             */
-            $provision->provision(
-                $client
-            );
+                    /*
+                     * Client ID makes this invoice
+                     * number unique for onboarding.
+                     */
+                    $invoiceNo =
+                        'INV-NEW-'
+                        . $paymentDate
+                            ->format('Ymd')
+                        . '-'
+                        . str_pad(
+                            (string) $client->id,
+                            5,
+                            '0',
+                            STR_PAD_LEFT
+                        );
 
-        } catch (
-            ClientProvisioningException $exception
-        ) {
-            if ($client) {
-                try {
-                    if (
-                        $exception
-                            ->compensationComplete
-                    ) {
-                        $client->forceDelete();
-                    } else {
-                        $client->forceFill([
-                            'enabled' => false,
-                            'connected' => false,
-                        ])->save();
-                    }
-                } catch (Throwable $cleanupError) {
-                    Log::critical(
-                        'Failed to clean up client after provisioning error.',
-                        [
+                    $invoice = Invoice::create([
+                        'client_id' =>
+                            $client->id,
+
+                        'invoice_no' =>
+                            $invoiceNo,
+
+                        /*
+                         * Same convention used by
+                         * renewal/monthly billing.
+                         */
+                        'billing_month' =>
+                            $paymentDate
+                                ->copy()
+                                ->startOfMonth()
+                                ->toDateString(),
+
+                        'amount' =>
+                            $connectionAmount,
+
+                        'discount' => 0,
+
+                        'paid_amount' =>
+                            $isPaid
+                                ? $connectionAmount
+                                : 0,
+
+                        'due_amount' =>
+                            $isPaid
+                                ? 0
+                                : $connectionAmount,
+
+                        'issue_date' =>
+                            $paymentDate
+                                ->toDateString(),
+
+                        'due_date' =>
+                            $paymentDate
+                                ->copy()
+                                ->addDays(
+                                    $defaultDueDays
+                                )
+                                ->toDateString(),
+
+                        'status' =>
+                            $isPaid
+                                ? 'paid'
+                                : 'unpaid',
+
+                        'notes' =>
+                            'Initial connection - '
+                            . $package->name,
+
+                        'created_by' =>
+                            auth()->id(),
+                    ]);
+
+                    /*
+                     * Accounting collection exists
+                     * only when money was actually
+                     * received.
+                     */
+                    if ($isPaid) {
+                        Payment::create([
+                            'invoice_id' =>
+                                $invoice->id,
+
                             'client_id' =>
                                 $client->id,
 
-                            'message' =>
-                                $cleanupError
-                                    ->getMessage(),
-                        ]
-                    );
+                            'amount' =>
+                                $connectionAmount,
+
+                            'payment_date' =>
+                                $paymentDate
+                                    ->toDateString(),
+
+                            'payment_method' =>
+                                $billing[
+                                    'connection_payment_method'
+                                ],
+
+                            'transaction_id' =>
+                                $billing[
+                                    'connection_transaction_id'
+                                ]
+                                ?? null,
+
+                            'notes' =>
+                                'Initial connection payment',
+
+                            'received_by' =>
+                                auth()->id(),
+                        ]);
+                    }
+
+                    return [
+                        'client' => $client,
+                        'invoice' => $invoice,
+                    ];
                 }
-            }
-
-            Log::error(
-                'Global client provisioning failed.',
-                [
-                    'client_id' =>
-                        $client?->id,
-
-                    'message' =>
-                        $exception
-                            ->getMessage(),
-
-                    'compensation_complete' =>
-                        $exception
-                            ->compensationComplete,
-                ]
             );
 
-            return back()
-                ->withErrors([
-                    'mac_address' =>
-                        'Client could not be synchronized to MikroTik. Please try again.',
-                ])
-                ->withInput();
+            $client = $result['client'];
+            $invoice = $result['invoice'];
 
         } catch (Throwable $exception) {
-            if ($client) {
-                try {
-                    $client->forceFill([
-                        'enabled' => false,
-                        'connected' => false,
-                    ])->save();
-                } catch (Throwable) {
-                    // Preserve original exception.
-                }
-            }
-
             Log::error(
-                'Client creation failed.',
+                'Client and initial billing creation failed.',
                 [
-                    'client_id' =>
-                        $client?->id,
-
                     'message' =>
                         $exception
                             ->getMessage(),
@@ -337,17 +492,59 @@ class ClientController extends Controller
 
             return back()
                 ->withErrors([
-                    'mac_address' =>
-                        'Client could not be created. Please try again.',
+                    'connection_payment_status' =>
+                        'Client billing could not be created. Please try again.',
                 ])
                 ->withInput();
+        }
+
+        /*
+         * Provision asynchronously.
+         *
+         * If the immediate queue dispatch itself
+         * fails, keep the successfully-created
+         * client. The scheduled clients:sync-routers
+         * command remains the automatic fallback.
+         */
+        try {
+            ProvisionClient::dispatch(
+                $client->id
+            );
+
+        } catch (Throwable $exception) {
+            Log::warning(
+                'Immediate client provisioning dispatch failed; scheduled router synchronization will retry.',
+                [
+                    'client_id' =>
+                        $client->id,
+
+                    'client_code' =>
+                        $client->client_code,
+
+                    'message' =>
+                        $exception
+                            ->getMessage(),
+                ]
+            );
         }
 
         return redirect()
             ->route('clients.index')
             ->with(
                 'success',
-                'Client created successfully and multi-router synchronization started.'
+                $isPaid
+                    ? 'Client created successfully. Paid QAR '
+                        . number_format(
+                            $connectionAmount,
+                            2
+                        )
+                        . ' recorded. MikroTik synchronization is continuing in the background.'
+                    : 'Client created successfully. Due QAR '
+                        . number_format(
+                            $connectionAmount,
+                            2
+                        )
+                        . ' recorded. MikroTik synchronization is continuing in the background.'
             );
     }
 

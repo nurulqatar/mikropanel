@@ -48,7 +48,13 @@ class ClientRequest extends FormRequest
                 Rule::unique(
                     'clients',
                     'mac_address'
-                )->ignore($clientId),
+                )
+                    ->whereNull(
+                        'deleted_at'
+                    )
+                    ->ignore(
+                        $clientId
+                    ),
             ],
 
             'phone' => [

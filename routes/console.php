@@ -73,39 +73,15 @@ Schedule::command(
 
 /*
 |--------------------------------------------------------------------------
-| Client Connection Sync
+| Consolidated Router Telemetry
 |--------------------------------------------------------------------------
+|
+| Client connection status and monthly Queue usage are
+| collected by the routers:queue-health background job.
+| This prevents separate DHCP and Queue RouterOS sessions
+| every minute.
+|
 */
-Schedule::command(
-    'clients:sync-connection'
-)
-    ->everyMinute()
-    ->withoutOverlapping(5)
-    ->when(
-        fn (): bool =>
-            Setting::bool(
-                'connection_sync_enabled',
-                true
-            )
-    );
-
-/*
-|--------------------------------------------------------------------------
-| Client Usage Sync
-|--------------------------------------------------------------------------
-*/
-Schedule::command(
-    'clients:sync-usage'
-)
-    ->everyMinute()
-    ->withoutOverlapping(10)
-    ->when(
-        fn (): bool =>
-            Setting::bool(
-                'usage_sync_enabled',
-                true
-            )
-    );
 
 /*
  * Multi-router convergence:
@@ -119,3 +95,18 @@ Schedule::command(
     ->everyMinute()
     ->timezone('Asia/Qatar')
     ->withoutOverlapping(10);
+
+/* MIKROPANEL_ROUTER_BACKGROUND_SYNC_START */
+
+/*
+ * Background MikroTik health snapshot dispatcher.
+ * The scheduler only queues jobs and never waits for RouterOS.
+ */
+Schedule::command(
+    'routers:queue-health'
+)
+    ->everyMinute()
+    ->timezone('Asia/Qatar')
+    ->withoutOverlapping(2);
+
+/* MIKROPANEL_ROUTER_BACKGROUND_SYNC_END */

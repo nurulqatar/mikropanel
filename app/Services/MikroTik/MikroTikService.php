@@ -12,86 +12,223 @@ class MikroTikService
 {
     protected ?Client $client = null;
 
+    protected ?string $clientKey = null;
+
     protected ?string $lastError = null;
 
-    public function connect(array|Router $router): bool
-    {
+    protected array|Router|null $activeRouter = null;
+
+    protected bool $connectionReused = false;
+
+    protected int $queryCount = 0;
+
+    protected static array $clientPool = [];
+
+    /*
+     * Identity and RouterBoard metadata rarely change.
+     * Keep them in the long-lived queue worker for
+     * one hour instead of querying RouterOS every minute.
+     */
+    protected static array $staticMetadataCache = [];
+
+    public function connect(
+        array|Router $router
+    ): bool {
+        $this->activeRouter = $router;
+        $this->connectionReused = false;
+
         try {
-            $credentials = $this->credentials($router);
+            $credentials =
+                $this->credentials($router);
+
+            $key = hash(
+                'sha256',
+                implode('|', [
+                    $credentials['host'],
+                    $credentials['api_port'],
+                    $credentials['username'],
+                    $credentials['use_ssl']
+                        ? '1'
+                        : '0',
+                    $credentials['password'],
+                ])
+            );
+
+            if (
+                isset(self::$clientPool[$key])
+                && $this->socketAlive(
+                    self::$clientPool[$key]
+                )
+            ) {
+                $this->client =
+                    self::$clientPool[$key];
+
+                $this->clientKey = $key;
+                $this->lastError = null;
+                $this->connectionReused = true;
+
+                return true;
+            }
+
+            unset(
+                self::$clientPool[$key]
+            );
 
             $config = new Config([
-                'host' => $credentials['host'],
-                'user' => $credentials['username'],
-                'pass' => $credentials['password'],
-                'port' => $credentials['api_port'],
-                'ssl' => $credentials['use_ssl'],
-                'timeout' => 6,
+                'host' =>
+                    $credentials['host'],
+
+                'user' =>
+                    $credentials['username'],
+
+                'pass' =>
+                    $credentials['password'],
+
+                'port' =>
+                    $credentials['api_port'],
+
+                'ssl' =>
+                    $credentials['use_ssl'],
+
+                'timeout' => 3,
+                'socket_timeout' => 5,
+                'attempts' => 1,
+                'delay' => 0,
+
+                'socket_options' => [
+                    'tcp_nodelay' => true,
+                ],
             ]);
 
-            $this->client = new Client($config);
+            $client =
+                new Client($config);
+
+            self::$clientPool[$key] =
+                $client;
+
+            $this->client = $client;
+            $this->clientKey = $key;
             $this->lastError = null;
 
             return true;
+
         } catch (Throwable $exception) {
-            $this->client = null;
-            $this->lastError = $exception->getMessage();
+            $this->forgetCurrentClient();
+
+            $this->lastError =
+                $exception->getMessage();
 
             return false;
         }
     }
 
-    /**
-     * Existing code compatibility.
-     */
     public function test(): array
     {
         try {
             if (!$this->client) {
                 return [
                     'success' => false,
-                    'message' => 'MikroTik connection is not initialized.',
+                    'message' =>
+                        'MikroTik connection is not initialized.',
                 ];
             }
 
-            $query = new Query('/system/resource/print');
-
-            $result = $this->client
-                ->query($query)
-                ->read();
-
             return [
                 'success' => true,
-                'data' => $result[0] ?? [],
+
+                'data' =>
+                    $this->queryFirst(
+                        '/system/resource/print',
+                        'version,uptime,cpu-load'
+                    ),
             ];
+
         } catch (Throwable $exception) {
             return [
                 'success' => false,
-                'message' => $exception->getMessage(),
+
+                'message' =>
+                    $exception->getMessage(),
             ];
         }
     }
 
-    /**
-     * Complete live RouterOS status and sync information.
+    /*
+     * Full consolidated read-only telemetry.
+     *
+     * One persistent RouterOS connection supplies:
+     * - health
+     * - DHCP connection status
+     * - ARP count
+     * - Queue count
+     * - Queue usage counters
      */
-    public function inspect(array|Router $router): array
-    {
+    public function telemetry(
+        array|Router $router
+    ): array {
         $startedAt = microtime(true);
+
+        $this->queryCount = 0;
 
         if (!$this->connect($router)) {
             return [
                 'success' => false,
-                'message' => $this->lastError
+
+                'message' =>
+                    $this->lastError
                     ?? 'Unable to connect to MikroTik API.',
+
                 'latency_ms' => null,
-                'checked_at' => now()->toISOString(),
+
+                'sync_duration_ms' =>
+                    (int) round(
+                        (
+                            microtime(true)
+                            - $startedAt
+                        ) * 1000
+                    ),
+
+                'routeros_query_count' =>
+                    $this->queryCount,
+
+                'connection_reused' =>
+                    false,
+
+                'leases' => [],
+                'queues' => [],
+
+                'checked_at' =>
+                    now()->toISOString(),
             ];
         }
 
         try {
-            $resource = $this->queryFirst(
-                '/system/resource/print'
-            );
+            $latencyStartedAt =
+                microtime(true);
+
+            $resource =
+                $this->queryFirst(
+                    '/system/resource/print',
+                    implode(',', [
+                        'version',
+                        'board-name',
+                        'architecture-name',
+                        'platform',
+                        'uptime',
+                        'cpu-load',
+                        'cpu-count',
+                        'free-memory',
+                        'total-memory',
+                    ])
+                );
+
+            $apiLatencyMs =
+                (int) round(
+                    (
+                        microtime(true)
+                        - $latencyStartedAt
+                    ) * 1000
+                );
 
             if (empty($resource)) {
                 throw new \RuntimeException(
@@ -99,47 +236,137 @@ class MikroTikService
                 );
             }
 
-            $identity = $this->queryFirst(
-                '/system/identity/print'
-            );
+            $staticMetadata =
+                $this->staticMetadata(
+                    $router
+                );
 
-            $routerboard = $this->queryFirst(
-                '/system/routerboard/print'
-            );
+            $dhcpServer = null;
 
-            $dhcpLeases = $this->safeQuery(
-                '/ip/dhcp-server/lease/print'
-            );
+            if (
+                $router instanceof Router
+                && !empty(
+                    $router->dhcp_server
+                )
+            ) {
+                $dhcpServer =
+                    trim(
+                        (string)
+                        $router->dhcp_server
+                    );
+            }
 
-            $arpEntries = $this->safeQuery(
-                '/ip/arp/print'
-            );
+            $leasesRead =
+                $this->readRowsSafe(
+                    '/ip/dhcp-server/lease/print',
+                    implode(',', [
+                        '.id',
+                        'mac-address',
+                        'active-mac-address',
+                        'status',
+                    ]),
+                    $dhcpServer !== ''
+                        && $dhcpServer !== null
+                            ? [
+                                'server',
+                                $dhcpServer,
+                            ]
+                            : null
+                );
 
-            $simpleQueues = $this->safeQuery(
-                '/queue/simple/print'
-            );
+            $arpRead =
+                $this->readRowsSafe(
+                    '/ip/arp/print',
+                    '.id'
+                );
 
-            $latencyMs = (int) round(
-                (microtime(true) - $startedAt) * 1000
-            );
+            $queuesRead =
+                $this->readRowsSafe(
+                    '/queue/simple/print',
+                    implode(',', [
+                        '.id',
+                        'name',
+                        'bytes',
+                        'disabled',
+                        'invalid',
+                    ])
+                );
+
+            $leases =
+                $leasesRead['rows'];
+
+            $arpRows =
+                $arpRead['rows'];
+
+            $queues =
+                $queuesRead['rows'];
+
+            $duration =
+                (int) round(
+                    (
+                        microtime(true)
+                        - $startedAt
+                    ) * 1000
+                );
 
             return [
                 'success' => true,
-                'message' => 'MikroTik API connected successfully.',
-                'latency_ms' => $latencyMs,
-                'checked_at' => now()->toISOString(),
 
-                'identity' => $identity['name'] ?? null,
+                'message' =>
+                    'MikroTik telemetry synchronized successfully.',
 
-                'version' => $resource['version'] ?? null,
+                'latency_ms' =>
+                    $apiLatencyMs,
+
+                'sync_duration_ms' =>
+                    $duration,
+
+                'routeros_query_count' =>
+                    $this->queryCount,
+
+                'connection_reused' =>
+                    $this->connectionReused,
+
+                'static_metadata_cached' =>
+                    (bool) (
+                        $staticMetadata[
+                            'cached'
+                        ]
+                        ?? false
+                    ),
+
+                'checked_at' =>
+                    now()->toISOString(),
+
+                'identity' =>
+                    $staticMetadata[
+                        'identity'
+                    ]
+                    ?? (
+                        $router instanceof Router
+                            ? $router->identity
+                            : null
+                    ),
+
+                'version' =>
+                    $resource['version']
+                    ?? null,
 
                 'board_name' =>
                     $resource['board-name']
-                    ?? $routerboard['model']
-                    ?? null,
+                    ?? $staticMetadata[
+                        'board_name'
+                    ]
+                    ?? (
+                        $router instanceof Router
+                            ? $router->board_name
+                            : null
+                    ),
 
                 'architecture' =>
-                    $resource['architecture-name']
+                    $resource[
+                        'architecture-name'
+                    ]
                     ?? null,
 
                 'platform' =>
@@ -150,85 +377,438 @@ class MikroTikService
                     $resource['uptime']
                     ?? null,
 
-                'cpu_load' => isset($resource['cpu-load'])
-                    ? (int) $resource['cpu-load']
-                    : null,
+                'cpu_load' =>
+                    isset(
+                        $resource['cpu-load']
+                    )
+                        ? (int)
+                            $resource['cpu-load']
+                        : null,
 
-                'cpu_count' => isset($resource['cpu-count'])
-                    ? (int) $resource['cpu-count']
-                    : null,
+                'cpu_count' =>
+                    isset(
+                        $resource['cpu-count']
+                    )
+                        ? (int)
+                            $resource['cpu-count']
+                        : null,
 
-                'free_memory' => isset($resource['free-memory'])
-                    ? (int) $resource['free-memory']
-                    : null,
+                'free_memory' =>
+                    isset(
+                        $resource['free-memory']
+                    )
+                        ? (int)
+                            $resource['free-memory']
+                        : null,
 
-                'total_memory' => isset($resource['total-memory'])
-                    ? (int) $resource['total-memory']
-                    : null,
+                'total_memory' =>
+                    isset(
+                        $resource['total-memory']
+                    )
+                        ? (int)
+                            $resource['total-memory']
+                        : null,
 
                 'factory_firmware' =>
-                    $routerboard['factory-firmware']
+                    $staticMetadata[
+                        'factory_firmware'
+                    ]
                     ?? null,
 
                 'current_firmware' =>
-                    $routerboard['current-firmware']
+                    $staticMetadata[
+                        'current_firmware'
+                    ]
                     ?? null,
 
                 'upgrade_firmware' =>
-                    $routerboard['upgrade-firmware']
+                    $staticMetadata[
+                        'upgrade_firmware'
+                    ]
                     ?? null,
 
+                'leases_ok' =>
+                    $leasesRead['success'],
+
+                'leases_error' =>
+                    $leasesRead['error'],
+
+                'arp_ok' =>
+                    $arpRead['success'],
+
+                'arp_error' =>
+                    $arpRead['error'],
+
+                'queues_ok' =>
+                    $queuesRead['success'],
+
+                'queues_error' =>
+                    $queuesRead['error'],
+
                 'dhcp_leases_count' =>
-                    count($dhcpLeases),
+                    $leasesRead['success']
+                        ? count($leases)
+                        : null,
 
                 'arp_entries_count' =>
-                    count($arpEntries),
+                    $arpRead['success']
+                        ? count($arpRows)
+                        : null,
 
                 'simple_queues_count' =>
-                    count($simpleQueues),
+                    $queuesRead['success']
+                        ? count($queues)
+                        : null,
+
+                'leases' =>
+                    $leases,
+
+                'queues' =>
+                    $queues,
             ];
+
         } catch (Throwable $exception) {
             return [
                 'success' => false,
-                'message' => $exception->getMessage(),
+
+                'message' =>
+                    $exception->getMessage(),
+
                 'latency_ms' => null,
-                'checked_at' => now()->toISOString(),
+
+                'sync_duration_ms' =>
+                    (int) round(
+                        (
+                            microtime(true)
+                            - $startedAt
+                        ) * 1000
+                    ),
+
+                'routeros_query_count' =>
+                    $this->queryCount,
+
+                'connection_reused' =>
+                    $this->connectionReused,
+
+                'leases' => [],
+                'queues' => [],
+
+                'checked_at' =>
+                    now()->toISOString(),
             ];
         }
     }
 
-    protected function queryFirst(string $path): array
-    {
-        if (!$this->client) {
-            throw new \RuntimeException(
-                'MikroTik API connection is not initialized.'
+    /*
+     * Backward compatible health method.
+     */
+    public function inspect(
+        array|Router $router
+    ): array {
+        $result =
+            $this->telemetry($router);
+
+        unset(
+            $result['leases'],
+            $result['queues']
+        );
+
+        return $result;
+    }
+
+    protected function staticMetadata(
+        array|Router $router
+    ): array {
+        $cacheKey =
+            $this->clientKey
+            ?? null;
+
+        if (
+            $cacheKey !== null
+            && isset(
+                self::$staticMetadataCache[
+                    $cacheKey
+                ]
+            )
+        ) {
+            $cached =
+                self::$staticMetadataCache[
+                    $cacheKey
+                ];
+
+            if (
+                isset(
+                    $cached['refreshed_at']
+                )
+                && (
+                    time()
+                    - (int)
+                        $cached['refreshed_at']
+                ) < 3600
+            ) {
+                return array_merge(
+                    $cached['data'],
+                    [
+                        'cached' => true,
+                    ]
+                );
+            }
+
+            unset(
+                self::$staticMetadataCache[
+                    $cacheKey
+                ]
             );
         }
 
-        $query = new Query($path);
+        $identityRead =
+            $this->readRowsSafe(
+                '/system/identity/print',
+                'name'
+            );
 
-        $result = $this->client
-            ->query($query)
-            ->read();
+        $routerboardRead =
+            $this->readRowsSafe(
+                '/system/routerboard/print',
+                implode(',', [
+                    'model',
+                    'factory-firmware',
+                    'current-firmware',
+                    'upgrade-firmware',
+                ])
+            );
+
+        $identity =
+            $identityRead['rows'][0]
+            ?? [];
+
+        $routerboard =
+            $routerboardRead['rows'][0]
+            ?? [];
+
+        $data = [
+            'identity' =>
+                $identity['name']
+                ?? (
+                    $router instanceof Router
+                        ? $router->identity
+                        : null
+                ),
+
+            'board_name' =>
+                $routerboard['model']
+                ?? (
+                    $router instanceof Router
+                        ? $router->board_name
+                        : null
+                ),
+
+            'factory_firmware' =>
+                $routerboard[
+                    'factory-firmware'
+                ]
+                ?? null,
+
+            'current_firmware' =>
+                $routerboard[
+                    'current-firmware'
+                ]
+                ?? null,
+
+            'upgrade_firmware' =>
+                $routerboard[
+                    'upgrade-firmware'
+                ]
+                ?? null,
+        ];
+
+        /*
+         * Only cache a completely successful static
+         * metadata read. Partial errors are retried
+         * on the next cycle.
+         */
+        if (
+            $cacheKey !== null
+            && (
+                $identityRead['success']
+                ?? false
+            )
+            && (
+                $routerboardRead['success']
+                ?? false
+            )
+        ) {
+            self::$staticMetadataCache[
+                $cacheKey
+            ] = [
+                'refreshed_at' =>
+                    time(),
+
+                'data' =>
+                    $data,
+            ];
+        }
+
+        return array_merge(
+            $data,
+            [
+                'cached' => false,
+            ]
+        );
+    }
+
+    protected function queryFirst(
+        string $path,
+        ?string $properties = null
+    ): array {
+        $query =
+            new Query($path);
+
+        if ($properties) {
+            $query->equal(
+                '.proplist',
+                $properties
+            );
+        }
+
+        $result =
+            $this->readQuery($query);
 
         return $result[0] ?? [];
     }
 
-    protected function safeQuery(string $path): array
-    {
+    protected function readRowsSafe(
+        string $path,
+        string $properties,
+        ?array $filter = null
+    ): array {
         try {
-            if (!$this->client) {
-                return [];
+            $query =
+                (new Query($path))
+                    ->equal(
+                        '.proplist',
+                        $properties
+                    );
+
+            if (
+                $filter !== null
+                && count($filter) === 2
+            ) {
+                $query->where(
+                    $filter[0],
+                    $filter[1]
+                );
             }
 
-            $query = new Query($path);
+            return [
+                'success' => true,
 
-            return $this->client
-                ->query($query)
-                ->read();
-        } catch (Throwable) {
-            return [];
+                'rows' =>
+                    $this->readQuery(
+                        $query
+                    ),
+
+                'error' => null,
+            ];
+
+        } catch (Throwable $exception) {
+            return [
+                'success' => false,
+                'rows' => [],
+                'error' =>
+                    $exception->getMessage(),
+            ];
         }
+    }
+
+    protected function readQuery(
+        Query $query
+    ): array {
+        $lastException = null;
+
+        for (
+            $attempt = 0;
+            $attempt < 2;
+            $attempt++
+        ) {
+            try {
+                if (!$this->client) {
+                    if (
+                        $this->activeRouter === null
+                        || !$this->connect(
+                            $this->activeRouter
+                        )
+                    ) {
+                        throw new \RuntimeException(
+                            $this->lastError
+                            ?? 'MikroTik API connection is not initialized.'
+                        );
+                    }
+                }
+
+                $this->queryCount++;
+
+                return $this->client
+                    ->query($query)
+                    ->read();
+
+            } catch (Throwable $exception) {
+                $lastException =
+                    $exception;
+
+                $this->lastError =
+                    $exception->getMessage();
+
+                $this->forgetCurrentClient();
+
+                if (
+                    $attempt === 0
+                    && $this->activeRouter
+                        !== null
+                ) {
+                    $this->connect(
+                        $this->activeRouter
+                    );
+
+                    continue;
+                }
+            }
+        }
+
+        throw $lastException
+            ?? new \RuntimeException(
+                'RouterOS query failed.'
+            );
+    }
+
+    protected function socketAlive(
+        Client $client
+    ): bool {
+        try {
+            $socket =
+                $client->getSocket();
+
+            return is_resource($socket)
+                && !feof($socket);
+
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    protected function forgetCurrentClient(): void
+    {
+        if ($this->clientKey !== null) {
+            unset(
+                self::$clientPool[
+                    $this->clientKey
+                ]
+            );
+        }
+
+        $this->client = null;
+        $this->clientKey = null;
+        $this->connectionReused = false;
     }
 
     protected function credentials(
@@ -236,28 +816,50 @@ class MikroTikService
     ): array {
         if ($router instanceof Router) {
             return [
-                'host' => $router->host,
-                'username' => $router->username,
-                'password' => $router->password,
-                'api_port' => (int) (
-                    $router->api_port ?? 8728
-                ),
-                'use_ssl' => (bool) (
-                    $router->use_ssl ?? false
-                ),
+                'host' =>
+                    $router->host,
+
+                'username' =>
+                    $router->username,
+
+                'password' =>
+                    $router->password,
+
+                'api_port' =>
+                    (int) (
+                        $router->api_port
+                        ?? 8728
+                    ),
+
+                'use_ssl' =>
+                    (bool) (
+                        $router->use_ssl
+                        ?? false
+                    ),
             ];
         }
 
         return [
-            'host' => $router['host'],
-            'username' => $router['username'],
-            'password' => $router['password'],
-            'api_port' => (int) (
-                $router['api_port'] ?? 8728
-            ),
-            'use_ssl' => (bool) (
-                $router['use_ssl'] ?? false
-            ),
+            'host' =>
+                $router['host'],
+
+            'username' =>
+                $router['username'],
+
+            'password' =>
+                $router['password'],
+
+            'api_port' =>
+                (int) (
+                    $router['api_port']
+                    ?? 8728
+                ),
+
+            'use_ssl' =>
+                (bool) (
+                    $router['use_ssl']
+                    ?? false
+                ),
         ];
     }
 }

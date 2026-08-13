@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Client;
+use App\Models\Router;
 use Illuminate\Support\Facades\Log;
 use RouterOS\Client as RouterClient;
 use RouterOS\Query;
@@ -24,13 +25,23 @@ class ClientConnectionService
             ->get()
             ->groupBy('router_id');
 
-        foreach ($clients as $routerClients) {
-            $router = $routerClients
-                ->first()
-                ?->router;
+        foreach (
+            $clients
+            as $routerClients
+        ) {
+            $router =
+                $routerClients
+                    ->first()
+                    ?->router;
 
-            if (!$router || !$router->enabled) {
-                foreach ($routerClients as $client) {
+            if (
+                !$router
+                || !$router->enabled
+            ) {
+                foreach (
+                    $routerClients
+                    as $client
+                ) {
                     $this->saveStatus(
                         $client,
                         false,
@@ -42,69 +53,60 @@ class ClientConnectionService
             }
 
             try {
-                $api = new RouterClient([
-                    'host' => $router->host,
-                    'user' => $router->username,
-                    'pass' => $router->password,
-                    'port' => (int) (
-                        $router->api_port ?? 8728
-                    ),
-                    'ssl' => (bool) $router->use_ssl,
-                    'timeout' => 10,
-                ]);
+                $api =
+                    new RouterClient([
+                        'host' =>
+                            $router->host,
 
-                $leases = $api->query(
-                    new Query(
-                        '/ip/dhcp-server/lease/print'
-                    )
-                )->read();
+                        'user' =>
+                            $router->username,
 
-                $leaseStatusByMac = [];
+                        'pass' =>
+                            $router->password,
 
-                foreach ($leases as $lease) {
-                    $mac = $this->normalizeMac(
-                        $lease['mac-address']
-                            ?? $lease[
-                                'active-mac-address'
-                            ]
-                            ?? null
-                    );
+                        'port' =>
+                            (int) (
+                                $router->api_port
+                                ?? 8728
+                            ),
 
-                    if (!$mac) {
-                        continue;
-                    }
+                        'ssl' =>
+                            (bool)
+                            $router->use_ssl,
 
-                    $leaseStatusByMac[$mac] =
-                        strtolower(
-                            (string) (
-                                $lease['status']
-                                ?? 'waiting'
+                        'timeout' => 10,
+                    ]);
+
+                $leases =
+                    $api->query(
+                        (new Query(
+                            '/ip/dhcp-server/lease/print'
+                        ))
+                            ->equal(
+                                '.proplist',
+                                implode(',', [
+                                    'mac-address',
+                                    'active-mac-address',
+                                    'status',
+                                ])
                             )
-                        );
-                }
+                    )
+                        ->read();
 
-                foreach ($routerClients as $client) {
-                    $mac = $this->normalizeMac(
-                        $client->mac_address
+                $routerStats =
+                    $this->syncRouterFromLeases(
+                        $router,
+                        $leases
                     );
 
-                    $status = $mac
-                        ? (
-                            $leaseStatusByMac[$mac]
-                            ?? 'waiting'
-                        )
-                        : 'waiting';
-
-                    $online =
-                        $client->enabled
-                        && $status === 'bound';
-
-                    $this->saveStatus(
-                        $client,
-                        $online,
-                        $stats
-                    );
+                foreach (
+                    $routerStats
+                    as $key => $value
+                ) {
+                    $stats[$key] +=
+                        $value;
                 }
+
             } catch (Throwable $exception) {
                 $stats['failed'] +=
                     $routerClients->count();
@@ -112,12 +114,101 @@ class ClientConnectionService
                 Log::error(
                     'Client connection sync failed.',
                     [
-                        'router_id' => $router->id,
+                        'router_id' =>
+                            $router->id,
+
                         'message' =>
-                            $exception->getMessage(),
+                            $exception
+                                ->getMessage(),
                     ]
                 );
             }
+        }
+
+        return $stats;
+    }
+
+    public function syncRouterFromLeases(
+        Router $router,
+        array $leases
+    ): array {
+        $stats = [
+            'online' => 0,
+            'offline' => 0,
+            'updated' => 0,
+            'failed' => 0,
+        ];
+
+        $clients =
+            Client::query()
+                ->where(
+                    'router_id',
+                    $router->id
+                )
+                ->get();
+
+        if (!$router->enabled) {
+            foreach ($clients as $client) {
+                $this->saveStatus(
+                    $client,
+                    false,
+                    $stats
+                );
+            }
+
+            return $stats;
+        }
+
+        $leaseStatusByMac = [];
+
+        foreach ($leases as $lease) {
+            $mac =
+                $this->normalizeMac(
+                    $lease['mac-address']
+                    ?? $lease[
+                        'active-mac-address'
+                    ]
+                    ?? null
+                );
+
+            if (!$mac) {
+                continue;
+            }
+
+            $leaseStatusByMac[$mac] =
+                strtolower(
+                    (string) (
+                        $lease['status']
+                        ?? 'waiting'
+                    )
+                );
+        }
+
+        foreach ($clients as $client) {
+            $mac =
+                $this->normalizeMac(
+                    $client->mac_address
+                );
+
+            $status =
+                $mac
+                    ? (
+                        $leaseStatusByMac[
+                            $mac
+                        ]
+                        ?? 'waiting'
+                    )
+                    : 'waiting';
+
+            $online =
+                $client->enabled
+                && $status === 'bound';
+
+            $this->saveStatus(
+                $client,
+                $online,
+                $stats
+            );
         }
 
         return $stats;
@@ -128,7 +219,10 @@ class ClientConnectionService
         bool $online,
         array &$stats
     ): void {
-        if ((bool) $client->connected !== $online) {
+        if (
+            (bool) $client->connected
+            !== $online
+        ) {
             $client->updateQuietly([
                 'connected' => $online,
             ]);
@@ -146,13 +240,14 @@ class ClientConnectionService
     private function normalizeMac(
         mixed $mac
     ): ?string {
-        $normalized = strtoupper(
-            preg_replace(
-                '/[^A-Fa-f0-9]/',
-                '',
-                (string) $mac
-            )
-        );
+        $normalized =
+            strtoupper(
+                preg_replace(
+                    '/[^A-Fa-f0-9]/',
+                    '',
+                    (string) $mac
+                )
+            );
 
         return strlen($normalized) === 12
             ? $normalized
