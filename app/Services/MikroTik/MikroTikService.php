@@ -18,20 +18,21 @@ class MikroTikService
 
     protected array|Router|null $activeRouter = null;
 
-    /**
-     * Persistent per-worker RouterOS client pool.
-     *
-     * Laravel queue workers are long-lived processes, so these
-     * connections may be reused across background jobs.
-     */
+    protected bool $connectionReused = false;
+
+    protected int $queryCount = 0;
+
     protected static array $clientPool = [];
 
-    public function connect(array|Router $router): bool
-    {
+    public function connect(
+        array|Router $router
+    ): bool {
         $this->activeRouter = $router;
+        $this->connectionReused = false;
 
         try {
-            $credentials = $this->credentials($router);
+            $credentials =
+                $this->credentials($router);
 
             $key = hash(
                 'sha256',
@@ -39,7 +40,9 @@ class MikroTikService
                     $credentials['host'],
                     $credentials['api_port'],
                     $credentials['username'],
-                    $credentials['use_ssl'] ? '1' : '0',
+                    $credentials['use_ssl']
+                        ? '1'
+                        : '0',
                     $credentials['password'],
                 ])
             );
@@ -55,11 +58,14 @@ class MikroTikService
 
                 $this->clientKey = $key;
                 $this->lastError = null;
+                $this->connectionReused = true;
 
                 return true;
             }
 
-            unset(self::$clientPool[$key]);
+            unset(
+                self::$clientPool[$key]
+            );
 
             $config = new Config([
                 'host' =>
@@ -78,11 +84,8 @@ class MikroTikService
                     $credentials['use_ssl'],
 
                 'timeout' => 3,
-
                 'socket_timeout' => 5,
-
                 'attempts' => 1,
-
                 'delay' => 0,
 
                 'socket_options' => [
@@ -90,9 +93,11 @@ class MikroTikService
                 ],
             ]);
 
-            $client = new Client($config);
+            $client =
+                new Client($config);
 
-            self::$clientPool[$key] = $client;
+            self::$clientPool[$key] =
+                $client;
 
             $this->client = $client;
             $this->clientKey = $key;
@@ -121,52 +126,69 @@ class MikroTikService
                 ];
             }
 
-            $result = $this->queryFirst(
-                '/system/resource/print',
-                'version,uptime,cpu-load'
-            );
-
             return [
                 'success' => true,
-                'data' => $result,
+
+                'data' =>
+                    $this->queryFirst(
+                        '/system/resource/print',
+                        'version,uptime,cpu-load'
+                    ),
             ];
 
         } catch (Throwable $exception) {
             return [
                 'success' => false,
+
                 'message' =>
                     $exception->getMessage(),
             ];
         }
     }
 
-    /**
-     * Optimized RouterOS health snapshot.
+    /*
+     * Full consolidated read-only telemetry.
      *
-     * api_latency_ms:
-     *   lightweight RouterOS query response time.
-     *
-     * sync_duration_ms:
-     *   total snapshot collection duration.
+     * One persistent RouterOS connection supplies:
+     * - health
+     * - DHCP connection status
+     * - ARP count
+     * - Queue count
+     * - Queue usage counters
      */
-    public function inspect(
+    public function telemetry(
         array|Router $router
     ): array {
         $startedAt = microtime(true);
 
+        $this->queryCount = 0;
+
         if (!$this->connect($router)) {
             return [
                 'success' => false,
+
                 'message' =>
                     $this->lastError
                     ?? 'Unable to connect to MikroTik API.',
 
                 'latency_ms' => null,
+
                 'sync_duration_ms' =>
                     (int) round(
-                        (microtime(true) - $startedAt)
-                        * 1000
+                        (
+                            microtime(true)
+                            - $startedAt
+                        ) * 1000
                     ),
+
+                'routeros_query_count' =>
+                    $this->queryCount,
+
+                'connection_reused' =>
+                    false,
+
+                'leases' => [],
+                'queues' => [],
 
                 'checked_at' =>
                     now()->toISOString(),
@@ -174,31 +196,32 @@ class MikroTikService
         }
 
         try {
-            /*
-             * First query is deliberately lightweight.
-             * Its duration becomes API latency.
-             */
-            $queryStartedAt = microtime(true);
+            $latencyStartedAt =
+                microtime(true);
 
-            $resource = $this->queryFirst(
-                '/system/resource/print',
-                implode(',', [
-                    'version',
-                    'board-name',
-                    'architecture-name',
-                    'platform',
-                    'uptime',
-                    'cpu-load',
-                    'cpu-count',
-                    'free-memory',
-                    'total-memory',
-                ])
-            );
+            $resource =
+                $this->queryFirst(
+                    '/system/resource/print',
+                    implode(',', [
+                        'version',
+                        'board-name',
+                        'architecture-name',
+                        'platform',
+                        'uptime',
+                        'cpu-load',
+                        'cpu-count',
+                        'free-memory',
+                        'total-memory',
+                    ])
+                );
 
-            $apiLatencyMs = (int) round(
-                (microtime(true) - $queryStartedAt)
-                * 1000
-            );
+            $apiLatencyMs =
+                (int) round(
+                    (
+                        microtime(true)
+                        - $latencyStartedAt
+                    ) * 1000
+                );
 
             if (empty($resource)) {
                 throw new \RuntimeException(
@@ -206,70 +229,108 @@ class MikroTikService
                 );
             }
 
-            $identity = $this->queryFirst(
-                '/system/identity/print',
-                'name'
-            );
+            $identity =
+                $this->queryFirst(
+                    '/system/identity/print',
+                    'name'
+                );
 
-            $routerboard = $this->queryFirst(
-                '/system/routerboard/print',
-                implode(',', [
-                    'model',
-                    'factory-firmware',
-                    'current-firmware',
-                    'upgrade-firmware',
-                ])
-            );
+            $routerboard =
+                $this->queryFirst(
+                    '/system/routerboard/print',
+                    implode(',', [
+                        'model',
+                        'factory-firmware',
+                        'current-firmware',
+                        'upgrade-firmware',
+                    ])
+                );
 
             $dhcpServer = null;
 
             if (
                 $router instanceof Router
-                && !empty($router->dhcp_server)
+                && !empty(
+                    $router->dhcp_server
+                )
             ) {
                 $dhcpServer =
-                    $router->dhcp_server;
+                    trim(
+                        (string)
+                        $router->dhcp_server
+                    );
             }
 
-            /*
-             * For counts we only request .id.
-             * This avoids downloading every property
-             * from every DHCP/ARP/Queue entry.
-             */
-            $dhcpLeasesCount =
-                $this->safeCount(
+            $leasesRead =
+                $this->readRowsSafe(
                     '/ip/dhcp-server/lease/print',
-                    $dhcpServer
-                        ? ['server', $dhcpServer]
-                        : null
+                    implode(',', [
+                        '.id',
+                        'mac-address',
+                        'active-mac-address',
+                        'status',
+                    ]),
+                    $dhcpServer !== ''
+                        && $dhcpServer !== null
+                            ? [
+                                'server',
+                                $dhcpServer,
+                            ]
+                            : null
                 );
 
-            $arpEntriesCount =
-                $this->safeCount(
-                    '/ip/arp/print'
+            $arpRead =
+                $this->readRowsSafe(
+                    '/ip/arp/print',
+                    '.id'
                 );
 
-            $simpleQueuesCount =
-                $this->safeCount(
-                    '/queue/simple/print'
+            $queuesRead =
+                $this->readRowsSafe(
+                    '/queue/simple/print',
+                    implode(',', [
+                        '.id',
+                        'name',
+                        'bytes',
+                        'disabled',
+                        'invalid',
+                    ])
                 );
 
-            $syncDurationMs = (int) round(
-                (microtime(true) - $startedAt)
-                * 1000
-            );
+            $leases =
+                $leasesRead['rows'];
+
+            $arpRows =
+                $arpRead['rows'];
+
+            $queues =
+                $queuesRead['rows'];
+
+            $duration =
+                (int) round(
+                    (
+                        microtime(true)
+                        - $startedAt
+                    ) * 1000
+                );
 
             return [
                 'success' => true,
 
                 'message' =>
-                    'MikroTik API connected successfully.',
+                    'MikroTik telemetry synchronized successfully.',
 
                 'latency_ms' =>
                     $apiLatencyMs,
 
                 'sync_duration_ms' =>
-                    $syncDurationMs,
+                    $duration,
+
+                'routeros_query_count' =>
+                    $this->queryCount,
+
+                'connection_reused' =>
+                    $this->connectionReused,
 
                 'checked_at' =>
                     now()->toISOString(),
@@ -288,7 +349,9 @@ class MikroTikService
                     ?? null,
 
                 'architecture' =>
-                    $resource['architecture-name']
+                    $resource[
+                        'architecture-name'
+                    ]
                     ?? null,
 
                 'platform' =>
@@ -300,45 +363,93 @@ class MikroTikService
                     ?? null,
 
                 'cpu_load' =>
-                    isset($resource['cpu-load'])
-                        ? (int) $resource['cpu-load']
+                    isset(
+                        $resource['cpu-load']
+                    )
+                        ? (int)
+                            $resource['cpu-load']
                         : null,
 
                 'cpu_count' =>
-                    isset($resource['cpu-count'])
-                        ? (int) $resource['cpu-count']
+                    isset(
+                        $resource['cpu-count']
+                    )
+                        ? (int)
+                            $resource['cpu-count']
                         : null,
 
                 'free_memory' =>
-                    isset($resource['free-memory'])
-                        ? (int) $resource['free-memory']
+                    isset(
+                        $resource['free-memory']
+                    )
+                        ? (int)
+                            $resource['free-memory']
                         : null,
 
                 'total_memory' =>
-                    isset($resource['total-memory'])
-                        ? (int) $resource['total-memory']
+                    isset(
+                        $resource['total-memory']
+                    )
+                        ? (int)
+                            $resource['total-memory']
                         : null,
 
                 'factory_firmware' =>
-                    $routerboard['factory-firmware']
+                    $routerboard[
+                        'factory-firmware'
+                    ]
                     ?? null,
 
                 'current_firmware' =>
-                    $routerboard['current-firmware']
+                    $routerboard[
+                        'current-firmware'
+                    ]
                     ?? null,
 
                 'upgrade_firmware' =>
-                    $routerboard['upgrade-firmware']
+                    $routerboard[
+                        'upgrade-firmware'
+                    ]
                     ?? null,
 
+                'leases_ok' =>
+                    $leasesRead['success'],
+
+                'leases_error' =>
+                    $leasesRead['error'],
+
+                'arp_ok' =>
+                    $arpRead['success'],
+
+                'arp_error' =>
+                    $arpRead['error'],
+
+                'queues_ok' =>
+                    $queuesRead['success'],
+
+                'queues_error' =>
+                    $queuesRead['error'],
+
                 'dhcp_leases_count' =>
-                    $dhcpLeasesCount,
+                    $leasesRead['success']
+                        ? count($leases)
+                        : null,
 
                 'arp_entries_count' =>
-                    $arpEntriesCount,
+                    $arpRead['success']
+                        ? count($arpRows)
+                        : null,
 
                 'simple_queues_count' =>
-                    $simpleQueuesCount,
+                    $queuesRead['success']
+                        ? count($queues)
+                        : null,
+
+                'leases' =>
+                    $leases,
+
+                'queues' =>
+                    $queues,
             ];
 
         } catch (Throwable $exception) {
@@ -352,9 +463,20 @@ class MikroTikService
 
                 'sync_duration_ms' =>
                     (int) round(
-                        (microtime(true) - $startedAt)
-                        * 1000
+                        (
+                            microtime(true)
+                            - $startedAt
+                        ) * 1000
                     ),
+
+                'routeros_query_count' =>
+                    $this->queryCount,
+
+                'connection_reused' =>
+                    $this->connectionReused,
+
+                'leases' => [],
+                'queues' => [],
 
                 'checked_at' =>
                     now()->toISOString(),
@@ -362,11 +484,29 @@ class MikroTikService
         }
     }
 
+    /*
+     * Backward compatible health method.
+     */
+    public function inspect(
+        array|Router $router
+    ): array {
+        $result =
+            $this->telemetry($router);
+
+        unset(
+            $result['leases'],
+            $result['queues']
+        );
+
+        return $result;
+    }
+
     protected function queryFirst(
         string $path,
         ?string $properties = null
     ): array {
-        $query = new Query($path);
+        $query =
+            new Query($path);
 
         if ($properties) {
             $query->equal(
@@ -381,20 +521,21 @@ class MikroTikService
         return $result[0] ?? [];
     }
 
-    protected function safeCount(
+    protected function readRowsSafe(
         string $path,
+        string $properties,
         ?array $filter = null
-    ): int {
+    ): array {
         try {
             $query =
                 (new Query($path))
                     ->equal(
                         '.proplist',
-                        '.id'
+                        $properties
                     );
 
             if (
-                $filter
+                $filter !== null
                 && count($filter) === 2
             ) {
                 $query->where(
@@ -403,25 +544,37 @@ class MikroTikService
                 );
             }
 
-            return count(
-                $this->readQuery($query)
-            );
+            return [
+                'success' => true,
 
-        } catch (Throwable) {
-            return 0;
+                'rows' =>
+                    $this->readQuery(
+                        $query
+                    ),
+
+                'error' => null,
+            ];
+
+        } catch (Throwable $exception) {
+            return [
+                'success' => false,
+                'rows' => [],
+                'error' =>
+                    $exception->getMessage(),
+            ];
         }
     }
 
-    /**
-     * Read a query and reconnect one time if a
-     * persistent socket became stale.
-     */
     protected function readQuery(
         Query $query
     ): array {
         $lastException = null;
 
-        for ($attempt = 0; $attempt < 2; $attempt++) {
+        for (
+            $attempt = 0;
+            $attempt < 2;
+            $attempt++
+        ) {
             try {
                 if (!$this->client) {
                     if (
@@ -437,12 +590,15 @@ class MikroTikService
                     }
                 }
 
+                $this->queryCount++;
+
                 return $this->client
                     ->query($query)
                     ->read();
 
             } catch (Throwable $exception) {
-                $lastException = $exception;
+                $lastException =
+                    $exception;
 
                 $this->lastError =
                     $exception->getMessage();
@@ -451,7 +607,8 @@ class MikroTikService
 
                 if (
                     $attempt === 0
-                    && $this->activeRouter !== null
+                    && $this->activeRouter
+                        !== null
                 ) {
                     $this->connect(
                         $this->activeRouter
@@ -472,7 +629,8 @@ class MikroTikService
         Client $client
     ): bool {
         try {
-            $socket = $client->getSocket();
+            $socket =
+                $client->getSocket();
 
             return is_resource($socket)
                 && !feof($socket);
@@ -494,6 +652,7 @@ class MikroTikService
 
         $this->client = null;
         $this->clientKey = null;
+        $this->connectionReused = false;
     }
 
     protected function credentials(

@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Router;
-use App\Services\RouterStatusService;
+use App\Services\RouterTelemetryService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -26,18 +26,19 @@ class SyncRouterStatus implements ShouldQueue
     }
 
     public function handle(
-        RouterStatusService $status
+        RouterTelemetryService $telemetry
     ): void {
-        $router = Router::query()
-            ->find(
-                $this->routerId
-            );
+        $router =
+            Router::query()
+                ->find(
+                    $this->routerId
+                );
 
         if (!$router) {
             return;
         }
 
-        $status->refresh(
+        $telemetry->sync(
             $router
         );
     }

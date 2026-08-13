@@ -73,39 +73,15 @@ Schedule::command(
 
 /*
 |--------------------------------------------------------------------------
-| Client Connection Sync
+| Consolidated Router Telemetry
 |--------------------------------------------------------------------------
+|
+| Client connection status and monthly Queue usage are
+| collected by the routers:queue-health background job.
+| This prevents separate DHCP and Queue RouterOS sessions
+| every minute.
+|
 */
-Schedule::command(
-    'clients:sync-connection'
-)
-    ->everyMinute()
-    ->withoutOverlapping(5)
-    ->when(
-        fn (): bool =>
-            Setting::bool(
-                'connection_sync_enabled',
-                true
-            )
-    );
-
-/*
-|--------------------------------------------------------------------------
-| Client Usage Sync
-|--------------------------------------------------------------------------
-*/
-Schedule::command(
-    'clients:sync-usage'
-)
-    ->everyMinute()
-    ->withoutOverlapping(10)
-    ->when(
-        fn (): bool =>
-            Setting::bool(
-                'usage_sync_enabled',
-                true
-            )
-    );
 
 /*
  * Multi-router convergence:

@@ -107,7 +107,7 @@ class RouterStatusService
         ];
     }
 
-    protected function persist(
+    public function persist(
         Router $router,
         array $live
     ): void {
@@ -183,6 +183,8 @@ class RouterStatusService
                         $liveKey,
                         $live
                     )
+                    && $live[$liveKey]
+                        !== null
                 ) {
                     $values[$column] =
                         $live[$liveKey];
