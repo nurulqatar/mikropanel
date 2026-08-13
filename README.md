@@ -1,59 +1,159 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# MikroPanel Web Installer
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+This installer gives MikroPanel a WordPress-style browser setup for the **application layer** and a one-command VPS bootstrap for a blank Ubuntu 24.04 server.
 
-## About Laravel
+## Important technical boundary
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+A completely blank VPS cannot be configured by a browser alone: before a browser can execute PHP, the server must already have a web server and PHP, and root-only tasks such as installing Ubuntu packages, configuring Nginx port 80, MySQL system access and cron cannot safely be performed by `www-data`.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+For a blank Ubuntu VPS the safe flow is therefore:
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+1. Upload/clone the MikroPanel project.
+2. Run **one root bootstrap command**.
+3. Do the remaining application setup in the browser.
 
-## Learning Laravel
+On a hosting server where Nginx/Apache + PHP + MySQL are already prepared and the document root already points to `public/`, only the browser installer portion may be needed.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+## Files
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- `public/install.php` — browser installer.
+- `deploy/bootstrap-vps.sh` — Ubuntu 24.04 bootstrap.
+- `storage/app/installer-bootstrap.json` — temporary one-time credentials/token; never commit.
+- `storage/app/mikropanel-installed.lock` — local installation lock; never commit.
 
-## Laravel Sponsors
+## Add installer to the current project
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+From the extracted installer kit:
 
-### Premium Partners
+```bash
+sudo bash add-to-project.sh /var/www/mikropanel
+```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+On an already running production server this creates a local installer lock immediately, so adding the installer code does **not** reopen setup on the live panel.
 
-## Contributing
+Then commit only the installer source/docs:
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```bash
+cd /var/www/mikropanel
+git status
+git add public/install.php deploy/bootstrap-vps.sh docs/WEB_INSTALLER_README.md .gitignore
+git commit -m "Add MikroPanel web installer"
+git push
+```
 
-## Code of Conduct
+The `.env`, installer token, installer lock and database files must remain outside GitHub.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## New blank VPS installation
 
-## Security Vulnerabilities
+Get the project onto the new VPS first, then:
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```bash
+sudo bash /var/www/mikropanel/deploy/bootstrap-vps.sh /var/www/mikropanel
+```
 
-## License
+The bootstrap performs these root-level tasks:
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+- Installs Nginx, MySQL, PHP 8.3 extensions, Composer and Node.js 22.
+- Installs Composer dependencies and builds Vite assets when missing.
+- Creates a dedicated `mikropanel` MySQL database/user with a random password.
+- Generates a temporary production `.env` and APP_KEY.
+- Configures Nginx on port 80.
+- Raises installer upload limit to 512 MB.
+- Installs the Laravel scheduler cron.
+- Installs a daily MySQL backup cron.
+- Generates a one-time installer token.
+- Prints the browser URL.
+
+Example output:
+
+```text
+http://NEW_VPS_IP/install.php?token=ONE_TIME_TOKEN
+```
+
+Do not share that URL/token.
+
+## Browser flow
+
+### Fresh installation
+
+Choose **Fresh installation**, set:
+
+- Application URL
+- Timezone
+- Administrator name
+- Administrator email
+- Administrator password
+
+The installer then:
+
+- Tests the temporary database credentials.
+- Writes production `.env` values.
+- Runs `php artisan migrate --force` — it does not run `migrate:fresh`.
+- Creates the admin user with role `admin`.
+- Creates the storage link.
+- Clears/creates Laravel production caches.
+- Creates the local installed lock.
+
+### Restore an existing MikroPanel
+
+Choose **Restore existing MikroPanel database** and upload:
+
+1. `database.sql.gz` or `.sql`
+2. The old `.env` backup **recommended**
+
+The old `.env` is used only to recover the old `APP_KEY`; the new VPS database credentials remain the newly generated credentials.
+
+Preserving the old APP_KEY is important if any application data is encrypted with Laravel encryption.
+
+After importing the database the installer runs only pending migrations with `migrate --force`.
+
+Admin fields are optional in restore mode. Fill them only when you want to create/reset an administrator account.
+
+## Security after completion
+
+After successful installation:
+
+- `storage/app/mikropanel-installed.lock` blocks the installer.
+- The temporary bootstrap credential file is deleted.
+- A root finalizer changes `.env` to `root:www-data` mode `0640` within about one minute.
+- The one-time installer URL stops working.
+
+The installer source can remain in GitHub safely because the lock/token model prevents re-running it on an installed server. You can also remove `public/install.php` from a specific deployment after installation if desired.
+
+## Backups
+
+The VPS bootstrap installs:
+
+```text
+15 2 * * * /usr/local/bin/mikropanel-backup
+```
+
+Database backups are kept under:
+
+```text
+/var/backups/mikropanel/
+```
+
+Keep an additional copy outside the VPS.
+
+## Not automated by the browser installer
+
+These are intentionally separate because they are network/root infrastructure, not Laravel application setup:
+
+- Restoring `/etc/wireguard` and changing MikroTik WireGuard peers.
+- DNS changes.
+- TLS/Let's Encrypt certificate issuance.
+- Provider firewall/security-group rules.
+
+After a restore, verify MikroTik Router Ping/Sync before serving real users.
+
+## Never use during recovery
+
+Do not use:
+
+```bash
+php artisan migrate:fresh
+php artisan db:wipe
+```
+
+When restoring an old `.env`/APP_KEY, do not replace that key with `php artisan key:generate`.
