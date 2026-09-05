@@ -672,6 +672,46 @@ class CheckPanelPermission
              * FAIL CLOSED
              * =================================================
              */
+            in_array(
+                $routeName,
+                [
+                    'hotspot.index',
+                    'hotspot.vouchers.show',
+                    'hotspot.batches.index',
+                    'hotspot.reports.index',
+                ],
+                true
+            ) =>
+                'hotspot.view',
+
+            $routeName ===
+                'hotspot.vouchers.sell' =>
+                'hotspot.sell',
+
+            $routeName ===
+                'hotspot.invoices.pay' =>
+                'hotspot.payments',
+
+            in_array(
+                $routeName,
+                [
+                    'hotspot.vouchers.print',
+                    'hotspot.vouchers.pdf',
+                    'hotspot.batches.print',
+                    'hotspot.batches.pdf',
+                    'hotspot.reports.csv',
+                    'hotspot.reports.pdf',
+                ],
+                true
+            ) =>
+                'hotspot.export',
+
+            str_starts_with(
+                $routeName,
+                'hotspot.'
+            ) =>
+                'hotspot.manage',
+
             default =>
                 '__deny__',
         };

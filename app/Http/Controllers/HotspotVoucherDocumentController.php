@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\HotspotBatch;
+use App\Models\HotspotBranding;
 use App\Models\HotspotVoucher;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Endroid\QrCode\QrCode;
@@ -35,6 +36,9 @@ class HotspotVoucherDocumentController extends Controller
 
                 'title' =>
                     'Hotspot Voucher',
+
+                'branding' =>
+                    HotspotBranding::current(),
             ]
         );
     }
@@ -64,6 +68,9 @@ class HotspotVoucherDocumentController extends Controller
 
                 'title' =>
                     'Hotspot Voucher',
+
+                'branding' =>
+                    HotspotBranding::current(),
             ]
         )
             ->setPaper('a4')
@@ -95,6 +102,9 @@ class HotspotVoucherDocumentController extends Controller
                     'Hotspot Voucher Batch '
                     . $batch
                         ->batch_code,
+
+                'branding' =>
+                    HotspotBranding::current(),
             ]
         );
     }
@@ -120,6 +130,9 @@ class HotspotVoucherDocumentController extends Controller
                     'Hotspot Voucher Batch '
                     . $batch
                         ->batch_code,
+
+                'branding' =>
+                    HotspotBranding::current(),
             ]
         )
             ->setPaper('a4')
@@ -268,7 +281,13 @@ class HotspotVoucherDocumentController extends Controller
             $request->user()
             && $request
                 ->user()
-                ->isAdmin(),
+                ->hasAnyPermission([
+                    'hotspot.view',
+                    'hotspot.manage',
+                    'hotspot.sell',
+                    'hotspot.payments',
+                    'hotspot.export',
+                ]),
             403
         );
     }

@@ -58,7 +58,7 @@
         .brand {
             font-size: 16px;
             font-weight: bold;
-            color: #0891b2;
+            color: {{ $branding['primary_color'] ?? '#0891b2' }};
         }
 
         .plan {
@@ -129,16 +129,18 @@
     @foreach($items as $item)
         <div class="card">
             <div class="brand">
-                MikroPanel Hotspot
+                {{ $branding['brand_name'] ?? 'MikroPanel Hotspot' }}
             </div>
 
             <div class="plan">
                 {{ $item['plan'] ?? '-' }}
-                · QAR
-                {{ number_format(
-                    (float) ($item['price'] ?? 0),
-                    2
-                ) }}
+                @if($branding['show_price'] ?? true)
+                    · QAR
+                    {{ number_format(
+                        (float) ($item['price'] ?? 0),
+                        2
+                    ) }}
+                @endif
                 · {{ $item['validity'] }}
             </div>
 
@@ -179,9 +181,11 @@
                     @endif
                 </div>
 
-                <div class="qr">
-                    {!! $item['qr_svg'] !!}
-                </div>
+                @if($branding['show_qr'] ?? true)
+                    <div class="qr">
+                        {!! $item['qr_svg'] !!}
+                    </div>
+                @endif
             </div>
 
             <div class="footer">

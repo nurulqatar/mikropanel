@@ -1,3 +1,4 @@
+import UnifiedFinanceStrip from '@/Components/Finance/UnifiedFinanceStrip';
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Head,
@@ -908,7 +909,9 @@ export default function Index({
                     ))}
                 </ReportTable>
             </div>
-        </AppLayout>
+
+                <UnifiedFinanceStrip />
+</AppLayout>
     );
 }
 

@@ -267,6 +267,24 @@ export default function Index({
                     <div className="flex flex-wrap gap-3">
                         <Link
                             href={route(
+                                'hotspot.reports.index',
+                            )}
+                            className="rounded-xl bg-emerald-600 px-5 py-3 font-semibold text-white shadow hover:bg-emerald-700"
+                        >
+                            Reports
+                        </Link>
+
+                        <Link
+                            href={route(
+                                'hotspot.branding.index',
+                            )}
+                            className="rounded-xl bg-slate-700 px-5 py-3 font-semibold text-white shadow hover:bg-slate-800"
+                        >
+                            Branding
+                        </Link>
+
+                        <Link
+                            href={route(
                                 'hotspot.batches.index',
                             )}
                             className="rounded-xl bg-violet-600 px-5 py-3 font-semibold text-white shadow hover:bg-violet-700"

@@ -100,6 +100,12 @@ export default function Sidebar() {
             icon: '▥',
         },
         {
+            label: 'Hotspot',
+            route: 'hotspot.index',
+            active: 'hotspot.*',
+            permission: 'hotspot.view',
+        },
+        {
             label: 'Settings',
             route: 'settings.index',
             active: 'settings.*',

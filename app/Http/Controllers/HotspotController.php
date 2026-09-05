@@ -878,7 +878,13 @@ class HotspotController extends Controller
             $request->user()
                 && $request
                     ->user()
-                    ->isAdmin(),
+                    ->hasAnyPermission([
+                        'hotspot.view',
+                        'hotspot.manage',
+                        'hotspot.sell',
+                        'hotspot.payments',
+                        'hotspot.export',
+                    ]),
             403,
             'Hotspot management is currently restricted to administrators.'
         );

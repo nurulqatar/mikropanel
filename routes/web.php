@@ -4,6 +4,8 @@ use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\HotspotController;
+use App\Http\Controllers\HotspotBrandingController;
+use App\Http\Controllers\HotspotReportController;
 use App\Http\Controllers\HotspotVoucherDocumentController;
 use App\Http\Controllers\HotspotVoucherController;
 use Inertia\Inertia;
@@ -210,6 +212,66 @@ Route::get(
                     'index',
                 ]
             )->name('index');
+
+            Route::get(
+                'reports',
+                [
+                    HotspotReportController::class,
+                    'index',
+                ]
+            )->name(
+                'reports.index'
+            );
+
+            Route::get(
+                'reports/csv',
+                [
+                    HotspotReportController::class,
+                    'csv',
+                ]
+            )->name(
+                'reports.csv'
+            );
+
+            Route::get(
+                'reports/pdf',
+                [
+                    HotspotReportController::class,
+                    'pdf',
+                ]
+            )->name(
+                'reports.pdf'
+            );
+
+            Route::get(
+                'branding',
+                [
+                    HotspotBrandingController::class,
+                    'index',
+                ]
+            )->name(
+                'branding.index'
+            );
+
+            Route::put(
+                'branding',
+                [
+                    HotspotBrandingController::class,
+                    'update',
+                ]
+            )->name(
+                'branding.update'
+            );
+
+            Route::get(
+                'branding/portal',
+                [
+                    HotspotBrandingController::class,
+                    'portal',
+                ]
+            )->name(
+                'branding.portal'
+            );
 
             Route::post(
                 'discover',
