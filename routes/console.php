@@ -110,3 +110,17 @@ Schedule::command(
     ->withoutOverlapping(2);
 
 /* MIKROPANEL_ROUTER_BACKGROUND_SYNC_END */
+
+
+// HOTSPOT_CORE_SCHEDULE
+\Illuminate\Support\Facades\Schedule::command(
+    'hotspot:sync'
+)
+    ->everyMinute()
+    ->withoutOverlapping(5);
+
+\Illuminate\Support\Facades\Schedule::command(
+    'hotspot:expire'
+)
+    ->everyMinute()
+    ->withoutOverlapping(5);
