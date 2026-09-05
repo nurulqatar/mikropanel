@@ -4,6 +4,8 @@ use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\HotspotController;
+use App\Http\Controllers\HotspotVoucherDocumentController;
+use App\Http\Controllers\HotspotVoucherController;
 use Inertia\Inertia;
 use App\Http\Controllers\RouterController;
 use App\Http\Controllers\PackageController;
@@ -265,6 +267,116 @@ Route::get(
                 ]
             )->name(
                 'vouchers.generate'
+            );
+
+            Route::get(
+                'vouchers/{voucher}',
+                [
+                    HotspotVoucherController::class,
+                    'show',
+                ]
+            )->name(
+                'vouchers.show'
+            );
+
+            Route::post(
+                'vouchers/{voucher}/renew',
+                [
+                    HotspotVoucherController::class,
+                    'renew',
+                ]
+            )->name(
+                'vouchers.renew'
+            );
+
+            Route::post(
+                'vouchers/{voucher}/suspend',
+                [
+                    HotspotVoucherController::class,
+                    'suspend',
+                ]
+            )->name(
+                'vouchers.suspend'
+            );
+
+            Route::post(
+                'vouchers/{voucher}/activate',
+                [
+                    HotspotVoucherController::class,
+                    'activate',
+                ]
+            )->name(
+                'vouchers.activate'
+            );
+
+            Route::put(
+                'vouchers/{voucher}/mac',
+                [
+                    HotspotVoucherController::class,
+                    'updateMac',
+                ]
+            )->name(
+                'vouchers.mac'
+            );
+
+            Route::delete(
+                'vouchers/{voucher}/archive',
+                [
+                    HotspotVoucherController::class,
+                    'archive',
+                ]
+            )->name(
+                'vouchers.archive'
+            );
+
+            Route::get(
+                'vouchers/{voucher}/print',
+                [
+                    HotspotVoucherDocumentController::class,
+                    'printVoucher',
+                ]
+            )->name(
+                'vouchers.print'
+            );
+
+            Route::get(
+                'vouchers/{voucher}/pdf',
+                [
+                    HotspotVoucherDocumentController::class,
+                    'downloadVoucher',
+                ]
+            )->name(
+                'vouchers.pdf'
+            );
+
+            Route::get(
+                'batches',
+                [
+                    HotspotVoucherController::class,
+                    'batches',
+                ]
+            )->name(
+                'batches.index'
+            );
+
+            Route::get(
+                'batches/{batch}/print',
+                [
+                    HotspotVoucherDocumentController::class,
+                    'printBatch',
+                ]
+            )->name(
+                'batches.print'
+            );
+
+            Route::get(
+                'batches/{batch}/pdf',
+                [
+                    HotspotVoucherDocumentController::class,
+                    'downloadBatch',
+                ]
+            )->name(
+                'batches.pdf'
             );
 
             Route::post(

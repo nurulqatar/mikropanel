@@ -20,7 +20,7 @@ class HotspotRouterService
     ): array {
         $api = $this->api($router);
 
-        return $api->query(
+        $servers = $api->query(
             (new Query('/ip/hotspot/print'))
                 ->equal(
                     '.proplist',
@@ -35,6 +35,60 @@ class HotspotRouterService
                     ])
                 )
         )->read();
+
+        /*
+         * PROFILE_DNS_DISCOVERY
+         */
+        $profiles = $api->query(
+            (new Query(
+                '/ip/hotspot/profile/print'
+            ))
+                ->equal(
+                    '.proplist',
+                    'name,dns-name'
+                )
+        )->read();
+
+        $dnsByProfile = [];
+
+        foreach ($profiles as $profile) {
+            if (
+                !isset(
+                    $profile['name']
+                )
+            ) {
+                continue;
+            }
+
+            $dnsByProfile[
+                $profile['name']
+            ] =
+                $profile[
+                    'dns-name'
+                ] ?? null;
+        }
+
+        foreach ($servers as &$server) {
+            $profileName =
+                $server[
+                    'profile'
+                ] ?? null;
+
+            $server[
+                '_dns_name'
+            ] =
+                $profileName
+                    ? (
+                        $dnsByProfile[
+                            $profileName
+                        ] ?? null
+                    )
+                    : null;
+        }
+
+        unset($server);
+
+        return $servers;
     }
 
     public function provisionVoucher(
@@ -157,15 +211,15 @@ class HotspotRouterService
                 . $voucher->id
             );
 
-        if (
+        $query->equal(
+            'mac-address',
             $plan->mac_binding
-            && $voucher->mac_address
-        ) {
-            $query->equal(
-                'mac-address',
-                $voucher->mac_address
-            );
-        }
+                && $voucher->mac_address
+                    ? strtoupper(
+                        $voucher->mac_address
+                    )
+                    : '00:00:00:00:00:00'
+        );
 
         $api->query($query)->read();
 
@@ -395,6 +449,113 @@ class HotspotRouterService
                 $now = Carbon::now(
                     'Asia/Qatar'
                 );
+
+                /*
+                 * AUTO_BIND_HOTSPOT_MAC
+                 *
+                 * First successful login binds the
+                 * observed device MAC when the plan
+                 * requires MAC binding.
+                 */
+                $voucher->loadMissing(
+                    'plan'
+                );
+
+                $observedMac = strtoupper(
+                    (string) (
+                        $row[
+                            'mac-address'
+                        ] ?? ''
+                    )
+                );
+
+                if (
+                    $voucher->plan
+                    && $voucher
+                        ->plan
+                        ->mac_binding
+                    && $observedMac !== ''
+                ) {
+                    if (
+                        !$voucher
+                            ->mac_address
+                    ) {
+                        $voucher->forceFill([
+                            'mac_address' =>
+                                $observedMac,
+                        ])->save();
+
+                        $usersForMac =
+                            $api->query(
+                                (new Query(
+                                    '/ip/hotspot/user/print'
+                                ))
+                                    ->where(
+                                        'name',
+                                        $voucher
+                                            ->username
+                                    )
+                                    ->equal(
+                                        '.proplist',
+                                        '.id'
+                                    )
+                            )->read();
+
+                        foreach (
+                            $usersForMac
+                            as $hotspotUser
+                        ) {
+                            if (
+                                !isset(
+                                    $hotspotUser[
+                                        '.id'
+                                    ]
+                                )
+                            ) {
+                                continue;
+                            }
+
+                            $api->query(
+                                (new Query(
+                                    '/ip/hotspot/user/set'
+                                ))
+                                    ->equal(
+                                        '.id',
+                                        $hotspotUser[
+                                            '.id'
+                                        ]
+                                    )
+                                    ->equal(
+                                        'mac-address',
+                                        $observedMac
+                                    )
+                            )->read();
+                        }
+
+                    } elseif (
+                        strtoupper(
+                            $voucher
+                                ->mac_address
+                        ) !== $observedMac
+                    ) {
+                        /*
+                         * Bound voucher being used
+                         * by another MAC: drop the
+                         * current session immediately.
+                         */
+                        $api->query(
+                            (new Query(
+                                '/ip/hotspot/active/remove'
+                            ))
+                                ->equal(
+                                    '.id',
+                                    $activeId
+                                )
+                        )->read();
+
+                        continue;
+                    }
+                }
 
                 if (!$voucher->activated_at) {
                     $voucher->loadMissing(

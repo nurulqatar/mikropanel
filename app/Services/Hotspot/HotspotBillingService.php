@@ -5,6 +5,7 @@ namespace App\Services\Hotspot;
 use App\Jobs\ProvisionHotspotVoucher;
 use App\Models\HotspotInvoice;
 use App\Models\HotspotPayment;
+use App\Models\HotspotPlan;
 use App\Models\HotspotVoucher;
 use App\Models\Setting;
 use Carbon\Carbon;
@@ -65,98 +66,17 @@ class HotspotBillingService
                     ]);
                 }
 
-                $price = round(
-                    (float) $locked
-                        ->plan
-                        ->price,
-                    2
-                );
-
-                if ($price <= 0) {
-                    throw ValidationException::withMessages([
-                        'sale_type' =>
-                            'Plan price must be greater than zero.',
-                    ]);
-                }
-
-                $saleType =
-                    $data['sale_type'];
-
-                $received = match (
-                    $saleType
-                ) {
-                    'paid' => $price,
-
-                    'partial' => round(
-                        (float) (
-                            $data[
-                                'received_amount'
-                            ] ?? 0
-                        ),
-                        2
-                    ),
-
-                    default => 0,
-                };
-
-                if (
-                    $saleType === 'partial'
-                    && (
-                        $received <= 0
-                        || $received >= $price
-                    )
-                ) {
-                    throw ValidationException::withMessages([
-                        'received_amount' =>
-                            'Partial payment must be greater than zero and less than QAR '
-                            . number_format(
-                                $price,
-                                2
-                            )
-                            . '.',
-                    ]);
-                }
-
-                $due = max(
-                    0,
-                    round(
-                        $price - $received,
-                        2
-                    )
-                );
-
-                $status =
-                    $due <= 0
-                        ? 'paid'
-                        : (
-                            $received > 0
-                                ? 'partial'
-                                : 'unpaid'
-                        );
+                $money =
+                    $this->resolvePayment(
+                        (float) $locked
+                            ->plan
+                            ->price,
+                        $data
+                    );
 
                 $today = Carbon::now(
                     'Asia/Qatar'
                 )->startOfDay();
-
-                $defaultDueDays = max(
-                    0,
-                    (int) Setting::getValue(
-                        'default_due_days',
-                        0
-                    )
-                );
-
-                $invoiceNo =
-                    'HINV-'
-                    . $today->format(
-                        'Ymd'
-                    )
-                    . '-'
-                    . $locked->id
-                    . '-'
-                    . Str::upper(
-                        Str::random(4)
-                    );
 
                 $invoice =
                     HotspotInvoice::create([
@@ -164,19 +84,26 @@ class HotspotBillingService
                             $locked->id,
 
                         'invoice_no' =>
-                            $invoiceNo,
+                            $this
+                                ->invoiceNumber(
+                                    'SALE',
+                                    $locked->id
+                                ),
+
+                        'invoice_type' =>
+                            'sale',
 
                         'amount' =>
-                            $price,
+                            $money['price'],
 
                         'discount' =>
                             0,
 
                         'paid_amount' =>
-                            $received,
+                            $money['received'],
 
                         'due_amount' =>
-                            $due,
+                            $money['due'],
 
                         'issue_date' =>
                             $today
@@ -186,15 +113,27 @@ class HotspotBillingService
                             $today
                                 ->copy()
                                 ->addDays(
-                                    $defaultDueDays
+                                    $this
+                                        ->defaultDueDays()
                                 )
                                 ->toDateString(),
 
+                        /*
+                         * Initial voucher validity
+                         * starts on first successful
+                         * Hotspot login.
+                         */
+                        'service_from' =>
+                            null,
+
+                        'service_until' =>
+                            null,
+
                         'status' =>
-                            $status,
+                            $money['status'],
 
                         'notes' =>
-                            'Hotspot voucher sale - '
+                            'Initial Hotspot voucher sale - '
                             . $locked
                                 ->plan
                                 ->name,
@@ -203,38 +142,14 @@ class HotspotBillingService
                             $userId,
                     ]);
 
-                if ($received > 0) {
-                    HotspotPayment::create([
-                        'hotspot_invoice_id' =>
-                            $invoice->id,
-
-                        'hotspot_voucher_id' =>
-                            $locked->id,
-
-                        'amount' =>
-                            $received,
-
-                        'payment_date' =>
-                            $today
-                                ->toDateString(),
-
-                        'payment_method' =>
-                            $data[
-                                'payment_method'
-                            ],
-
-                        'transaction_id' =>
-                            $data[
-                                'transaction_id'
-                            ] ?? null,
-
-                        'notes' =>
-                            'Hotspot voucher sale payment',
-
-                        'received_by' =>
-                            $userId,
-                    ]);
-                }
+                $this->createPayment(
+                    $invoice,
+                    $locked,
+                    $money['received'],
+                    $data,
+                    $userId,
+                    'Hotspot voucher sale payment'
+                );
 
                 $locked->forceFill([
                     'customer_name' =>
@@ -257,15 +172,190 @@ class HotspotBillingService
             }
         );
 
-        /*
-         * Router write happens only after
-         * billing transaction commits.
-         */
         ProvisionHotspotVoucher::dispatch(
             $voucher->id
         );
 
         return $invoice;
+    }
+
+    public function renewVoucher(
+        HotspotVoucher $voucher,
+        array $data,
+        int $userId
+    ): HotspotInvoice {
+        $result = DB::transaction(
+            function () use (
+                $voucher,
+                $data,
+                $userId
+            ): array {
+                $locked =
+                    HotspotVoucher::query()
+                        ->lockForUpdate()
+                        ->findOrFail(
+                            $voucher->id
+                        );
+
+                if (!$locked->sold_at) {
+                    throw ValidationException::withMessages([
+                        'renewal' =>
+                            'Unsold voucher cannot be renewed.',
+                    ]);
+                }
+
+                if (
+                    $locked->status
+                    === 'archived'
+                ) {
+                    throw ValidationException::withMessages([
+                        'renewal' =>
+                            'Archived voucher cannot be renewed.',
+                    ]);
+                }
+
+                $plan =
+                    HotspotPlan::query()
+                        ->where(
+                            'enabled',
+                            true
+                        )
+                        ->findOrFail(
+                            $data[
+                                'hotspot_plan_id'
+                            ]
+                        );
+
+                $money =
+                    $this->resolvePayment(
+                        (float) $plan->price,
+                        $data
+                    );
+
+                $now = Carbon::now(
+                    'Asia/Qatar'
+                );
+
+                /*
+                 * Active subscription extends from
+                 * current expiry. Expired subscription
+                 * starts a fresh period from now.
+                 */
+                $serviceFrom =
+                    $locked->expires_at
+                    && $locked
+                        ->expires_at
+                        ->isFuture()
+                        ? $locked
+                            ->expires_at
+                            ->copy()
+                        : $now->copy();
+
+                $serviceUntil =
+                    $serviceFrom
+                        ->copy()
+                        ->addSeconds(
+                            $plan
+                                ->validitySeconds()
+                        );
+
+                $invoice =
+                    HotspotInvoice::create([
+                        'hotspot_voucher_id' =>
+                            $locked->id,
+
+                        'invoice_no' =>
+                            $this
+                                ->invoiceNumber(
+                                    'REN',
+                                    $locked->id
+                                ),
+
+                        'invoice_type' =>
+                            'renewal',
+
+                        'amount' =>
+                            $money['price'],
+
+                        'discount' =>
+                            0,
+
+                        'paid_amount' =>
+                            $money['received'],
+
+                        'due_amount' =>
+                            $money['due'],
+
+                        'issue_date' =>
+                            $now
+                                ->toDateString(),
+
+                        'due_date' =>
+                            $now
+                                ->copy()
+                                ->addDays(
+                                    $this
+                                        ->defaultDueDays()
+                                )
+                                ->toDateString(),
+
+                        'service_from' =>
+                            $serviceFrom,
+
+                        'service_until' =>
+                            $serviceUntil,
+
+                        'status' =>
+                            $money['status'],
+
+                        'notes' =>
+                            'Hotspot renewal - '
+                            . $plan->name,
+
+                        'created_by' =>
+                            $userId,
+                    ]);
+
+                $this->createPayment(
+                    $invoice,
+                    $locked,
+                    $money['received'],
+                    $data,
+                    $userId,
+                    'Hotspot renewal payment'
+                );
+
+                $locked->forceFill([
+                    'hotspot_plan_id' =>
+                        $plan->id,
+
+                    'activated_at' =>
+                        $locked
+                            ->activated_at
+                        ?? $now,
+
+                    'expires_at' =>
+                        $serviceUntil,
+
+                    'status' =>
+                        'active',
+                ])->save();
+
+                return [
+                    'invoice' =>
+                        $invoice,
+
+                    'voucher_id' =>
+                        $locked->id,
+                ];
+            }
+        );
+
+        ProvisionHotspotVoucher::dispatch(
+            $result['voucher_id']
+        );
+
+        return $result['invoice'];
     }
 
     public function receivePayment(
@@ -297,7 +387,8 @@ class HotspotBillingService
                 }
 
                 $alreadyPaid = round(
-                    (float) HotspotPayment::query()
+                    (float)
+                    HotspotPayment::query()
                         ->where(
                             'hotspot_invoice_id',
                             $locked->id
@@ -309,8 +400,10 @@ class HotspotBillingService
                 $netAmount = max(
                     0,
                     round(
-                        (float) $locked->amount
-                        - (float) $locked->discount,
+                        (float)
+                        $locked->amount
+                        - (float)
+                        $locked->discount,
                         2
                     )
                 );
@@ -331,14 +424,15 @@ class HotspotBillingService
                     ]);
                 }
 
-                $paymentAmount = round(
-                    (float) $data['amount'],
+                $amount = round(
+                    (float)
+                    $data['amount'],
                     2
                 );
 
                 if (
-                    $paymentAmount <= 0
-                    || $paymentAmount
+                    $amount <= 0
+                    || $amount
                         > $remainingDue
                 ) {
                     throw ValidationException::withMessages([
@@ -361,7 +455,7 @@ class HotspotBillingService
                             ->hotspot_voucher_id,
 
                     'amount' =>
-                        $paymentAmount,
+                        $amount,
 
                     'payment_date' =>
                         Carbon::now(
@@ -387,7 +481,7 @@ class HotspotBillingService
 
                 $newPaid = round(
                     $alreadyPaid
-                    + $paymentAmount,
+                    + $amount,
                     2
                 );
 
@@ -407,6 +501,10 @@ class HotspotBillingService
                     'due_amount' =>
                         $newDue,
 
+                    /*
+                     * Paying old due never extends
+                     * voucher expiry a second time.
+                     */
                     'status' =>
                         $newDue <= 0
                             ? 'paid'
@@ -416,5 +514,169 @@ class HotspotBillingService
                 return $locked->fresh();
             }
         );
+    }
+
+    private function resolvePayment(
+        float $price,
+        array $data
+    ): array {
+        $price = round(
+            $price,
+            2
+        );
+
+        if ($price <= 0) {
+            throw ValidationException::withMessages([
+                'sale_type' =>
+                    'Plan price must be greater than zero.',
+            ]);
+        }
+
+        $type =
+            $data['sale_type'];
+
+        $received = match (
+            $type
+        ) {
+            'paid' =>
+                $price,
+
+            'partial' =>
+                round(
+                    (float) (
+                        $data[
+                            'received_amount'
+                        ] ?? 0
+                    ),
+                    2
+                ),
+
+            default =>
+                0,
+        };
+
+        if (
+            $type === 'partial'
+            && (
+                $received <= 0
+                || $received >= $price
+            )
+        ) {
+            throw ValidationException::withMessages([
+                'received_amount' =>
+                    'Partial payment must be greater than zero and less than QAR '
+                    . number_format(
+                        $price,
+                        2
+                    )
+                    . '.',
+            ]);
+        }
+
+        $due = max(
+            0,
+            round(
+                $price
+                - $received,
+                2
+            )
+        );
+
+        return [
+            'price' =>
+                $price,
+
+            'received' =>
+                $received,
+
+            'due' =>
+                $due,
+
+            'status' =>
+                $due <= 0
+                    ? 'paid'
+                    : (
+                        $received > 0
+                            ? 'partial'
+                            : 'unpaid'
+                    ),
+        ];
+    }
+
+    private function createPayment(
+        HotspotInvoice $invoice,
+        HotspotVoucher $voucher,
+        float $amount,
+        array $data,
+        int $userId,
+        string $notes
+    ): void {
+        if ($amount <= 0) {
+            return;
+        }
+
+        HotspotPayment::create([
+            'hotspot_invoice_id' =>
+                $invoice->id,
+
+            'hotspot_voucher_id' =>
+                $voucher->id,
+
+            'amount' =>
+                $amount,
+
+            'payment_date' =>
+                Carbon::now(
+                    'Asia/Qatar'
+                )->toDateString(),
+
+            'payment_method' =>
+                $data[
+                    'payment_method'
+                ],
+
+            'transaction_id' =>
+                $data[
+                    'transaction_id'
+                ] ?? null,
+
+            'notes' =>
+                $notes,
+
+            'received_by' =>
+                $userId,
+        ]);
+    }
+
+    private function defaultDueDays(): int
+    {
+        return max(
+            0,
+            (int)
+            Setting::getValue(
+                'default_due_days',
+                0
+            )
+        );
+    }
+
+    private function invoiceNumber(
+        string $type,
+        int $voucherId
+    ): string {
+        return 'HINV-'
+            . $type
+            . '-'
+            . Carbon::now(
+                'Asia/Qatar'
+            )->format(
+                'YmdHis'
+            )
+            . '-'
+            . $voucherId
+            . '-'
+            . Str::upper(
+                Str::random(4)
+            );
     }
 }

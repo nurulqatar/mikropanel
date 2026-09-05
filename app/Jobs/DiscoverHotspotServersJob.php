@@ -83,6 +83,11 @@ class DiscoverHotspotServersJob implements ShouldQueue
                                                 'profile'
                                             ] ?? null,
 
+                                        'dns_name' =>
+                                            $row[
+                                                '_dns_name'
+                                            ] ?? null,
+
                                         'enabled' =>
                                             (
                                                 $row[

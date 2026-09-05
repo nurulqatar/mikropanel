@@ -1,6 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Head,
+    Link,
     router,
     useForm,
 } from '@inertiajs/react';
@@ -263,7 +264,17 @@ export default function Index({
                         </p>
                     </div>
 
-                    <button
+                    <div className="flex flex-wrap gap-3">
+                        <Link
+                            href={route(
+                                'hotspot.batches.index',
+                            )}
+                            className="rounded-xl bg-violet-600 px-5 py-3 font-semibold text-white shadow hover:bg-violet-700"
+                        >
+                            Voucher Batches
+                        </Link>
+
+                        <button
                         type="button"
                         onClick={() =>
                             router.post(
@@ -280,6 +291,7 @@ export default function Index({
                     >
                         Discover MikroTik Hotspot
                     </button>
+                    </div>
                 </div>
 
                 {flash?.success && (
@@ -1185,6 +1197,17 @@ export default function Index({
                                                 </Td>
 
                                                 <Td>
+                                                    <div className="flex gap-2">
+                                                        <Link
+                                                            href={route(
+                                                                'hotspot.vouchers.show',
+                                                                voucher.id,
+                                                            )}
+                                                            className="rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-white"
+                                                        >
+                                                            Manage
+                                                        </Link>
+
                                                     {!voucher.invoice &&
                                                         voucher.status ===
                                                             'unused' && (
@@ -1200,6 +1223,7 @@ export default function Index({
                                                                 Sell
                                                             </button>
                                                         )}
+                                                    </div>
                                                 </Td>
                                             </tr>
                                         ),
