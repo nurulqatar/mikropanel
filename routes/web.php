@@ -4,6 +4,7 @@ use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\HotspotController;
+use App\Http\Controllers\HotspotSectionController;
 use App\Http\Controllers\HotspotBrandingController;
 use App\Http\Controllers\HotspotReportController;
 use App\Http\Controllers\HotspotVoucherDocumentController;
@@ -208,10 +209,60 @@ Route::get(
             Route::get(
                 '/',
                 [
-                    HotspotController::class,
-                    'index',
+                    HotspotSectionController::class,
+                    'dashboard',
                 ]
             )->name('index');
+
+            Route::get(
+                'servers',
+                [
+                    HotspotSectionController::class,
+                    'servers',
+                ]
+            )->name(
+                'servers.index'
+            );
+
+            Route::get(
+                'plans',
+                [
+                    HotspotSectionController::class,
+                    'plans',
+                ]
+            )->name(
+                'plans.index'
+            );
+
+            Route::get(
+                'vouchers',
+                [
+                    HotspotSectionController::class,
+                    'vouchers',
+                ]
+            )->name(
+                'vouchers.index'
+            );
+
+            Route::get(
+                'sessions',
+                [
+                    HotspotSectionController::class,
+                    'sessions',
+                ]
+            )->name(
+                'sessions.index'
+            );
+
+            Route::get(
+                'billing',
+                [
+                    HotspotSectionController::class,
+                    'billing',
+                ]
+            )->name(
+                'billing.index'
+            );
 
             Route::get(
                 'reports',

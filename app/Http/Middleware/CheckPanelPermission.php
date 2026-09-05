@@ -676,8 +676,13 @@ class CheckPanelPermission
                 $routeName,
                 [
                     'hotspot.index',
+                    'hotspot.servers.index',
+                    'hotspot.plans.index',
+                    'hotspot.vouchers.index',
                     'hotspot.vouchers.show',
                     'hotspot.batches.index',
+                    'hotspot.sessions.index',
+                    'hotspot.billing.index',
                     'hotspot.reports.index',
                 ],
                 true

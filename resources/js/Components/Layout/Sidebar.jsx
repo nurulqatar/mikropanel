@@ -104,6 +104,63 @@ export default function Sidebar() {
             route: 'hotspot.index',
             active: 'hotspot.*',
             permission: 'hotspot.view',
+            icon: '◉',
+            children: [
+                {
+                    label: 'Dashboard',
+                    route: 'hotspot.index',
+                    active: 'hotspot.index',
+                    permission: 'hotspot.view',
+                },
+                {
+                    label: 'Servers',
+                    route: 'hotspot.servers.index',
+                    active: 'hotspot.servers.*',
+                    permission: 'hotspot.view',
+                },
+                {
+                    label: 'Plans',
+                    route: 'hotspot.plans.index',
+                    active: 'hotspot.plans.*',
+                    permission: 'hotspot.view',
+                },
+                {
+                    label: 'Vouchers',
+                    route: 'hotspot.vouchers.index',
+                    active: 'hotspot.vouchers.*',
+                    permission: 'hotspot.view',
+                },
+                {
+                    label: 'Voucher Batches',
+                    route: 'hotspot.batches.index',
+                    active: 'hotspot.batches.*',
+                    permission: 'hotspot.view',
+                },
+                {
+                    label: 'Live Sessions',
+                    route: 'hotspot.sessions.index',
+                    active: 'hotspot.sessions.*',
+                    permission: 'hotspot.view',
+                },
+                {
+                    label: 'Billing & Dues',
+                    route: 'hotspot.billing.index',
+                    active: 'hotspot.billing.*',
+                    permission: 'hotspot.view',
+                },
+                {
+                    label: 'Reports',
+                    route: 'hotspot.reports.index',
+                    active: 'hotspot.reports.*',
+                    permission: 'hotspot.view',
+                },
+                {
+                    label: 'Branding & Portal',
+                    route: 'hotspot.branding.index',
+                    active: 'hotspot.branding.*',
+                    permission: 'hotspot.manage',
+                },
+            ],
         },
         {
             label: 'Settings',
@@ -115,9 +172,23 @@ export default function Sidebar() {
     ];
 
     const visibleItems = items.filter(
-        (item) =>
-            can(item.permission)
-            && routeExists(item.route),
+        (item) => {
+            const parentVisible =
+                can(item.permission)
+                && routeExists(item.route);
+
+            const childVisible =
+                (item.children ?? []).some(
+                    (child) =>
+                        can(child.permission)
+                        && routeExists(
+                            child.route,
+                        ),
+                );
+
+            return parentVisible
+                || childVisible;
+        },
     );
 
     return (
@@ -139,26 +210,83 @@ export default function Sidebar() {
                             item.active,
                         );
 
-                    return (
-                        <Link
-                            key={item.route}
-                            href={route(
-                                item.route,
-                            )}
-                            className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                                active
-                                    ? 'bg-cyan-600 text-white shadow'
-                                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                            }`}
-                        >
-                            <span className="flex h-7 w-7 items-center justify-center text-lg">
-                                {item.icon}
-                            </span>
+                    const children =
+                        (item.children ?? [])
+                            .filter(
+                                (child) =>
+                                    can(
+                                        child.permission,
+                                    )
+                                    && routeExists(
+                                        child.route,
+                                    ),
+                            );
 
-                            <span>
-                                {item.label}
-                            </span>
-                        </Link>
+                    return (
+                        <div
+                            key={item.route}
+                        >
+                            <Link
+                                href={route(
+                                    item.route,
+                                )}
+                                className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                                    active
+                                        ? 'bg-cyan-600 text-white shadow'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                }`}
+                            >
+                                <span className="flex h-7 w-7 items-center justify-center text-lg">
+                                    {item.icon}
+                                </span>
+
+                                <span className="flex-1">
+                                    {item.label}
+                                </span>
+
+                                {children.length > 0 && (
+                                    <span className="text-xs opacity-70">
+                                        {active
+                                            ? '▼'
+                                            : '›'}
+                                    </span>
+                                )}
+                            </Link>
+
+                            {children.length > 0
+                                && active && (
+                                <div className="ml-8 mt-1 space-y-1 border-l border-slate-700 pl-3">
+                                    {children.map(
+                                        (child) => {
+                                            const childActive =
+                                                route().current(
+                                                    child.active,
+                                                );
+
+                                            return (
+                                                <Link
+                                                    key={
+                                                        child.route
+                                                    }
+                                                    href={route(
+                                                        child.route,
+                                                    )}
+                                                    className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${
+                                                        childActive
+                                                            ? 'bg-slate-700 text-cyan-300'
+                                                            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                                                    }`}
+                                                >
+                                                    {
+                                                        child.label
+                                                    }
+                                                </Link>
+                                            );
+                                        },
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     );
                 })}
 
