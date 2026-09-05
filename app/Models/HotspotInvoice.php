@@ -36,7 +36,7 @@ class HotspotInvoice extends Model
         return $this->belongsTo(
             HotspotVoucher::class,
             'hotspot_voucher_id'
-        );
+        )->withTrashed();
     }
 
     public function payments(): HasMany

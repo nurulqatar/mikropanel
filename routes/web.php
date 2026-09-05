@@ -3,6 +3,7 @@
 use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\HotspotController;
 use Inertia\Inertia;
 use App\Http\Controllers\RouterController;
 use App\Http\Controllers\PackageController;
@@ -189,6 +190,113 @@ Route::get(
         'users',
         \App\Http\Controllers\UserManagementController::class
     )->except(['show']);
+
+
+    /*
+     * Hotspot module.
+     * Controller currently enforces admin-only
+     * access until granular Hotspot permissions
+     * are installed in the next phase.
+     */
+    Route::prefix('hotspot')
+        ->name('hotspot.')
+        ->group(function () {
+            Route::get(
+                '/',
+                [
+                    HotspotController::class,
+                    'index',
+                ]
+            )->name('index');
+
+            Route::post(
+                'discover',
+                [
+                    HotspotController::class,
+                    'discover',
+                ]
+            )->name('discover');
+
+            Route::post(
+                'servers/{server}/sync',
+                [
+                    HotspotController::class,
+                    'syncServer',
+                ]
+            )->name(
+                'servers.sync'
+            );
+
+            Route::post(
+                'plans',
+                [
+                    HotspotController::class,
+                    'storePlan',
+                ]
+            )->name(
+                'plans.store'
+            );
+
+            Route::put(
+                'plans/{plan}',
+                [
+                    HotspotController::class,
+                    'updatePlan',
+                ]
+            )->name(
+                'plans.update'
+            );
+
+            Route::delete(
+                'plans/{plan}',
+                [
+                    HotspotController::class,
+                    'destroyPlan',
+                ]
+            )->name(
+                'plans.destroy'
+            );
+
+            Route::post(
+                'vouchers/generate',
+                [
+                    HotspotController::class,
+                    'generateVouchers',
+                ]
+            )->name(
+                'vouchers.generate'
+            );
+
+            Route::post(
+                'vouchers/{voucher}/sell',
+                [
+                    HotspotController::class,
+                    'sellVoucher',
+                ]
+            )->name(
+                'vouchers.sell'
+            );
+
+            Route::post(
+                'invoices/{invoice}/pay',
+                [
+                    HotspotController::class,
+                    'receiveInvoicePayment',
+                ]
+            )->name(
+                'invoices.pay'
+            );
+
+            Route::post(
+                'sessions/{session}/disconnect',
+                [
+                    HotspotController::class,
+                    'disconnectSession',
+                ]
+            )->name(
+                'sessions.disconnect'
+            );
+        });
 
 });
 require __DIR__.'/auth.php';

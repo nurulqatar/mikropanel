@@ -4,18 +4,22 @@ namespace App\Jobs;
 
 use App\Models\HotspotServer;
 use App\Services\Hotspot\HotspotRouterService;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class SyncHotspotServer implements ShouldQueue
+class SyncHotspotServer implements
+    ShouldQueue,
+    ShouldBeUnique
 {
     use Queueable;
 
     public int $tries = 2;
     public int $timeout = 60;
     public int $backoff = 5;
+    public int $uniqueFor = 90;
 
     public function __construct(
         public int $serverId
@@ -23,6 +27,11 @@ class SyncHotspotServer implements ShouldQueue
         $this->onQueue(
             'router-sync'
         );
+    }
+
+    public function uniqueId(): string
+    {
+        return (string) $this->serverId;
     }
 
     public function handle(
@@ -47,6 +56,7 @@ class SyncHotspotServer implements ShouldQueue
         } catch (Throwable $exception) {
             $server->forceFill([
                 'connected' => false,
+
                 'last_synced_at' =>
                     now(),
 

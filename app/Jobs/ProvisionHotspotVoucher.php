@@ -4,18 +4,22 @@ namespace App\Jobs;
 
 use App\Models\HotspotVoucher;
 use App\Services\Hotspot\HotspotRouterService;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class ProvisionHotspotVoucher implements ShouldQueue
+class ProvisionHotspotVoucher implements
+    ShouldQueue,
+    ShouldBeUnique
 {
     use Queueable;
 
     public int $tries = 2;
     public int $timeout = 60;
     public int $backoff = 5;
+    public int $uniqueFor = 120;
 
     public function __construct(
         public int $voucherId
@@ -23,6 +27,11 @@ class ProvisionHotspotVoucher implements ShouldQueue
         $this->onQueue(
             'router-sync'
         );
+    }
+
+    public function uniqueId(): string
+    {
+        return (string) $this->voucherId;
     }
 
     public function handle(
@@ -36,11 +45,12 @@ class ProvisionHotspotVoucher implements ShouldQueue
 
         if (
             !$voucher
-            || in_array(
+            || !$voucher->sold_at
+            || !in_array(
                 $voucher->status,
                 [
-                    'archived',
-                    'expired',
+                    'unused',
+                    'active',
                 ],
                 true
             )

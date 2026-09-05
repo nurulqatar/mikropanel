@@ -324,6 +324,10 @@ class HotspotRouterService
             (new Query(
                 '/ip/hotspot/user/print'
             ))
+                ->where(
+                    'server',
+                    $server->mikrotik_name
+                )
                 ->equal(
                     '.proplist',
                     implode(',', [
@@ -338,6 +342,10 @@ class HotspotRouterService
             (new Query(
                 '/ip/hotspot/active/print'
             ))
+                ->where(
+                    'server',
+                    $server->mikrotik_name
+                )
                 ->equal(
                     '.proplist',
                     implode(',', [
@@ -549,6 +557,62 @@ class HotspotRouterService
             'users' => count($users),
             'active' => count($active),
         ];
+    }
+
+    public function disconnectSession(
+        HotspotSession $session
+    ): void {
+        $session->loadMissing(
+            'server.router'
+        );
+
+        if (
+            !$session->server
+            || !$session->server->router
+        ) {
+            throw new \RuntimeException(
+                'Hotspot server/router is unavailable.'
+            );
+        }
+
+        $api = $this->api(
+            $session->server->router
+        );
+
+        /*
+         * Prefer current RouterOS active ID.
+         * If it disappeared already, operation
+         * is considered complete.
+         */
+        $current = $api->query(
+            (new Query(
+                '/ip/hotspot/active/print'
+            ))
+                ->where(
+                    '.id',
+                    $session->mikrotik_active_id
+                )
+                ->equal(
+                    '.proplist',
+                    '.id'
+                )
+        )->read();
+
+        foreach ($current as $row) {
+            if (!isset($row['.id'])) {
+                continue;
+            }
+
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/active/remove'
+                ))
+                    ->equal(
+                        '.id',
+                        $row['.id']
+                    )
+            )->read();
+        }
     }
 
     private function ensureProfile(
