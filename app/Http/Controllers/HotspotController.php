@@ -627,12 +627,7 @@ class HotspotController extends Controller
                         $username
                     ] = true;
 
-                    $password =
-                        (string)
-                        random_int(
-                            100000,
-                            999999
-                        );
+                    $password = $username;
 
                     HotspotVoucher::create([
                         'hotspot_batch_id' =>
