@@ -5,11 +5,62 @@ namespace App\Services\Reseller;
 use App\Models\Client;
 use App\Models\HotspotVoucher;
 use App\Models\Reseller;
+use App\Models\ResellerSubscription;
 use App\Models\Router;
 use App\Models\User;
+use Carbon\Carbon;
 
 class ResellerUsageService
 {
+    public function subscription(
+        Reseller $reseller
+    ): ?ResellerSubscription {
+        return ResellerSubscription::query()
+            ->where(
+                'reseller_id',
+                $reseller->id
+            )
+            ->where(
+                'status',
+                'active'
+            )
+            ->latest('id')
+            ->first();
+    }
+
+    public function subscriptionIsUsable(
+        Reseller $reseller
+    ): bool {
+        $subscription =
+            $this->subscription(
+                $reseller
+            );
+
+        if (!$subscription) {
+            return false;
+        }
+
+        $now = Carbon::now(
+            $reseller->timezone
+            ?: 'Asia/Qatar'
+        );
+
+        if (
+            $subscription->expires_at
+            && $subscription
+                ->expires_at
+                ->gte($now)
+        ) {
+            return true;
+        }
+
+        return $subscription
+            ->grace_until
+            && $subscription
+                ->grace_until
+                ->gte($now);
+    }
+
     public function clientLimit(
         Reseller $reseller
     ): int {
@@ -27,9 +78,9 @@ class ResellerUsageService
         }
 
         $subscription =
-            $reseller
-                ->activeSubscription()
-                ->first();
+            $this->subscription(
+                $reseller
+            );
 
         return $subscription
             ? max(
@@ -45,10 +96,9 @@ class ResellerUsageService
         Reseller $reseller
     ): int {
         /*
-         * Client model uses SoftDeletes.
-         * Archived clients therefore do not
-         * consume a reseller client slot.
-         * Suspended clients still consume one.
+         * Soft-deleted archived clients
+         * do not consume a slot.
+         * Suspended clients still do.
          */
         return Client::query()
             ->where(
@@ -75,15 +125,25 @@ class ResellerUsageService
     public function canCreateClient(
         Reseller $reseller
     ): bool {
-        return $this
-            ->remainingClientSlots(
-                $reseller
-            ) > 0;
+        return $reseller->status === 'active'
+            && $this
+                ->subscriptionIsUsable(
+                    $reseller
+                )
+            && $this
+                ->remainingClientSlots(
+                    $reseller
+                ) > 0;
     }
 
     public function snapshot(
         Reseller $reseller
     ): array {
+        $subscription =
+            $this->subscription(
+                $reseller
+            );
+
         $limit =
             $this->clientLimit(
                 $reseller
@@ -106,6 +166,19 @@ class ResellerUsageService
                     0,
                     $limit - $used
                 ),
+
+            'subscription_usable' =>
+                $this
+                    ->subscriptionIsUsable(
+                        $reseller
+                    ),
+
+            'subscription_expires_at' =>
+                $subscription
+                    ?->expires_at
+                    ?->format(
+                        'Y-m-d H:i:s'
+                    ),
 
             'operators' =>
                 User::query()

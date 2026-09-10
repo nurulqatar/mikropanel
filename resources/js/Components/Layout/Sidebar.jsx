@@ -290,6 +290,34 @@ export default function Sidebar() {
                     );
                 })}
 
+                {Boolean(
+                    user?.is_super_admin
+                )
+                    && routeExists(
+                        'superadmin.dashboard',
+                    ) && (
+                    <Link
+                        href={route(
+                            'superadmin.dashboard',
+                        )}
+                        className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                            route().current(
+                                'superadmin.*',
+                            )
+                                ? 'bg-violet-600 text-white shadow'
+                                : 'text-violet-200 hover:bg-slate-800 hover:text-white'
+                        }`}
+                    >
+                        <span className="flex h-7 w-7 items-center justify-center text-lg">
+                            ★
+                        </span>
+
+                        <span>
+                            Super Admin
+                        </span>
+                    </Link>
+                )}
+
                 {isAdmin
                     && routeExists(
                         'users.index',
