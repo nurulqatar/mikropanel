@@ -421,8 +421,21 @@ class ResellerController extends Controller
             'walletTransactions' =>
                 function ($query) {
                     $query
+                        ->with(
+                            'creator:id,name'
+                        )
                         ->latest('id')
-                        ->limit(20);
+                        ->limit(25);
+                },
+
+            'recharges' =>
+                function ($query) {
+                    $query
+                        ->with(
+                            'approver:id,name'
+                        )
+                        ->latest('id')
+                        ->limit(15);
                 },
         ]);
 

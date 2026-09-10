@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\SuperAdmin\DashboardController;
 use App\Http\Controllers\SuperAdmin\ResellerController;
+use App\Http\Controllers\SuperAdmin\ResellerFinanceController;
 use App\Http\Controllers\SuperAdmin\ResellerPlanController;
 use Illuminate\Support\Facades\Route;
 
@@ -56,6 +57,26 @@ Route::middleware([
             ]
         )->name(
             'plans.destroy'
+        );
+
+        Route::get(
+            'wallet',
+            [
+                ResellerFinanceController::class,
+                'ledger',
+            ]
+        )->name(
+            'wallet.index'
+        );
+
+        Route::get(
+            'recharges',
+            [
+                ResellerFinanceController::class,
+                'recharges',
+            ]
+        )->name(
+            'recharges.index'
         );
 
         Route::get(
@@ -116,6 +137,36 @@ Route::middleware([
             ]
         )->name(
             'resellers.update'
+        );
+
+        Route::post(
+            'resellers/{reseller}/wallet/recharge',
+            [
+                ResellerFinanceController::class,
+                'recharge',
+            ]
+        )->name(
+            'resellers.wallet.recharge'
+        );
+
+        Route::post(
+            'resellers/{reseller}/wallet/deduct',
+            [
+                ResellerFinanceController::class,
+                'deduct',
+            ]
+        )->name(
+            'resellers.wallet.deduct'
+        );
+
+        Route::post(
+            'resellers/{reseller}/wallet/adjustment',
+            [
+                ResellerFinanceController::class,
+                'adjustment',
+            ]
+        )->name(
+            'resellers.wallet.adjustment'
         );
 
         Route::post(

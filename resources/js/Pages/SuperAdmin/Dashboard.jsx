@@ -106,6 +106,20 @@ export default function Dashboard({
                             stats.wallet_balance,
                         )}`}
                     />
+
+                    <Stat
+                        label="Today Recharge"
+                        value={`QAR ${money(
+                            stats.today_recharge,
+                        )}`}
+                    />
+
+                    <Stat
+                        label="Month Recharge"
+                        value={`QAR ${money(
+                            stats.month_recharge,
+                        )}`}
+                    />
                 </div>
 
                 <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">

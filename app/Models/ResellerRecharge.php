@@ -14,6 +14,7 @@ class ResellerRecharge extends Model
         'payment_method',
         'reference',
         'status',
+        'wallet_transaction_id',
         'requested_by',
         'approved_by',
         'approved_at',
@@ -34,6 +35,30 @@ class ResellerRecharge extends Model
     {
         return $this->belongsTo(
             Reseller::class
+        );
+    }
+
+    public function walletTransaction(): BelongsTo
+    {
+        return $this->belongsTo(
+            ResellerWalletTransaction::class,
+            'wallet_transaction_id'
+        );
+    }
+
+    public function requester(): BelongsTo
+    {
+        return $this->belongsTo(
+            User::class,
+            'requested_by'
+        );
+    }
+
+    public function approver(): BelongsTo
+    {
+        return $this->belongsTo(
+            User::class,
+            'approved_by'
         );
     }
 }

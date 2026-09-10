@@ -296,26 +296,72 @@ export default function Sidebar() {
                     && routeExists(
                         'superadmin.dashboard',
                     ) && (
-                    <Link
-                        href={route(
-                            'superadmin.dashboard',
-                        )}
-                        className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                            route().current(
-                                'superadmin.*',
-                            )
-                                ? 'bg-violet-600 text-white shadow'
-                                : 'text-violet-200 hover:bg-slate-800 hover:text-white'
-                        }`}
-                    >
-                        <span className="flex h-7 w-7 items-center justify-center text-lg">
-                            ★
-                        </span>
+                    <div>
+                        <Link
+                            href={route(
+                                'superadmin.dashboard',
+                            )}
+                            className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition ${
+                                route().current(
+                                    'superadmin.*',
+                                )
+                                    ? 'bg-violet-600 text-white shadow'
+                                    : 'text-violet-200 hover:bg-slate-800 hover:text-white'
+                            }`}
+                        >
+                            <span className="flex h-7 w-7 items-center justify-center text-lg">
+                                ★
+                            </span>
 
-                        <span>
-                            Super Admin
-                        </span>
-                    </Link>
+                            <span className="flex-1">
+                                Super Admin
+                            </span>
+
+                            <span className="text-xs opacity-70">
+                                {route().current(
+                                    'superadmin.*',
+                                )
+                                    ? '▼'
+                                    : '›'}
+                            </span>
+                        </Link>
+
+                        {route().current(
+                            'superadmin.*',
+                        ) && (
+                            <div className="ml-8 mt-1 space-y-1 border-l border-slate-700 pl-3">
+                                <SuperAdminLink
+                                    name="superadmin.dashboard"
+                                    active="superadmin.dashboard"
+                                    label="Dashboard"
+                                />
+
+                                <SuperAdminLink
+                                    name="superadmin.resellers.index"
+                                    active="superadmin.resellers.*"
+                                    label="Resellers"
+                                />
+
+                                <SuperAdminLink
+                                    name="superadmin.plans.index"
+                                    active="superadmin.plans.*"
+                                    label="Reseller Plans"
+                                />
+
+                                <SuperAdminLink
+                                    name="superadmin.wallet.index"
+                                    active="superadmin.wallet.*"
+                                    label="Wallet Ledger"
+                                />
+
+                                <SuperAdminLink
+                                    name="superadmin.recharges.index"
+                                    active="superadmin.recharges.*"
+                                    label="Recharge History"
+                                />
+                            </div>
+                        )}
+                    </div>
                 )}
 
                 {isAdmin
@@ -378,4 +424,36 @@ export default function Sidebar() {
             </div>
         </aside>
     );
+
+function SuperAdminLink({
+    name,
+    active,
+    label,
+}) {
+    if (
+        typeof route !== 'function'
+        || !route().has(name)
+    ) {
+        return null;
+    }
+
+    const selected =
+        route().current(
+            active,
+        );
+
+    return (
+        <Link
+            href={route(name)}
+            className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${
+                selected
+                    ? 'bg-slate-700 text-violet-300'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+            }`}
+        >
+            {label}
+        </Link>
+    );
+}
+
 }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\SuperAdmin;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Reseller;
+use App\Models\ResellerRecharge;
 use App\Models\ResellerSubscription;
 use App\Services\Reseller\ResellerUsageService;
 use Carbon\Carbon;
@@ -42,9 +43,10 @@ class DashboardController extends Controller
                 );
         }
 
-        $now = Carbon::now(
-            'Asia/Qatar'
-        );
+        $now =
+            Carbon::now(
+                'Asia/Qatar'
+            );
 
         $sevenDays =
             $now
@@ -90,6 +92,51 @@ class DashboardController extends Controller
                             $resellers
                                 ->sum(
                                     'wallet_balance'
+                                ),
+                            2
+                        ),
+
+                    'today_recharge' =>
+                        round(
+                            (float)
+                            ResellerRecharge::query()
+                                ->where(
+                                    'status',
+                                    'approved'
+                                )
+                                ->whereDate(
+                                    'approved_at',
+                                    $now
+                                        ->toDateString()
+                                )
+                                ->sum(
+                                    'amount'
+                                ),
+                            2
+                        ),
+
+                    'month_recharge' =>
+                        round(
+                            (float)
+                            ResellerRecharge::query()
+                                ->where(
+                                    'status',
+                                    'approved'
+                                )
+                                ->whereBetween(
+                                    'approved_at',
+                                    [
+                                        $now
+                                            ->copy()
+                                            ->startOfMonth(),
+
+                                        $now
+                                            ->copy()
+                                            ->endOfMonth(),
+                                    ]
+                                )
+                                ->sum(
+                                    'amount'
                                 ),
                             2
                         ),
@@ -178,7 +225,8 @@ class DashboardController extends Controller
     private function superAdmin(
         Request $request
     ): void {
-        $user = $request->user();
+        $user =
+            $request->user();
 
         abort_unless(
             $user
