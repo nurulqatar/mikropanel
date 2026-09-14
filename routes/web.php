@@ -755,3 +755,4 @@ unset(
 /* MIKROPANEL_PERMISSION_ROUTE_HARDENING_END */
 
 require __DIR__.'/super_admin.php';
+require __DIR__.'/reseller.php';

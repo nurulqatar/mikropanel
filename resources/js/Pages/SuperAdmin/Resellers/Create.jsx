@@ -344,9 +344,8 @@ export default function Create({
 
                     <div className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
                         Reseller owner account will
-                        be created, but login remains
-                        disabled until tenant isolation
-                        is fully enabled.
+                        be created with tenant-isolated
+                        panel access immediately.
                     </div>
 
                     <button

@@ -8,6 +8,7 @@ use App\Models\ResellerAuditLog;
 use App\Models\ResellerPlan;
 use App\Models\User;
 use App\Services\Reseller\ResellerSubscriptionService;
+use App\Services\Reseller\ResellerPermissionService;
 use App\Services\Reseller\ResellerUsageService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -146,7 +147,8 @@ class ResellerController extends Controller
 
     public function store(
         Request $request,
-        ResellerSubscriptionService $subscriptions
+        ResellerSubscriptionService $subscriptions,
+        ResellerPermissionService $permissions
     ): RedirectResponse {
         $this->superAdmin(
             $request
@@ -357,10 +359,11 @@ class ResellerController extends Controller
                                 'reseller',
 
                             'permissions' =>
-                                [],
+                                $permissions
+                                    ->ownerPermissions(),
 
                             'is_active' =>
-                                false,
+                                true,
 
                             'is_super_admin' =>
                                 false,
@@ -401,7 +404,7 @@ class ResellerController extends Controller
             )
             ->with(
                 'success',
-                'Reseller created. Login remains disabled until tenant isolation is activated.'
+                'Reseller created and login enabled.'
             );
     }
 
@@ -733,17 +736,13 @@ class ResellerController extends Controller
 
     public function reactivate(
         Request $request,
-        Reseller $reseller
+        Reseller $reseller,
+        ResellerPermissionService $permissions
     ): RedirectResponse {
         $this->superAdmin(
             $request
         );
 
-        /*
-         * Owner login remains disabled in R2.
-         * We reactivate the reseller business
-         * account only.
-         */
         $reseller->forceFill([
             'status' =>
                 'active',
@@ -755,6 +754,20 @@ class ResellerController extends Controller
                 null,
         ])->save();
 
+        if ($reseller->owner) {
+            $reseller
+                ->owner
+                ->forceFill([
+                    'permissions' =>
+                        $permissions
+                            ->ownerPermissions(),
+
+                    'is_active' =>
+                        true,
+                ])
+                ->save();
+        }
+
         $this->audit(
             $request,
             $reseller,
@@ -763,7 +776,7 @@ class ResellerController extends Controller
 
         return back()->with(
             'success',
-            'Reseller business account reactivated. Portal login remains disabled until tenant isolation is complete.'
+            'Reseller account reactivated.'
         );
     }
 

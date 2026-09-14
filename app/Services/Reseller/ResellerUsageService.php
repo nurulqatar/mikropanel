@@ -214,4 +214,111 @@ class ResellerUsageService
                     ->wallet_balance,
         ];
     }
+
+    public function routerLimit(
+        Reseller $reseller
+    ): int {
+        if (
+            $reseller->router_limit_override
+            !== null
+        ) {
+            return max(
+                0,
+                (int)
+                $reseller->router_limit_override
+            );
+        }
+
+        return max(
+            0,
+            (int)
+            (
+                $this->subscription(
+                    $reseller
+                )?->router_limit
+                ?? 0
+            )
+        );
+    }
+
+    public function usedRouterSlots(
+        Reseller $reseller
+    ): int {
+        return Router::query()
+            ->where(
+                'reseller_id',
+                $reseller->id
+            )
+            ->count();
+    }
+
+    public function remainingRouterSlots(
+        Reseller $reseller
+    ): int {
+        return max(
+            0,
+            $this->routerLimit(
+                $reseller
+            )
+            - $this->usedRouterSlots(
+                $reseller
+            )
+        );
+    }
+
+    public function operatorLimit(
+        Reseller $reseller
+    ): int {
+        if (
+            $reseller->operator_limit_override
+            !== null
+        ) {
+            return max(
+                0,
+                (int)
+                $reseller->operator_limit_override
+            );
+        }
+
+        return max(
+            0,
+            (int)
+            (
+                $this->subscription(
+                    $reseller
+                )?->operator_limit
+                ?? 0
+            )
+        );
+    }
+
+    public function usedOperatorSlots(
+        Reseller $reseller
+    ): int {
+        return User::query()
+            ->where(
+                'reseller_id',
+                $reseller->id
+            )
+            ->where(
+                'role',
+                'operator'
+            )
+            ->count();
+    }
+
+    public function remainingOperatorSlots(
+        Reseller $reseller
+    ): int {
+        return max(
+            0,
+            $this->operatorLimit(
+                $reseller
+            )
+            - $this->usedOperatorSlots(
+                $reseller
+            )
+        );
+    }
+
 }
