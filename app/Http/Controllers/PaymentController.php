@@ -316,8 +316,8 @@ class PaymentController extends Controller
             if (
                 ClientRefund::query()
                     ->where(
-                        'payment_id',
-                        $lockedPayment->id
+                        'invoice_id',
+                        $lockedPayment->invoice_id
                     )
                     ->exists()
             ) {

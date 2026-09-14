@@ -2,16 +2,21 @@
 
 namespace App\Services;
 
+use App\Models\ClientRefund;
+use App\Models\HotspotInvoice;
+use App\Models\HotspotPayment;
+use App\Models\Invoice;
+use App\Models\Payment;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 
 class UnifiedFinanceService
 {
     public function summary(): array
     {
-        $now = Carbon::now(
-            'Asia/Qatar'
-        );
+        $now =
+            Carbon::now(
+                'Asia/Qatar'
+            );
 
         $today =
             $now->toDateString();
@@ -28,40 +33,68 @@ class UnifiedFinanceService
                 ->endOfMonth()
                 ->toDateString();
 
+        $normalGross =
+            $this->normalPayments();
+
+        $normalRefund =
+            $this->refunds();
+
         $normalReceived =
-            $this->paymentSum(
-                'payments'
+            round(
+                $normalGross
+                - $normalRefund,
+                2
             );
 
         $hotspotReceived =
-            $this->paymentSum(
-                'hotspot_payments'
+            $this->hotspotPayments();
+
+        $normalTodayGross =
+            $this->normalPayments(
+                $today,
+                $today
+            );
+
+        $normalTodayRefund =
+            $this->refunds(
+                $today,
+                $today
             );
 
         $normalToday =
-            $this->paymentSum(
-                'payments',
-                $today,
-                $today
+            round(
+                $normalTodayGross
+                - $normalTodayRefund,
+                2
             );
 
         $hotspotToday =
-            $this->paymentSum(
-                'hotspot_payments',
+            $this->hotspotPayments(
                 $today,
                 $today
             );
 
-        $normalMonth =
-            $this->paymentSum(
-                'payments',
+        $normalMonthGross =
+            $this->normalPayments(
                 $monthStart,
                 $monthEnd
             );
 
+        $normalMonthRefund =
+            $this->refunds(
+                $monthStart,
+                $monthEnd
+            );
+
+        $normalMonth =
+            round(
+                $normalMonthGross
+                - $normalMonthRefund,
+                2
+            );
+
         $hotspotMonth =
-            $this->paymentSum(
-                'hotspot_payments',
+            $this->hotspotPayments(
                 $monthStart,
                 $monthEnd
             );
@@ -69,7 +102,7 @@ class UnifiedFinanceService
         $normalDue =
             round(
                 (float)
-                DB::table('invoices')
+                Invoice::query()
                     ->where(
                         'status',
                         '!=',
@@ -84,9 +117,7 @@ class UnifiedFinanceService
         $hotspotDue =
             round(
                 (float)
-                DB::table(
-                    'hotspot_invoices'
-                )
+                HotspotInvoice::query()
                     ->where(
                         'status',
                         '!=',
@@ -99,6 +130,12 @@ class UnifiedFinanceService
             );
 
         return [
+            'normal_gross_received' =>
+                $normalGross,
+
+            'normal_refunded' =>
+                $normalRefund,
+
             'normal_received' =>
                 $normalReceived,
 
@@ -112,6 +149,12 @@ class UnifiedFinanceService
                     2
                 ),
 
+            'normal_today_gross' =>
+                $normalTodayGross,
+
+            'normal_today_refunded' =>
+                $normalTodayRefund,
+
             'normal_today' =>
                 $normalToday,
 
@@ -124,6 +167,12 @@ class UnifiedFinanceService
                     + $hotspotToday,
                     2
                 ),
+
+            'normal_month_gross' =>
+                $normalMonthGross,
+
+            'normal_month_refunded' =>
+                $normalMonthRefund,
 
             'normal_month' =>
                 $normalMonth,
@@ -153,13 +202,12 @@ class UnifiedFinanceService
         ];
     }
 
-    private function paymentSum(
-        string $table,
+    private function normalPayments(
         ?string $from = null,
         ?string $to = null
     ): float {
         $query =
-            DB::table($table);
+            Payment::query();
 
         if ($from !== null) {
             $query->whereDate(
@@ -179,7 +227,73 @@ class UnifiedFinanceService
 
         return round(
             (float)
-            $query->sum('amount'),
+            $query->sum(
+                'amount'
+            ),
+            2
+        );
+    }
+
+    private function hotspotPayments(
+        ?string $from = null,
+        ?string $to = null
+    ): float {
+        $query =
+            HotspotPayment::query();
+
+        if ($from !== null) {
+            $query->whereDate(
+                'payment_date',
+                '>=',
+                $from
+            );
+        }
+
+        if ($to !== null) {
+            $query->whereDate(
+                'payment_date',
+                '<=',
+                $to
+            );
+        }
+
+        return round(
+            (float)
+            $query->sum(
+                'amount'
+            ),
+            2
+        );
+    }
+
+    private function refunds(
+        ?string $from = null,
+        ?string $to = null
+    ): float {
+        $query =
+            ClientRefund::query();
+
+        if ($from !== null) {
+            $query->whereDate(
+                'refund_date',
+                '>=',
+                $from
+            );
+        }
+
+        if ($to !== null) {
+            $query->whereDate(
+                'refund_date',
+                '<=',
+                $to
+            );
+        }
+
+        return round(
+            (float)
+            $query->sum(
+                'amount'
+            ),
             2
         );
     }

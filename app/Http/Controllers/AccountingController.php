@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Client;
+use App\Models\ClientRefund;
 use App\Models\Expense;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -122,6 +123,16 @@ class AccountingController extends Controller
                 $endDate,
             ]);
 
+        $refundQuery =
+            ClientRefund::query()
+                ->whereBetween(
+                    'refund_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                );
+
         $expenseQuery = Expense::query()
             ->whereBetween('expense_date', [
                 $startDate,
@@ -157,6 +168,23 @@ class AccountingController extends Controller
             2
         );
 
+        $refundsTotal =
+            round(
+                (float) (
+                    clone $refundQuery
+                )->sum(
+                    'amount'
+                ),
+                2
+            );
+
+        $netCollection =
+            round(
+                $collection
+                - $refundsTotal,
+                2
+            );
+
         $expensesTotal = round(
             (float) (
                 clone $expenseQuery
@@ -169,7 +197,8 @@ class AccountingController extends Controller
          * Collected money - paid expenses.
          */
         $netProfit = round(
-            $collection - $expensesTotal,
+            $netCollection
+            - $expensesTotal,
             2
         );
 
@@ -219,15 +248,16 @@ class AccountingController extends Controller
             2
         );
 
-        $profitMargin = $collection > 0
-            ? round(
-                (
-                    $netProfit
-                    / $collection
-                ) * 100,
-                2
-            )
-            : 0;
+        $profitMargin =
+            $netCollection > 0
+                ? round(
+                    (
+                        $netProfit
+                        / $netCollection
+                    ) * 100,
+                    2
+                )
+                : 0;
 
         $collections =
             $this->collectionRows(
@@ -237,6 +267,12 @@ class AccountingController extends Controller
 
         $expenses =
             $this->expenseRows(
+                $startDate,
+                $endDate
+            );
+
+        $refunds =
+            $this->refundRows(
                 $startDate,
                 $endDate
             );
@@ -291,8 +327,14 @@ class AccountingController extends Controller
                 'net_billed' =>
                     $netBilled,
 
-                'collection' =>
+                'gross_collection' =>
                     $collection,
+
+                'refunds' =>
+                    $refundsTotal,
+
+                'collection' =>
+                    $netCollection,
 
                 'expenses' =>
                     $expensesTotal,
@@ -320,6 +362,11 @@ class AccountingController extends Controller
                 'payment_count' =>
                     (
                         clone $paymentQuery
+                    )->count(),
+
+                'refund_count' =>
+                    (
+                        clone $refundQuery
                     )->count(),
 
                 'expense_count' =>
@@ -361,13 +408,17 @@ class AccountingController extends Controller
             'expenses' =>
                 $expenses,
 
+            'refunds' =>
+                $refunds,
+
             'receivables' =>
                 $receivables,
 
             'transactions' =>
                 $this->transactionRows(
                     $collections,
-                    $expenses
+                    $expenses,
+                    $refunds
                 ),
 
             'clients' =>
@@ -439,6 +490,89 @@ class AccountingController extends Controller
                         $payment->notes,
                 ];
             });
+    }
+
+    private function refundRows(
+        string $startDate,
+        string $endDate
+    ): Collection {
+        return ClientRefund::query()
+            ->with([
+                'client:id,name,client_code,phone',
+                'invoice:id,invoice_no',
+                'refunder:id,name',
+            ])
+            ->whereBetween(
+                'refund_date',
+                [
+                    $startDate,
+                    $endDate,
+                ]
+            )
+            ->orderByDesc(
+                'refund_date'
+            )
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy(
+                'batch_uuid'
+            )
+            ->map(
+                function ($rows): array {
+                    $first =
+                        $rows->first();
+
+                    return [
+                        'id' =>
+                            $first->id,
+
+                        'batch_uuid' =>
+                            $first
+                                ->batch_uuid,
+
+                        'date' =>
+                            $first
+                                ->refund_date
+                                ?->format(
+                                    'Y-m-d'
+                                ),
+
+                        'client_name' =>
+                            $first
+                                ->client
+                                ?->name,
+
+                        'client_code' =>
+                            $first
+                                ->client
+                                ?->client_code,
+
+                        'invoice_no' =>
+                            $first
+                                ->invoice
+                                ?->invoice_no,
+
+                        'amount' =>
+                            round(
+                                (float)
+                                $rows->sum(
+                                    'amount'
+                                ),
+                                2
+                            ),
+
+                        'reason' =>
+                            $first
+                                ->reason,
+
+                        'refunded_by' =>
+                            $first
+                                ->refunder
+                                ?->name,
+                    ];
+                }
+            )
+            ->values();
     }
 
     private function expenseRows(
@@ -702,126 +836,223 @@ class AccountingController extends Controller
         Carbon $start,
         Carbon $end
     ): array {
-        $startDate = $start->toDateString();
-        $endDate = $end->toDateString();
+        $startDate =
+            $start->toDateString();
 
-        $collections = Payment::query()
-            ->selectRaw(
-                "
-                    DATE_FORMAT(
-                        payment_date,
-                        '%Y-%m'
-                    ) AS month,
-                    SUM(amount) AS total
-                "
-            )
-            ->whereBetween('payment_date', [
-                $startDate,
-                $endDate,
-            ])
-            ->groupBy('month')
-            ->pluck('total', 'month');
+        $endDate =
+            $end->toDateString();
 
-        $expenses = Expense::query()
-            ->selectRaw(
-                "
-                    DATE_FORMAT(
-                        expense_date,
-                        '%Y-%m'
-                    ) AS month,
-                    SUM(amount) AS total
-                "
-            )
-            ->whereBetween('expense_date', [
-                $startDate,
-                $endDate,
-            ])
-            ->groupBy('month')
-            ->pluck('total', 'month');
+        $collections =
+            Payment::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            payment_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(amount) AS total
+                    "
+                )
+                ->whereBetween(
+                    'payment_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
 
-        $billing = Invoice::query()
-            ->selectRaw(
-                "
-                    DATE_FORMAT(
-                        issue_date,
-                        '%Y-%m'
-                    ) AS month,
-                    SUM(amount - discount) AS total
-                "
-            )
-            ->where(
-                'status',
-                '!=',
-                'cancelled'
-            )
-            ->whereBetween('issue_date', [
-                $startDate,
-                $endDate,
-            ])
-            ->groupBy('month')
-            ->pluck('total', 'month');
+        $refunds =
+            ClientRefund::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            refund_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(amount) AS total
+                    "
+                )
+                ->whereBetween(
+                    'refund_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
+
+        $expenses =
+            Expense::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            expense_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(amount) AS total
+                    "
+                )
+                ->whereBetween(
+                    'expense_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
+
+        $billing =
+            Invoice::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            issue_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(amount - discount) AS total
+                    "
+                )
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->whereBetween(
+                    'issue_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
 
         $rows = [];
 
-        $cursor = $start
-            ->copy()
-            ->startOfMonth();
+        $cursor =
+            $start
+                ->copy()
+                ->startOfMonth();
 
-        $lastMonth = $end
-            ->copy()
-            ->startOfMonth();
+        $lastMonth =
+            $end
+                ->copy()
+                ->startOfMonth();
 
         while (
-            $cursor->lessThanOrEqualTo(
-                $lastMonth
-            )
+            $cursor
+                ->lessThanOrEqualTo(
+                    $lastMonth
+                )
         ) {
-            $month = $cursor->format(
-                'Y-m'
-            );
+            $month =
+                $cursor->format(
+                    'Y-m'
+                );
 
-            $collected = round(
-                (float) (
-                    $collections[$month]
-                    ?? 0
-                ),
-                2
-            );
-
-            $spent = round(
-                (float) (
-                    $expenses[$month]
-                    ?? 0
-                ),
-                2
-            );
-
-            $rows[] = [
-                'month' => $month,
-
-                'label' =>
-                    $cursor->format(
-                        'M Y'
-                    ),
-
-                'billed' => round(
+            $gross =
+                round(
                     (float) (
-                        $billing[$month]
+                        $collections[
+                            $month
+                        ]
                         ?? 0
                     ),
                     2
-                ),
+                );
+
+            $refunded =
+                round(
+                    (float) (
+                        $refunds[
+                            $month
+                        ]
+                        ?? 0
+                    ),
+                    2
+                );
+
+            $net =
+                round(
+                    $gross
+                    - $refunded,
+                    2
+                );
+
+            $spent =
+                round(
+                    (float) (
+                        $expenses[
+                            $month
+                        ]
+                        ?? 0
+                    ),
+                    2
+                );
+
+            $rows[] = [
+                'month' =>
+                    $month,
+
+                'label' =>
+                    $cursor
+                        ->format(
+                            'M Y'
+                        ),
+
+                'billed' =>
+                    round(
+                        (float) (
+                            $billing[
+                                $month
+                            ]
+                            ?? 0
+                        ),
+                        2
+                    ),
+
+                'gross_collection' =>
+                    $gross,
+
+                'refunds' =>
+                    $refunded,
 
                 'collection' =>
-                    $collected,
+                    $net,
 
                 'expenses' =>
                     $spent,
 
-                'profit' => round(
-                    $collected - $spent,
-                    2
-                ),
+                'profit' =>
+                    round(
+                        $net
+                        - $spent,
+                        2
+                    ),
             ];
 
             $cursor->addMonth();
@@ -832,61 +1063,83 @@ class AccountingController extends Controller
 
     private function transactionRows(
         Collection $collections,
-        Collection $expenses
+        Collection $expenses,
+        Collection $refunds
     ): array {
         $collectionRows =
             $collections->map(
-                function (array $row): array {
+                function (
+                    array $row
+                ): array {
                     return [
                         'sort_key' =>
                             $row['date']
-                            . '-2-'
+                            . '-3-'
                             . str_pad(
-                                (string) $row['id'],
+                                (string)
+                                $row['id'],
                                 10,
                                 '0',
                                 STR_PAD_LEFT
                             ),
 
-                        'id' => $row['id'],
-                        'date' => $row['date'],
-                        'type' => 'collection',
+                        'id' =>
+                            $row['id'],
+
+                        'date' =>
+                            $row['date'],
+
+                        'type' =>
+                            'collection',
 
                         'description' =>
-                            $row['client_name']
+                            $row[
+                                'client_name'
+                            ]
                             ?: 'Client Payment',
 
                         'category' =>
                             $row['method'],
 
                         'reference' =>
-                            $row['invoice_no'],
+                            $row[
+                                'invoice_no'
+                            ],
 
                         'money_in' =>
                             $row['amount'],
 
-                        'money_out' => 0,
+                        'money_out' =>
+                            0,
                     ];
                 }
             );
 
         $expenseRows =
             $expenses->map(
-                function (array $row): array {
+                function (
+                    array $row
+                ): array {
                     return [
                         'sort_key' =>
                             $row['date']
                             . '-1-'
                             . str_pad(
-                                (string) $row['id'],
+                                (string)
+                                $row['id'],
                                 10,
                                 '0',
                                 STR_PAD_LEFT
                             ),
 
-                        'id' => $row['id'],
-                        'date' => $row['date'],
-                        'type' => 'expense',
+                        'id' =>
+                            $row['id'],
+
+                        'date' =>
+                            $row['date'],
+
+                        'type' =>
+                            'expense',
 
                         'description' =>
                             $row['title'],
@@ -897,7 +1150,60 @@ class AccountingController extends Controller
                         'reference' =>
                             $row['method'],
 
-                        'money_in' => 0,
+                        'money_in' =>
+                            0,
+
+                        'money_out' =>
+                            $row['amount'],
+                    ];
+                }
+            );
+
+        $refundRows =
+            $refunds->map(
+                function (
+                    array $row
+                ): array {
+                    return [
+                        'sort_key' =>
+                            $row['date']
+                            . '-2-'
+                            . str_pad(
+                                (string)
+                                $row['id'],
+                                10,
+                                '0',
+                                STR_PAD_LEFT
+                            ),
+
+                        'id' =>
+                            $row['id'],
+
+                        'date' =>
+                            $row['date'],
+
+                        'type' =>
+                            'refund',
+
+                        'description' =>
+                            'Client Refund - '
+                            . (
+                                $row[
+                                    'client_name'
+                                ]
+                                ?: 'MAC Client'
+                            ),
+
+                        'category' =>
+                            'Refund',
+
+                        'reference' =>
+                            $row[
+                                'invoice_no'
+                            ],
+
+                        'money_in' =>
+                            0,
 
                         'money_out' =>
                             $row['amount'],
@@ -908,28 +1214,47 @@ class AccountingController extends Controller
         $runningBalance = 0;
 
         return $collectionRows
-            ->concat($expenseRows)
-            ->sortBy('sort_key')
+            ->concat(
+                $expenseRows
+            )
+            ->concat(
+                $refundRows
+            )
+            ->sortBy(
+                'sort_key'
+            )
             ->values()
-            ->map(function (
-                array $row
-            ) use (
-                &$runningBalance
-            ): array {
-                $runningBalance +=
-                    (float) $row['money_in']
-                    - (float) $row['money_out'];
+            ->map(
+                function (
+                    array $row
+                ) use (
+                    &$runningBalance
+                ): array {
+                    $runningBalance +=
+                        (float)
+                        $row[
+                            'money_in'
+                        ]
+                        - (float)
+                        $row[
+                            'money_out'
+                        ];
 
-                unset($row['sort_key']);
-
-                $row['balance'] =
-                    round(
-                        $runningBalance,
-                        2
+                    unset(
+                        $row[
+                            'sort_key'
+                        ]
                     );
 
-                return $row;
-            })
+                    $row['balance'] =
+                        round(
+                            $runningBalance,
+                            2
+                        );
+
+                    return $row;
+                }
+            )
             ->reverse()
             ->values()
             ->all();

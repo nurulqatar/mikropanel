@@ -6,6 +6,7 @@ import {
     useForm,
 } from '@inertiajs/react';
 import {
+    useEffect,
     useMemo,
     useState,
 } from 'react';
@@ -26,6 +27,7 @@ export default function MacClientPos({
     ipRanges = [],
     permissions = {},
     stats = {},
+    recentRefunds = [],
 }) {
     const [search, setSearch] =
         useState('');
@@ -178,26 +180,51 @@ export default function MacClientPos({
 
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     <StatCard
-                        label="Total Clients"
-                        value={stats.total}
+                        label="Today Collection"
+                        value={`QAR ${money(
+                            stats.today_collection,
+                        )}`}
                     />
 
                     <StatCard
-                        label="Active"
-                        value={stats.active}
+                        label="Today Due"
+                        value={`QAR ${money(
+                            stats.today_due_created,
+                        )}`}
                     />
 
                     <StatCard
-                        label="Suspended"
+                        label="Renewed Today"
                         value={
-                            stats.suspended
+                            stats.renewed_today
                         }
                     />
 
                     <StatCard
-                        label="Total Due"
+                        label="New Clients Today"
+                        value={
+                            stats.new_clients_today
+                        }
+                    />
+
+                    <StatCard
+                        label="Refund Today"
                         value={`QAR ${money(
-                            stats.due,
+                            stats.today_refund,
+                        )}`}
+                    />
+
+                    <StatCard
+                        label="Net Collection"
+                        value={`QAR ${money(
+                            stats.net_collection,
+                        )}`}
+                    />
+
+                    <StatCard
+                        label="Current Total Due"
+                        value={`QAR ${money(
+                            stats.current_due,
                         )}`}
                     />
                 </div>
@@ -220,8 +247,19 @@ export default function MacClientPos({
                     onToggle={
                         changeState
                     }
+                    onRefund={(client) =>
+                        openModal(
+                            'refund',
+                            client,
+                        )
+                    }
                 />
 
+                <RefundHistory
+                    rows={
+                        recentRefunds
+                    }
+                />
 
             </div>
 
@@ -266,6 +304,17 @@ export default function MacClientPos({
                     }
                 />
             )}
+
+            {modal === 'refund'
+                && selected
+                && permissions.refund && (
+                <RefundModal
+                    client={selected}
+                    onClose={
+                        closeModal
+                    }
+                />
+            )}
         </AppLayout>
     );
 }
@@ -276,6 +325,7 @@ function QuickClientWorkspace({
     onRecharge,
     onEdit,
     onToggle,
+    onRefund,
 }) {
     const [search, setSearch] =
         useState('');
@@ -557,6 +607,20 @@ function QuickClientWorkspace({
                                     </button>
                                 )}
 
+                                {permissions.refund && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onRefund(
+                                                selectedClient,
+                                            )
+                                        }
+                                        className="rounded-xl bg-amber-600 px-4 py-3 font-black text-white hover:bg-amber-700"
+                                    >
+                                        Refund Service
+                                    </button>
+                                )}
+
                                 {permissions.edit && (
                                     <button
                                         type="button"
@@ -604,6 +668,417 @@ function QuickClientWorkspace({
                         </div>
                     )}
                 </div>
+            </div>
+        </section>
+    );
+}
+
+function RefundModal({
+    client,
+    onClose,
+}) {
+    const [preview, setPreview] =
+        useState(null);
+
+    const [loading, setLoading] =
+        useState(true);
+
+    const [error, setError] =
+        useState('');
+
+    const [reason, setReason] =
+        useState('');
+
+    const [submitting, setSubmitting] =
+        useState(false);
+
+    useEffect(() => {
+        let active = true;
+
+        setLoading(true);
+        setError('');
+
+        fetch(
+            route(
+                'payments.refund.preview',
+                client.id,
+            ),
+            {
+                headers: {
+                    Accept:
+                        'application/json',
+
+                    'X-Requested-With':
+                        'XMLHttpRequest',
+                },
+            },
+        )
+            .then(async (response) => {
+                const data =
+                    await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        data.message
+                        || 'Unable to calculate refund.',
+                    );
+                }
+
+                return data;
+            })
+            .then((data) => {
+                if (active) {
+                    setPreview(data);
+                }
+            })
+            .catch((exception) => {
+                if (active) {
+                    setError(
+                        exception.message,
+                    );
+                }
+            })
+            .finally(() => {
+                if (active) {
+                    setLoading(false);
+                }
+            });
+
+        return () => {
+            active = false;
+        };
+    }, [
+        client.id,
+    ]);
+
+    const submit = () => {
+        if (
+            !preview?.eligible
+            || !reason.trim()
+            || submitting
+        ) {
+            return;
+        }
+
+        const confirmed =
+            window.confirm(
+                `Refund QAR ${money(
+                    preview.refund_amount,
+                )} to ${client.name}? `
+                + 'The client will be suspended and disconnected immediately.',
+            );
+
+        if (!confirmed) {
+            return;
+        }
+
+        setSubmitting(true);
+
+        router.post(
+            route(
+                'payments.refund.store',
+                client.id,
+            ),
+            {
+                invoice_id:
+                    preview.invoice_id,
+
+                reason:
+                    reason.trim(),
+            },
+            {
+                preserveScroll: true,
+
+                onSuccess: () =>
+                    onClose(),
+
+                onFinish: () =>
+                    setSubmitting(false),
+            },
+        );
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+            <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+                <div className="flex items-center justify-between border-b px-6 py-4">
+                    <div>
+                        <h2 className="text-xl font-black text-slate-900">
+                            Service Refund
+                        </h2>
+
+                        <p className="mt-1 text-sm text-slate-500">
+                            {client.name}
+                            {' · '}
+                            {client.client_code
+                                || `#${client.id}`}
+                        </p>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-lg px-3 py-2 font-black text-slate-500 hover:bg-slate-100"
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                <div className="space-y-5 p-6">
+                    {loading && (
+                        <div className="rounded-xl bg-slate-50 p-8 text-center font-bold text-slate-500">
+                            Calculating refund...
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="rounded-xl bg-red-50 p-4 font-bold text-red-700">
+                            {error}
+                        </div>
+                    )}
+
+                    {!loading
+                        && preview
+                        && !preview.eligible && (
+                        <div className="rounded-xl bg-amber-50 p-5">
+                            <div className="font-black text-amber-800">
+                                No refund available
+                            </div>
+
+                            <div className="mt-1 text-sm text-amber-700">
+                                {preview.message}
+                            </div>
+                        </div>
+                    )}
+
+                    {!loading
+                        && preview?.eligible && (
+                        <>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <QuickInfo
+                                    label="Invoice"
+                                    value={
+                                        preview.invoice_no
+                                    }
+                                />
+
+                                <QuickInfo
+                                    label="Package Price"
+                                    value={`QAR ${money(
+                                        preview.service_price,
+                                    )}`}
+                                />
+
+                                <QuickInfo
+                                    label="Validity"
+                                    value={`${preview.validity_days} days`}
+                                />
+
+                                <QuickInfo
+                                    label="Used"
+                                    value={`${preview.used_days} days`}
+                                />
+
+                                <QuickInfo
+                                    label="Daily Rate"
+                                    value={`QAR ${Number(
+                                        preview.daily_rate
+                                        ?? 0,
+                                    ).toFixed(2)}`}
+                                />
+
+                                <QuickInfo
+                                    label="Used Value"
+                                    value={`QAR ${money(
+                                        preview.used_value,
+                                    )}`}
+                                />
+
+                                <QuickInfo
+                                    label="Actually Paid"
+                                    value={`QAR ${money(
+                                        preview.net_paid,
+                                    )}`}
+                                />
+
+                                <QuickInfo
+                                    label="Unused Service"
+                                    value={`QAR ${money(
+                                        preview.unused_value,
+                                    )}`}
+                                />
+                            </div>
+
+                            <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-5 text-center">
+                                <div className="text-xs font-black uppercase tracking-wider text-emerald-600">
+                                    Customer Will Receive
+                                </div>
+
+                                <div className="mt-1 text-4xl font-black text-emerald-700">
+                                    QAR {money(
+                                        preview.refund_amount,
+                                    )}
+                                </div>
+
+                                <div className="mt-2 text-sm font-bold text-emerald-700">
+                                    {preview.used_days} days used
+                                    {' · '}
+                                    QAR {money(
+                                        preview.used_value,
+                                    )} retained
+                                </div>
+                            </div>
+
+                            <div className="rounded-xl bg-red-50 p-4 text-sm font-bold text-red-700">
+                                After refund, this client will be suspended and disconnected immediately. The original payment will remain permanently in payment history.
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+                                    Refund Reason
+                                </label>
+
+                                <textarea
+                                    rows={3}
+                                    value={reason}
+                                    onChange={(event) =>
+                                        setReason(
+                                            event.target.value,
+                                        )
+                                    }
+                                    placeholder="Enter refund reason"
+                                    className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                                />
+                            </div>
+
+                            <button
+                                type="button"
+                                disabled={
+                                    submitting
+                                    || !reason.trim()
+                                }
+                                onClick={submit}
+                                className="w-full rounded-xl bg-amber-600 px-5 py-3 font-black text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {submitting
+                                    ? 'PROCESSING REFUND...'
+                                    : `REFUND QAR ${money(
+                                        preview.refund_amount,
+                                    )} & DISCONNECT`}
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function RefundHistory({
+    rows = [],
+}) {
+    if (!rows.length) {
+        return null;
+    }
+
+    return (
+        <section className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+            <div className="border-b px-5 py-4">
+                <h2 className="font-black text-slate-900">
+                    Recent Refund History
+                </h2>
+
+                <p className="mt-1 text-xs text-slate-500">
+                    Permanent refund audit history
+                </p>
+            </div>
+
+            <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                        <tr>
+                            <th className="px-4 py-3">
+                                Time
+                            </th>
+
+                            <th className="px-4 py-3">
+                                Client
+                            </th>
+
+                            <th className="px-4 py-3">
+                                Invoice
+                            </th>
+
+                            <th className="px-4 py-3">
+                                Used
+                            </th>
+
+                            <th className="px-4 py-3">
+                                Refund
+                            </th>
+
+                            <th className="px-4 py-3">
+                                Reason
+                            </th>
+
+                            <th className="px-4 py-3">
+                                Operator
+                            </th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {rows.map((row) => (
+                            <tr
+                                key={
+                                    row.batch_uuid
+                                }
+                                className="border-t"
+                            >
+                                <td className="whitespace-nowrap px-4 py-3">
+                                    {row.created_at
+                                        || row.date}
+                                </td>
+
+                                <td className="px-4 py-3">
+                                    <div className="font-bold text-slate-800">
+                                        {row.client_name
+                                            || '-'}
+                                    </div>
+
+                                    <div className="text-xs text-slate-400">
+                                        {row.client_code
+                                            || ''}
+                                    </div>
+                                </td>
+
+                                <td className="px-4 py-3">
+                                    {row.invoice_no
+                                        || '-'}
+                                </td>
+
+                                <td className="px-4 py-3">
+                                    {row.used_days} days
+                                </td>
+
+                                <td className="whitespace-nowrap px-4 py-3 font-black text-amber-700">
+                                    QAR {money(
+                                        row.amount,
+                                    )}
+                                </td>
+
+                                <td className="max-w-xs px-4 py-3 text-slate-600">
+                                    {row.reason}
+                                </td>
+
+                                <td className="px-4 py-3">
+                                    {row.refunded_by
+                                        || '-'}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
         </section>
     );

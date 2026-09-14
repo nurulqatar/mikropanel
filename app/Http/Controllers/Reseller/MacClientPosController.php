@@ -4,8 +4,12 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Models\Client;
+use App\Models\ClientRefund;
+use App\Models\Invoice;
 use App\Models\IpRange;
 use App\Models\Package;
+use App\Models\Payment;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -224,6 +228,167 @@ class MacClientPosController extends Controller
                     'end_ip',
                 ]);
 
+        $today =
+            Carbon::today(
+                'Asia/Qatar'
+            )->toDateString();
+
+        $todayCollection =
+            round(
+                (float)
+                Payment::query()
+                    ->whereDate(
+                        'payment_date',
+                        $today
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $todayRefund =
+            round(
+                (float)
+                ClientRefund::query()
+                    ->whereDate(
+                        'refund_date',
+                        $today
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $todayDueCreated =
+            round(
+                (float)
+                Invoice::query()
+                    ->whereDate(
+                        'issue_date',
+                        $today
+                    )
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->sum(
+                        'initial_due_amount'
+                    ),
+                2
+            );
+
+        $renewedToday =
+            Invoice::query()
+                ->whereDate(
+                    'issue_date',
+                    $today
+                )
+                ->where(
+                    'applies_service_period',
+                    true
+                )
+                ->where(
+                    'invoice_no',
+                    'not like',
+                    'INV-NEW-%'
+                )
+                ->count();
+
+        $newClientsToday =
+            Client::query()
+                ->whereDate(
+                    'created_at',
+                    $today
+                )
+                ->count();
+
+        $recentRefunds =
+            ClientRefund::query()
+                ->with([
+                    'client:id,name,client_code',
+                    'invoice:id,invoice_no',
+                    'refunder:id,name',
+                ])
+                ->latest('id')
+                ->limit(100)
+                ->get()
+                ->groupBy(
+                    'batch_uuid'
+                )
+                ->map(
+                    function ($rows): array {
+                        $first =
+                            $rows->first();
+
+                        return [
+                            'batch_uuid' =>
+                                $first
+                                    ->batch_uuid,
+
+                            'date' =>
+                                $first
+                                    ->refund_date
+                                    ?->format(
+                                        'Y-m-d'
+                                    ),
+
+                            'client_name' =>
+                                $first
+                                    ->client
+                                    ?->name,
+
+                            'client_code' =>
+                                $first
+                                    ->client
+                                    ?->client_code,
+
+                            'invoice_no' =>
+                                $first
+                                    ->invoice
+                                    ?->invoice_no,
+
+                            'amount' =>
+                                round(
+                                    (float)
+                                    $rows->sum(
+                                        'amount'
+                                    ),
+                                    2
+                                ),
+
+                            'used_days' =>
+                                (int)
+                                $first
+                                    ->used_days,
+
+                            'reason' =>
+                                $first
+                                    ->reason,
+
+                            'refunded_by' =>
+                                $first
+                                    ->refunder
+                                    ?->name,
+
+                            'created_at' =>
+                                $first
+                                    ->created_at
+                                    ?->timezone(
+                                        'Asia/Qatar'
+                                    )
+                                    ->format(
+                                        'Y-m-d H:i'
+                                    ),
+                        ];
+                    }
+                )
+                ->values()
+                ->take(10)
+                ->values();
+
         return Inertia::render(
             'Reseller/MacClientPos',
             [
@@ -261,9 +426,48 @@ class MacClientPosController extends Controller
                         $user->hasPermission(
                             'payments.manage'
                         ),
+
+                    'refund' =>
+                        $user->hasPermission(
+                            'payments.manage'
+                        ),
                 ],
 
+                'recentRefunds' =>
+                    $recentRefunds,
+
                 'stats' => [
+                    'today_collection' =>
+                        $todayCollection,
+
+                    'today_due_created' =>
+                        $todayDueCreated,
+
+                    'renewed_today' =>
+                        $renewedToday,
+
+                    'new_clients_today' =>
+                        $newClientsToday,
+
+                    'today_refund' =>
+                        $todayRefund,
+
+                    'net_collection' =>
+                        round(
+                            $todayCollection
+                            - $todayRefund,
+                            2
+                        ),
+
+                    'current_due' =>
+                        round(
+                            (float)
+                            $clients->sum(
+                                'total_due'
+                            ),
+                            2
+                        ),
+
                     'total' =>
                         $clients->count(),
 
