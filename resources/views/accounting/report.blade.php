@@ -246,6 +246,11 @@
             color: #b91c1c;
         }
 
+        .status-refunded {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
         .footer {
             margin-top: 15px;
             padding-top: 8px;
@@ -346,68 +351,60 @@
         <table class="summary-grid">
             <tr>
                 <td class="summary-card">
-                    <div class="summary-label">
-                        Cash Collection
-                    </div>
-
+                    <div class="summary-label">Gross Collection</div>
                     <div class="summary-value positive">
-                        QAR
-                        {{ number_format($summary['collection'], 2) }}
+                        QAR {{ number_format($summary['gross_collection'], 2) }}
                     </div>
                 </td>
 
                 <td class="summary-card">
-                    <div class="summary-label">
-                        Expenses
-                    </div>
-
+                    <div class="summary-label">Cash Refund</div>
                     <div class="summary-value negative">
-                        QAR
-                        {{ number_format($summary['expenses'], 2) }}
+                        QAR {{ number_format($summary['refunds'], 2) }}
                     </div>
                 </td>
 
                 <td class="summary-card">
-                    <div class="summary-label">
-                        Net Profit / Loss
+                    <div class="summary-label">Net Collection</div>
+                    <div class="summary-value positive">
+                        QAR {{ number_format($summary['collection'], 2) }}
                     </div>
+                </td>
 
+                <td class="summary-card">
+                    <div class="summary-label">Business Expenses</div>
+                    <div class="summary-value negative">
+                        QAR {{ number_format($summary['expenses'], 2) }}
+                    </div>
+                </td>
+            </tr>
+
+            <tr>
+                <td class="summary-card">
+                    <div class="summary-label">Net Profit / Loss</div>
                     <div class="summary-value {{ $summary['net_profit'] >= 0 ? 'positive' : 'negative' }}">
-                        QAR
-                        {{ number_format($summary['net_profit'], 2) }}
+                        QAR {{ number_format($summary['net_profit'], 2) }}
                     </div>
                 </td>
 
                 <td class="summary-card">
-                    <div class="summary-label">
-                        Net Billed
-                    </div>
-
+                    <div class="summary-label">Net Billed Before Refund</div>
                     <div class="summary-value">
-                        QAR
-                        {{ number_format($summary['net_billed'], 2) }}
+                        QAR {{ number_format($summary['net_billed'], 2) }}
                     </div>
                 </td>
 
                 <td class="summary-card">
-                    <div class="summary-label">
-                        Customer Due
-                    </div>
-
+                    <div class="summary-label">Customer Due</div>
                     <div class="summary-value negative">
-                        QAR
-                        {{ number_format($summary['current_receivable'], 2) }}
+                        QAR {{ number_format($summary['current_receivable'], 2) }}
                     </div>
                 </td>
 
                 <td class="summary-card">
-                    <div class="summary-label">
-                        Overdue
-                    </div>
-
+                    <div class="summary-label">Overdue</div>
                     <div class="summary-value negative">
-                        QAR
-                        {{ number_format($summary['overdue_amount'], 2) }}
+                        QAR {{ number_format($summary['overdue_amount'], 2) }}
                     </div>
                 </td>
             </tr>
@@ -434,24 +431,30 @@
 
                     <tbody>
                         <tr>
-                            <td>
-                                Cash Collection
-                            </td>
-
+                            <td>Gross Cash Collection</td>
                             <td class="text-right positive bold">
-                                QAR
-                                {{ number_format($summary['collection'], 2) }}
+                                QAR {{ number_format($summary['gross_collection'], 2) }}
                             </td>
                         </tr>
 
                         <tr>
-                            <td>
-                                Less: Business Expenses
-                            </td>
-
+                            <td>Less: Customer Cash Refund</td>
                             <td class="text-right negative bold">
-                                QAR
-                                {{ number_format($summary['expenses'], 2) }}
+                                QAR {{ number_format($summary['refunds'], 2) }}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td class="bold">Net Cash Collection</td>
+                            <td class="text-right positive bold">
+                                QAR {{ number_format($summary['collection'], 2) }}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td>Less: Business Expenses</td>
+                            <td class="text-right negative bold">
+                                QAR {{ number_format($summary['expenses'], 2) }}
                             </td>
                         </tr>
 
@@ -489,7 +492,9 @@
                         <tr>
                             <th>Month</th>
                             <th class="text-right">Net Billed</th>
-                            <th class="text-right">Collection</th>
+                            <th class="text-right">Gross Collection</th>
+                            <th class="text-right">Cash Refund</th>
+                            <th class="text-right">Net Collection</th>
                             <th class="text-right">Expenses</th>
                             <th class="text-right">Profit / Loss</th>
                         </tr>
@@ -508,13 +513,19 @@
                                 </td>
 
                                 <td class="text-right positive">
-                                    QAR
-                                    {{ number_format($row['collection'], 2) }}
+                                    QAR {{ number_format($row['gross_collection'], 2) }}
                                 </td>
 
                                 <td class="text-right negative">
-                                    QAR
-                                    {{ number_format($row['expenses'], 2) }}
+                                    QAR {{ number_format($row['refunds'], 2) }}
+                                </td>
+
+                                <td class="text-right positive bold">
+                                    QAR {{ number_format($row['collection'], 2) }}
+                                </td>
+
+                                <td class="text-right negative">
+                                    QAR {{ number_format($row['expenses'], 2) }}
                                 </td>
 
                                 <td class="text-right bold {{ $row['profit'] >= 0 ? 'positive' : 'negative' }}">
@@ -524,7 +535,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="text-center muted">
+                                <td colspan="7" class="text-center muted">
                                     No financial records found.
                                 </td>
                             </tr>
@@ -601,7 +612,7 @@
         )
             <section class="section {{ $report === 'full' ? 'new-page' : '' }}">
                 <h3 class="section-title">
-                    Collection by Payment Method
+                    Gross Collection by Payment Method
                 </h3>
 
                 <table class="report-table">
@@ -642,7 +653,7 @@
 
             <section class="section">
                 <h3 class="section-title">
-                    Collection Details
+                    Gross Collection Details
                 </h3>
 
                 <table class="report-table">
@@ -705,6 +716,56 @@
                     </tbody>
                 </table>
             </section>
+
+            <section class="section">
+                <h3 class="section-title">
+                    Cash Refund Details
+                </h3>
+
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Client</th>
+                            <th>Invoice</th>
+                            <th>Reason</th>
+                            <th>Refunded By</th>
+                            <th class="text-right">Cash Out</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        @forelse($refunds as $row)
+                            <tr>
+                                <td>{{ $row['date'] }}</td>
+
+                                <td>
+                                    <strong>{{ $row['client_name'] ?: '-' }}</strong>
+                                    <br>
+                                    <span class="muted">
+                                        {{ $row['client_code'] ?: '-' }}
+                                    </span>
+                                </td>
+
+                                <td>{{ $row['invoice_no'] ?: '-' }}</td>
+                                <td>{{ $row['reason'] ?: '-' }}</td>
+                                <td>{{ $row['refunded_by'] ?: '-' }}</td>
+
+                                <td class="text-right negative bold">
+                                    QAR {{ number_format($row['amount'], 2) }}
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="text-center muted">
+                                    No cash refunds found.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </section>
+
         @endif
 
         @if(
@@ -937,13 +998,10 @@
                                 Activity
                             </th>
 
-                            <th style="width: 8%;" class="text-right">
-                                Paid
-                            </th>
-
-                            <th style="width: 8%;" class="text-right">
-                                Due
-                            </th>
+                            <th class="text-right">Gross Paid</th>
+                            <th class="text-right">Refunded</th>
+                            <th class="text-right">Net Paid</th>
+                            <th class="text-right">Due</th>
                         </tr>
                     </thead>
 
@@ -1068,19 +1126,25 @@
                                 </td>
 
                                 <td class="text-right positive bold">
-                                    QAR
-                                    {{ number_format($row['total_paid'], 2) }}
+                                    QAR {{ number_format($row['gross_paid'], 2) }}
                                 </td>
 
                                 <td class="text-right negative bold">
-                                    QAR
-                                    {{ number_format($row['total_due'], 2) }}
+                                    QAR {{ number_format($row['total_refunded'], 2) }}
+                                </td>
+
+                                <td class="text-right positive bold">
+                                    QAR {{ number_format($row['net_paid'], 2) }}
+                                </td>
+
+                                <td class="text-right negative bold">
+                                    QAR {{ number_format($row['total_due'], 2) }}
                                 </td>
                             </tr>
                         @empty
                             <tr>
                                 <td
-                                    colspan="11"
+                                    colspan="13"
                                     class="text-center muted"
                                 >
                                     No clients found.
@@ -1129,7 +1193,15 @@
                                 </td>
 
                                 <td>
-                                    {{ $row['type'] === 'collection' ? 'Money In' : 'Money Out' }}
+                                    {{
+                                        $row['type'] === 'collection'
+                                            ? 'Money In'
+                                            : (
+                                                $row['type'] === 'refund'
+                                                    ? 'Cash Refund'
+                                                    : 'Expense'
+                                            )
+                                    }}
                                 </td>
 
                                 <td>
