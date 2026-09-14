@@ -14,6 +14,7 @@ export default function Index({
     expenseCategories = [],
     invoiceStatuses = [],
     collections = [],
+    refunds = [],
     expenses = [],
     receivables = [],
     transactions = [],
@@ -64,13 +65,13 @@ export default function Index({
             key: 'profit-loss',
             title: 'Profit & Loss',
             description:
-                'Collection, expenses and net profit/loss',
+                'Gross collection, cash refunds, expenses and net profit/loss',
         },
         {
             key: 'collections',
             title: 'Collection Report',
             description:
-                'All customer payments and payment methods',
+                'Gross customer payments, cash refunds and net collection',
         },
         {
             key: 'expenses',
@@ -101,6 +102,8 @@ export default function Index({
     const maxTrend = Math.max(
         1,
         ...monthlyTrend.flatMap((row) => [
+            numberValue(row.gross_collection),
+            numberValue(row.refunds),
             numberValue(row.collection),
             numberValue(row.expenses),
         ]),
@@ -253,18 +256,36 @@ export default function Index({
                     </div>
                 </form>
 
-                <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                     <SummaryCard
-                        label="Cash Collection"
+                        label="Gross Collection"
                         value={`QAR ${money(
-                            summary.collection,
+                            summary.gross_collection,
                         )}`}
-                        description={`${summary.payment_count ?? 0} payment entries`}
+                        description={`${summary.payment_count ?? 0} payment entries before refunds`}
                         tone="green"
                     />
 
                     <SummaryCard
-                        label="Total Expenses"
+                        label="Cash Refund"
+                        value={`QAR ${money(
+                            summary.refunds,
+                        )}`}
+                        description={`${summary.refund_count ?? 0} refund entries`}
+                        tone="amber"
+                    />
+
+                    <SummaryCard
+                        label="Net Collection"
+                        value={`QAR ${money(
+                            summary.collection,
+                        )}`}
+                        description="Gross collection minus customer refunds"
+                        tone="cyan"
+                    />
+
+                    <SummaryCard
+                        label="Business Expenses"
                         value={`QAR ${money(
                             summary.expenses,
                         )}`}
@@ -287,7 +308,7 @@ export default function Index({
                                 ),
                             ),
                         )}`}
-                        description={`Cash margin: ${money(
+                        description={`Net collection - expenses · Margin ${money(
                             summary.profit_margin,
                         )}%`}
                         tone={
@@ -326,11 +347,11 @@ export default function Index({
                     />
 
                     <SummaryCard
-                        label="Net Billed"
+                        label="Net Billed Before Refund"
                         value={`QAR ${money(
                             summary.net_billed,
                         )}`}
-                        description="Gross bill minus discount"
+                        description="Gross billing minus invoice discount"
                     />
 
                     <SummaryCard
@@ -416,8 +437,21 @@ export default function Index({
                             <table className="min-w-full">
                                 <tbody className="divide-y divide-slate-200">
                                     <AmountRow
-                                        label="Cash Collection"
+                                        label="Gross Cash Collection"
+                                        value={summary.gross_collection}
+                                        positive
+                                    />
+
+                                    <AmountRow
+                                        label="Less: Customer Cash Refund"
+                                        value={summary.refunds}
+                                        negative
+                                    />
+
+                                    <AmountRow
+                                        label="Net Cash Collection"
                                         value={summary.collection}
+                                        strong
                                         positive
                                     />
 
@@ -493,7 +527,7 @@ export default function Index({
                     </h2>
 
                     <p className="mt-1 text-sm text-slate-500">
-                        Collection compared with expenses
+                        Gross collection - cash refund = net collection; then less expenses
                     </p>
 
                     <div className="mt-6 space-y-5">
@@ -533,9 +567,21 @@ export default function Index({
 
                                 <div className="space-y-2">
                                     <TrendBar
-                                        value={row.collection}
+                                        value={row.gross_collection}
                                         maximum={maxTrend}
                                         tone="green"
+                                    />
+
+                                    <TrendBar
+                                        value={row.refunds}
+                                        maximum={maxTrend}
+                                        tone="amber"
+                                    />
+
+                                    <TrendBar
+                                        value={row.collection}
+                                        maximum={maxTrend}
+                                        tone="cyan"
                                     />
 
                                     <TrendBar
@@ -547,7 +593,21 @@ export default function Index({
 
                                 <div className="text-right text-xs">
                                     <p className="font-bold text-emerald-600">
-                                        Collection: QAR{' '}
+                                        Gross: QAR{' '}
+                                        {money(
+                                            row.gross_collection,
+                                        )}
+                                    </p>
+
+                                    <p className="mt-1 font-bold text-amber-600">
+                                        Refund: QAR{' '}
+                                        {money(
+                                            row.refunds,
+                                        )}
+                                    </p>
+
+                                    <p className="mt-1 font-bold text-cyan-700">
+                                        Net: QAR{' '}
                                         {money(
                                             row.collection,
                                         )}
@@ -567,8 +627,8 @@ export default function Index({
 
                 <section className="grid gap-6 xl:grid-cols-2">
                     <ReportTable
-                        title="Collection by Payment Method"
-                        description="How customer payments were received"
+                        title="Gross Collection by Payment Method"
+                        description="Customer money received before cash refunds"
                         headers={[
                             'Method',
                             'Transactions',
@@ -759,8 +819,8 @@ export default function Index({
                 </ReportTable>
 
                 <ReportTable
-                    title="Collection Details"
-                    description="Customer payments in selected period"
+                    title="Gross Collection Details"
+                    description="Original customer payments before refunds"
                     headers={[
                         'Date',
                         'Client',
@@ -801,6 +861,61 @@ export default function Index({
                             <MoneyCell
                                 value={row.amount}
                                 positive
+                            />
+                        </tr>
+                    ))}
+                </ReportTable>
+
+                <ReportTable
+                    title="Cash Refund Details"
+                    description="Cash physically returned to MAC clients in selected period"
+                    headers={[
+                        'Date',
+                        'Client',
+                        'Invoice',
+                        'Reason',
+                        'Refunded By',
+                        'Cash Out',
+                    ]}
+                    empty={refunds.length === 0}
+                >
+                    {refunds.map((row) => (
+                        <tr
+                            key={
+                                row.batch_uuid
+                                || `refund-${row.id}`
+                            }
+                        >
+                            <TableCell>
+                                {formatDate(
+                                    row.date,
+                                )}
+                            </TableCell>
+
+                            <TableCell>
+                                {row.client_name || '-'}
+
+                                <p className="mt-1 font-mono text-xs text-slate-400">
+                                    {row.client_code || '-'}
+                                </p>
+                            </TableCell>
+
+                            <TableCell>
+                                {row.invoice_no || '-'}
+                            </TableCell>
+
+                            <TableCell>
+                                {row.reason || '-'}
+                            </TableCell>
+
+                            <TableCell>
+                                {row.refunded_by || '-'}
+                            </TableCell>
+
+                            <MoneyCell
+                                value={row.amount}
+                                negative
+                                strong
                             />
                         </tr>
                     ))}
@@ -1051,7 +1166,11 @@ function TrendBar({
                 className={`h-full rounded-full ${
                     tone === 'green'
                         ? 'bg-emerald-500'
-                        : 'bg-red-500'
+                        : tone === 'amber'
+                          ? 'bg-amber-500'
+                          : tone === 'cyan'
+                            ? 'bg-cyan-500'
+                            : 'bg-red-500'
                 }`}
                 style={{
                     width: `${percentage}%`,
@@ -1156,6 +1275,7 @@ function StatusBadge({ status }) {
         partial: 'bg-amber-100 text-amber-700',
         unpaid: 'bg-red-100 text-red-700',
         overdue: 'bg-red-100 text-red-700',
+        refunded: 'bg-amber-100 text-amber-800',
     };
 
     return (
@@ -1171,17 +1291,32 @@ function StatusBadge({ status }) {
 }
 
 function TransactionBadge({ type }) {
+    const labels = {
+        collection: 'Money In',
+        refund: 'Cash Refund',
+        expense: 'Expense',
+    };
+
+    const classes = {
+        collection:
+            'bg-emerald-100 text-emerald-700',
+
+        refund:
+            'bg-amber-100 text-amber-800',
+
+        expense:
+            'bg-red-100 text-red-700',
+    };
+
     return (
         <span
             className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
-                type === 'collection'
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-red-100 text-red-700'
+                classes[type]
+                || 'bg-slate-100 text-slate-700'
             }`}
         >
-            {type === 'collection'
-                ? 'Money In'
-                : 'Money Out'}
+            {labels[type]
+                || 'Money Out'}
         </span>
     );
 }

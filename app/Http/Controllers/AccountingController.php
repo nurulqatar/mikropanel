@@ -1271,9 +1271,14 @@ class AccountingController extends Controller
             ->withCount([
                 'invoices',
                 'payments',
+                'refunds',
             ])
             ->withSum(
-                'payments as total_paid',
+                'payments as gross_paid',
+                'amount'
+            )
+            ->withSum(
+                'refunds as total_refunded',
                 'amount'
             )
             ->withSum(
@@ -1392,13 +1397,65 @@ class AccountingController extends Controller
                             ?? 0
                         ),
 
-                    'total_paid' =>
+                    'refund_count' =>
+                        (int) (
+                            $client->refunds_count
+                            ?? 0
+                        ),
+
+                    'gross_paid' =>
                         round(
                             (float) (
-                                $client->total_paid
+                                $client->gross_paid
                                 ?? 0
                             ),
                             2
+                        ),
+
+                    'total_refunded' =>
+                        round(
+                            (float) (
+                                $client->total_refunded
+                                ?? 0
+                            ),
+                            2
+                        ),
+
+                    /*
+                     * Keep total_paid compatible with
+                     * old reports, but make it the
+                     * real cash retained after refund.
+                     */
+                    'total_paid' =>
+                        max(
+                            0,
+                            round(
+                                (float) (
+                                    $client->gross_paid
+                                    ?? 0
+                                )
+                                - (float) (
+                                    $client->total_refunded
+                                    ?? 0
+                                ),
+                                2
+                            )
+                        ),
+
+                    'net_paid' =>
+                        max(
+                            0,
+                            round(
+                                (float) (
+                                    $client->gross_paid
+                                    ?? 0
+                                )
+                                - (float) (
+                                    $client->total_refunded
+                                    ?? 0
+                                ),
+                                2
+                            )
                         ),
 
                     'total_due' =>
