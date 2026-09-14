@@ -202,6 +202,26 @@ export default function MacClientPos({
                     />
                 </div>
 
+                <QuickClientWorkspace
+                    clients={clients}
+                    permissions={permissions}
+                    onRecharge={(client) =>
+                        openModal(
+                            'recharge',
+                            client,
+                        )
+                    }
+                    onEdit={(client) =>
+                        openModal(
+                            'edit',
+                            client,
+                        )
+                    }
+                    onToggle={
+                        changeState
+                    }
+                />
+
                 <section className="rounded-2xl border bg-white shadow-sm">
                     <div className="border-b p-4">
                         <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
@@ -524,6 +544,362 @@ export default function MacClientPos({
                 />
             )}
         </AppLayout>
+    );
+}
+
+function QuickClientWorkspace({
+    clients = [],
+    permissions = {},
+    onRecharge,
+    onEdit,
+    onToggle,
+}) {
+    const [search, setSearch] =
+        useState('');
+
+    const [selectedId, setSelectedId] =
+        useState(null);
+
+    const selectedClient =
+        clients.find(
+            (client) =>
+                Number(client.id)
+                === Number(selectedId),
+        ) ?? null;
+
+    const results =
+        useMemo(() => {
+            const needle =
+                search
+                    .trim()
+                    .toLowerCase();
+
+            if (!needle) {
+                return clients.slice(
+                    0,
+                    8,
+                );
+            }
+
+            return clients
+                .filter((client) => {
+                    const haystack = [
+                        client.name,
+                        client.client_code,
+                        client.phone,
+                        client.mac_address,
+                        client.ip_address,
+                        client.package?.name,
+                    ]
+                        .filter(Boolean)
+                        .join(' ')
+                        .toLowerCase();
+
+                    return haystack.includes(
+                        needle,
+                    );
+                })
+                .slice(0, 8);
+        }, [
+            clients,
+            search,
+        ]);
+
+    const selectClient = (
+        client,
+    ) => {
+        setSelectedId(
+            client.id,
+        );
+
+        setSearch(
+            `${client.name}${
+                client.client_code
+                    ? ` · ${client.client_code}`
+                    : ''
+            }`,
+        );
+    };
+
+    return (
+        <section className="overflow-hidden rounded-2xl border border-cyan-200 bg-white shadow-sm">
+            <div className="border-b border-cyan-100 bg-gradient-to-r from-cyan-50 to-sky-50 px-5 py-4">
+                <div>
+                    <h2 className="text-lg font-black text-slate-900">
+                        Quick Client Work
+                    </h2>
+
+                    <p className="mt-1 text-sm text-slate-500">
+                        Search and select a MAC client
+                    </p>
+                </div>
+            </div>
+
+            <div className="grid gap-5 p-5 lg:grid-cols-2">
+                <div>
+                    <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+                        Search Client
+                    </label>
+
+                    <input
+                        type="text"
+                        value={search}
+                        onChange={(event) => {
+                            setSearch(
+                                event.target
+                                    .value,
+                            );
+
+                            setSelectedId(
+                                null,
+                            );
+                        }}
+                        placeholder="Name / Phone / MAC / IP / Client ID"
+                        className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                    />
+
+                    {!selectedClient && (
+                        <div className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-slate-200">
+                            {results.map(
+                                (client) => (
+                                    <button
+                                        key={
+                                            client.id
+                                        }
+                                        type="button"
+                                        onClick={() =>
+                                            selectClient(
+                                                client,
+                                            )
+                                        }
+                                        className="flex w-full items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 text-left transition last:border-b-0 hover:bg-cyan-50"
+                                    >
+                                        <span className="min-w-0">
+                                            <span className="block truncate font-black text-slate-800">
+                                                {
+                                                    client.name
+                                                }
+                                            </span>
+
+                                            <span className="mt-1 block truncate text-xs text-slate-500">
+                                                {client.client_code || '-'}
+                                                {' · '}
+                                                {client.mac_address || '-'}
+                                                {' · '}
+                                                {client.ip_address || '-'}
+                                            </span>
+                                        </span>
+
+                                        <span className="shrink-0 rounded-lg bg-cyan-50 px-3 py-1.5 text-xs font-black text-cyan-700">
+                                            Select
+                                        </span>
+                                    </button>
+                                ),
+                            )}
+
+                            {results.length ===
+                                0 && (
+                                <div className="p-7 text-center text-sm font-semibold text-slate-400">
+                                    No matching client
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {selectedClient && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setSelectedId(
+                                    null,
+                                );
+
+                                setSearch('');
+                            }}
+                            className="mt-3 text-sm font-bold text-cyan-700 hover:underline"
+                        >
+                            ← Select another client
+                        </button>
+                    )}
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    {!selectedClient ? (
+                        <div className="flex min-h-72 items-center justify-center text-center">
+                            <div>
+                                <div className="text-4xl text-slate-300">
+                                    ◇
+                                </div>
+
+                                <div className="mt-3 font-black text-slate-500">
+                                    Select a client to start recharge
+                                </div>
+
+                                <div className="mt-1 text-xs text-slate-400">
+                                    Search by name, phone, MAC, IP or Client ID
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <h3 className="text-xl font-black text-slate-900">
+                                        {
+                                            selectedClient.name
+                                        }
+                                    </h3>
+
+                                    <div className="mt-1 text-sm text-slate-500">
+                                        {selectedClient.client_code
+                                            || `#${selectedClient.id}`}
+                                    </div>
+                                </div>
+
+                                <span
+                                    className={`rounded-full px-3 py-1 text-xs font-black ${
+                                        selectedClient.enabled
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : 'bg-red-100 text-red-700'
+                                    }`}
+                                >
+                                    {selectedClient.enabled
+                                        ? 'ACTIVE'
+                                        : 'SUSPENDED'}
+                                </span>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <QuickInfo
+                                    label="MAC"
+                                    value={
+                                        selectedClient.mac_address
+                                        || '-'
+                                    }
+                                />
+
+                                <QuickInfo
+                                    label="IP"
+                                    value={
+                                        selectedClient.ip_address
+                                        || '-'
+                                    }
+                                />
+
+                                <QuickInfo
+                                    label="Package"
+                                    value={
+                                        selectedClient.package
+                                            ?.name
+                                        || '-'
+                                    }
+                                />
+
+                                <QuickInfo
+                                    label="Expiry"
+                                    value={
+                                        selectedClient.expiry_date
+                                        || '-'
+                                    }
+                                />
+
+                                <QuickInfo
+                                    label="Phone"
+                                    value={
+                                        selectedClient.phone
+                                        || '-'
+                                    }
+                                />
+
+                                <QuickInfo
+                                    label="Due"
+                                    value={`QAR ${money(
+                                        selectedClient.total_due,
+                                    )}`}
+                                />
+                            </div>
+
+                            <div className="grid gap-2 pt-2 sm:grid-cols-2">
+                                {permissions.renew && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onRecharge(
+                                                selectedClient,
+                                            )
+                                        }
+                                        className="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white hover:bg-emerald-700"
+                                    >
+                                        Recharge / Due Payment
+                                    </button>
+                                )}
+
+                                {permissions.edit && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onEdit(
+                                                selectedClient,
+                                            )
+                                        }
+                                        className="rounded-xl bg-blue-600 px-4 py-3 font-black text-white hover:bg-blue-700"
+                                    >
+                                        Edit Client
+                                    </button>
+                                )}
+
+                                {permissions.suspend && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onToggle(
+                                                selectedClient,
+                                            )
+                                        }
+                                        className={`rounded-xl px-4 py-3 font-black text-white ${
+                                            selectedClient.enabled
+                                                ? 'bg-red-600 hover:bg-red-700'
+                                                : 'bg-cyan-600 hover:bg-cyan-700'
+                                        }`}
+                                    >
+                                        {selectedClient.enabled
+                                            ? 'Suspend Client'
+                                            : 'Activate Client'}
+                                    </button>
+                                )}
+
+                                <Link
+                                    href={route(
+                                        'clients.show',
+                                        selectedClient.id,
+                                    )}
+                                    className="rounded-xl bg-slate-700 px-4 py-3 text-center font-black text-white hover:bg-slate-800"
+                                >
+                                    Full Client Details
+                                </Link>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+function QuickInfo({
+    label,
+    value,
+}) {
+    return (
+        <div className="rounded-lg bg-white p-3">
+            <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">
+                {label}
+            </div>
+
+            <div className="mt-1 break-all text-sm font-black text-slate-700">
+                {value}
+            </div>
+        </div>
     );
 }
 
