@@ -74,6 +74,11 @@ class DiscoverHotspotServers extends Command
                                                 'profile'
                                             ] ?? null,
 
+                                        'dns_name' =>
+                                            $row[
+                                                '_dns_name'
+                                            ] ?? null,
+
                                         'enabled' =>
                                             (
                                                 $row[

@@ -118,5 +118,18 @@ return array (
         'settings.manage' => 'Manage Settings & Client Form Builder',
       ),
     ),
+    11 =>
+    array (
+      'key' => 'hotspot',
+      'label' => 'Hotspot',
+      'permissions' =>
+      array (
+        'hotspot.view' => 'View Hotspot Dashboard, Vouchers & Reports',
+        'hotspot.manage' => 'Manage Hotspot Plans, Vouchers, Sessions & Branding',
+        'hotspot.sell' => 'Sell Hotspot Vouchers',
+        'hotspot.payments' => 'Receive Hotspot Due Payments',
+        'hotspot.export' => 'Print, PDF & Export Hotspot Data',
+      ),
+    ),
   ),
 );

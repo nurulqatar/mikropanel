@@ -47,6 +47,6 @@ class HotspotSession extends Model
         return $this->belongsTo(
             HotspotVoucher::class,
             'hotspot_voucher_id'
-        );
+        )->withTrashed();
     }
 }

@@ -1,3 +1,4 @@
+import { Link } from '@inertiajs/react';
 import Sidebar from '@/Components/Layout/Sidebar';
 import { router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
@@ -223,9 +224,20 @@ export default function AppLayout({
                                 )}
                             </div>
 
+                            <div className="flex items-center gap-3">
+                            {usePage().props.auth?.user?.role === 'admin' && (
+                                <Link
+                                    href={route('hotspot.index')}
+                                    className="rounded-lg bg-cyan-600 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-700"
+                                >
+                                    Hotspot
+                                </Link>
+                            )}
+
                             <div className="hidden max-w-64 truncate font-semibold text-slate-600 sm:block">
                                 {panelName}
                             </div>
+                        </div>
                         </div>
                     </div>
                 </header>

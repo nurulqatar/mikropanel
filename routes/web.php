@@ -3,6 +3,12 @@
 use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\HotspotController;
+use App\Http\Controllers\HotspotSectionController;
+use App\Http\Controllers\HotspotBrandingController;
+use App\Http\Controllers\HotspotReportController;
+use App\Http\Controllers\HotspotVoucherDocumentController;
+use App\Http\Controllers\HotspotVoucherController;
 use Inertia\Inertia;
 use App\Http\Controllers\RouterController;
 use App\Http\Controllers\PackageController;
@@ -189,6 +195,333 @@ Route::get(
         'users',
         \App\Http\Controllers\UserManagementController::class
     )->except(['show']);
+
+
+    /*
+     * Hotspot module.
+     * Controller currently enforces admin-only
+     * access until granular Hotspot permissions
+     * are installed in the next phase.
+     */
+    Route::prefix('hotspot')
+        ->name('hotspot.')
+        ->group(function () {
+            Route::get(
+                '/',
+                [
+                    HotspotSectionController::class,
+                    'dashboard',
+                ]
+            )->name('index');
+
+            Route::get(
+                'servers',
+                [
+                    HotspotSectionController::class,
+                    'servers',
+                ]
+            )->name(
+                'servers.index'
+            );
+
+            Route::get(
+                'plans',
+                [
+                    HotspotSectionController::class,
+                    'plans',
+                ]
+            )->name(
+                'plans.index'
+            );
+
+            Route::get(
+                'vouchers',
+                [
+                    HotspotSectionController::class,
+                    'vouchers',
+                ]
+            )->name(
+                'vouchers.index'
+            );
+
+            Route::get(
+                'sessions',
+                [
+                    HotspotSectionController::class,
+                    'sessions',
+                ]
+            )->name(
+                'sessions.index'
+            );
+
+            Route::get(
+                'billing',
+                [
+                    HotspotSectionController::class,
+                    'billing',
+                ]
+            )->name(
+                'billing.index'
+            );
+
+            Route::get(
+                'reports',
+                [
+                    HotspotReportController::class,
+                    'index',
+                ]
+            )->name(
+                'reports.index'
+            );
+
+            Route::get(
+                'reports/csv',
+                [
+                    HotspotReportController::class,
+                    'csv',
+                ]
+            )->name(
+                'reports.csv'
+            );
+
+            Route::get(
+                'reports/pdf',
+                [
+                    HotspotReportController::class,
+                    'pdf',
+                ]
+            )->name(
+                'reports.pdf'
+            );
+
+            Route::get(
+                'branding',
+                [
+                    HotspotBrandingController::class,
+                    'index',
+                ]
+            )->name(
+                'branding.index'
+            );
+
+            Route::put(
+                'branding',
+                [
+                    HotspotBrandingController::class,
+                    'update',
+                ]
+            )->name(
+                'branding.update'
+            );
+
+            Route::get(
+                'branding/portal',
+                [
+                    HotspotBrandingController::class,
+                    'portal',
+                ]
+            )->name(
+                'branding.portal'
+            );
+
+            Route::post(
+                'discover',
+                [
+                    HotspotController::class,
+                    'discover',
+                ]
+            )->name('discover');
+
+            Route::post(
+                'servers/{server}/sync',
+                [
+                    HotspotController::class,
+                    'syncServer',
+                ]
+            )->name(
+                'servers.sync'
+            );
+
+            Route::post(
+                'plans',
+                [
+                    HotspotController::class,
+                    'storePlan',
+                ]
+            )->name(
+                'plans.store'
+            );
+
+            Route::put(
+                'plans/{plan}',
+                [
+                    HotspotController::class,
+                    'updatePlan',
+                ]
+            )->name(
+                'plans.update'
+            );
+
+            Route::delete(
+                'plans/{plan}',
+                [
+                    HotspotController::class,
+                    'destroyPlan',
+                ]
+            )->name(
+                'plans.destroy'
+            );
+
+            Route::post(
+                'vouchers/generate',
+                [
+                    HotspotController::class,
+                    'generateVouchers',
+                ]
+            )->name(
+                'vouchers.generate'
+            );
+
+            Route::get(
+                'vouchers/{voucher}',
+                [
+                    HotspotVoucherController::class,
+                    'show',
+                ]
+            )->name(
+                'vouchers.show'
+            );
+
+            Route::post(
+                'vouchers/{voucher}/renew',
+                [
+                    HotspotVoucherController::class,
+                    'renew',
+                ]
+            )->name(
+                'vouchers.renew'
+            );
+
+            Route::post(
+                'vouchers/{voucher}/suspend',
+                [
+                    HotspotVoucherController::class,
+                    'suspend',
+                ]
+            )->name(
+                'vouchers.suspend'
+            );
+
+            Route::post(
+                'vouchers/{voucher}/activate',
+                [
+                    HotspotVoucherController::class,
+                    'activate',
+                ]
+            )->name(
+                'vouchers.activate'
+            );
+
+            Route::put(
+                'vouchers/{voucher}/mac',
+                [
+                    HotspotVoucherController::class,
+                    'updateMac',
+                ]
+            )->name(
+                'vouchers.mac'
+            );
+
+            Route::delete(
+                'vouchers/{voucher}/archive',
+                [
+                    HotspotVoucherController::class,
+                    'archive',
+                ]
+            )->name(
+                'vouchers.archive'
+            );
+
+            Route::get(
+                'vouchers/{voucher}/print',
+                [
+                    HotspotVoucherDocumentController::class,
+                    'printVoucher',
+                ]
+            )->name(
+                'vouchers.print'
+            );
+
+            Route::get(
+                'vouchers/{voucher}/pdf',
+                [
+                    HotspotVoucherDocumentController::class,
+                    'downloadVoucher',
+                ]
+            )->name(
+                'vouchers.pdf'
+            );
+
+            Route::get(
+                'batches',
+                [
+                    HotspotVoucherController::class,
+                    'batches',
+                ]
+            )->name(
+                'batches.index'
+            );
+
+            Route::get(
+                'batches/{batch}/print',
+                [
+                    HotspotVoucherDocumentController::class,
+                    'printBatch',
+                ]
+            )->name(
+                'batches.print'
+            );
+
+            Route::get(
+                'batches/{batch}/pdf',
+                [
+                    HotspotVoucherDocumentController::class,
+                    'downloadBatch',
+                ]
+            )->name(
+                'batches.pdf'
+            );
+
+            Route::post(
+                'vouchers/{voucher}/sell',
+                [
+                    HotspotController::class,
+                    'sellVoucher',
+                ]
+            )->name(
+                'vouchers.sell'
+            );
+
+            Route::post(
+                'invoices/{invoice}/pay',
+                [
+                    HotspotController::class,
+                    'receiveInvoicePayment',
+                ]
+            )->name(
+                'invoices.pay'
+            );
+
+            Route::post(
+                'sessions/{session}/disconnect',
+                [
+                    HotspotController::class,
+                    'disconnectSession',
+                ]
+            )->name(
+                'sessions.disconnect'
+            );
+        });
 
 });
 require __DIR__.'/auth.php';
@@ -420,3 +753,6 @@ unset(
 );
 
 /* MIKROPANEL_PERMISSION_ROUTE_HARDENING_END */
+
+require __DIR__.'/super_admin.php';
+require __DIR__.'/reseller.php';

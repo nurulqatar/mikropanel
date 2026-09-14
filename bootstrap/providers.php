@@ -6,4 +6,5 @@ return [
     AppServiceProvider::class,
     App\Providers\PanelSettingsServiceProvider::class,
     App\Providers\PanelAuthorizationServiceProvider::class,
+    App\Providers\ResellerTenancyServiceProvider::class,
 ];

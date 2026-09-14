@@ -12,11 +12,13 @@ class User extends Authenticatable
     use Notifiable;
 
     protected $fillable = [
+        'reseller_id',
         'name',
         'email',
         'email_verified_at',
         'password',
         'role',
+        'is_super_admin',
         'permissions',
         'is_active',
     ];
@@ -33,6 +35,8 @@ class User extends Authenticatable
             'password' => 'hashed',
             'permissions' => 'array',
             'is_active' => 'boolean',
+            'is_super_admin' => 'boolean',
+            'reseller_id' => 'integer',
         ];
     }
 
@@ -83,4 +87,32 @@ class User extends Authenticatable
 
         return false;
     }
+
+    public function isSuperAdmin(): bool
+    {
+        return (bool) $this->is_super_admin
+            || (
+                $this->reseller_id === null
+                && $this->role === 'admin'
+            );
+    }
+
+    public function isResellerUser(): bool
+    {
+        return $this->reseller_id !== null;
+    }
+
+    public function isResellerOwner(): bool
+    {
+        return $this->reseller_id !== null
+            && $this->role === 'reseller';
+    }
+
+    public function reseller()
+    {
+        return $this->belongsTo(
+            Reseller::class
+        );
+    }
+
 }

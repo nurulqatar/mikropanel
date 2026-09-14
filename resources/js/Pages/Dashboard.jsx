@@ -1,3 +1,4 @@
+import UnifiedFinanceStrip from '@/Components/Finance/UnifiedFinanceStrip';
 import AppLayout from '@/Layouts/AppLayout';
 import ClientQuickDesk from '@/Components/Dashboard/ClientQuickDesk';
 import {
@@ -912,7 +913,9 @@ export default function Dashboard({
                     />
                 </section>
             </div>
-        </AppLayout>
+
+                <UnifiedFinanceStrip />
+</AppLayout>
     );
 }
 
