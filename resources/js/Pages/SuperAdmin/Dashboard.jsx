@@ -1,4 +1,4 @@
-import AppLayout from '@/Layouts/AppLayout';
+import SuperAdminLayout from '@/Layouts/SuperAdminLayout';
 import {
     Head,
     Link,
@@ -12,7 +12,7 @@ export default function Dashboard({
     recentResellers = [],
 }) {
     return (
-        <AppLayout title="Super Admin">
+        <SuperAdminLayout title="Super Admin">
             <Head title="Super Admin" />
 
             <div className="space-y-6">
@@ -235,7 +235,7 @@ export default function Dashboard({
                     </div>
                 </section>
             </div>
-        </AppLayout>
+        </SuperAdminLayout>
     );
 }
 

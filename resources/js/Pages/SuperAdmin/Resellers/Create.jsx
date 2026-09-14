@@ -1,4 +1,4 @@
-import AppLayout from '@/Layouts/AppLayout';
+import SuperAdminLayout from '@/Layouts/SuperAdminLayout';
 import {
     Head,
     Link,
@@ -28,7 +28,7 @@ export default function Create({
     });
 
     return (
-        <AppLayout title="Add Reseller">
+        <SuperAdminLayout title="Add Reseller">
             <Head title="Add Reseller" />
 
             <div className="mx-auto max-w-5xl space-y-6">
@@ -359,7 +359,7 @@ export default function Create({
                     </button>
                 </form>
             </div>
-        </AppLayout>
+        </SuperAdminLayout>
     );
 }
 

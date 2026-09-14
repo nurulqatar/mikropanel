@@ -1,4 +1,4 @@
-import AppLayout from '@/Layouts/AppLayout';
+import SuperAdminLayout from '@/Layouts/SuperAdminLayout';
 import {
     Head,
     Link,
@@ -12,7 +12,7 @@ export default function Index({
     summary = {},
 }) {
     return (
-        <AppLayout title="Reseller Recharges">
+        <SuperAdminLayout title="Reseller Recharges">
             <Head title="Reseller Recharges" />
 
             <div className="space-y-6">
@@ -169,7 +169,7 @@ export default function Index({
                     </table>
                 </div>
             </div>
-        </AppLayout>
+        </SuperAdminLayout>
     );
 }
 

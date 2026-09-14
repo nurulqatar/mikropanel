@@ -1,4 +1,4 @@
-import AppLayout from '@/Layouts/AppLayout';
+import SuperAdminLayout from '@/Layouts/SuperAdminLayout';
 import {
     Head,
     router,
@@ -9,7 +9,7 @@ export default function Index({
     unread = 0,
 }) {
     return (
-        <AppLayout title="Reseller Notifications">
+        <SuperAdminLayout title="Reseller Notifications">
             <Head title="Reseller Notifications" />
 
             <NotificationList
@@ -21,7 +21,7 @@ export default function Index({
                 readRoute="superadmin.notifications.read"
                 readAllRoute="superadmin.notifications.read-all"
             />
-        </AppLayout>
+        </SuperAdminLayout>
     );
 }
 

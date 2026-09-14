@@ -1,4 +1,4 @@
-import AppLayout from '@/Layouts/AppLayout';
+import SuperAdminLayout from '@/Layouts/SuperAdminLayout';
 import {
     Head,
     Link,
@@ -36,7 +36,7 @@ export default function Index({
     };
 
     return (
-        <AppLayout title="Reseller Wallet Ledger">
+        <SuperAdminLayout title="Reseller Wallet Ledger">
             <Head title="Reseller Wallet Ledger" />
 
             <div className="space-y-6">
@@ -292,7 +292,7 @@ export default function Index({
                     </table>
                 </div>
             </div>
-        </AppLayout>
+        </SuperAdminLayout>
     );
 }
 
