@@ -34,6 +34,15 @@ export default function Dashboard({
                         </p>
                     </div>
 
+                    <Link
+                        href={route(
+                            'reseller.notifications.index',
+                        )}
+                        className="rounded-xl bg-slate-700 px-5 py-3 font-bold text-white"
+                    >
+                        Notifications ({stats.unread_notifications ?? 0})
+                    </Link>
+
                     {isOwner && (
                         <Link
                             href={route(

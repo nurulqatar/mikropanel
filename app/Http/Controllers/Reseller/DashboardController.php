@@ -12,6 +12,7 @@ use App\Models\HotspotVoucher;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Reseller;
+use App\Models\ResellerNotification;
 use App\Models\Router;
 use App\Services\Reseller\ResellerUsageService;
 use Carbon\Carbon;
@@ -189,6 +190,13 @@ class DashboardController extends Controller
                             ->where(
                                 'active',
                                 true
+                            )
+                            ->count(),
+
+                    'unread_notifications' =>
+                        ResellerNotification::query()
+                            ->whereNull(
+                                'read_at'
                             )
                             ->count(),
                 ],

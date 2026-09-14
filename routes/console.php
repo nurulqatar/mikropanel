@@ -124,3 +124,23 @@ Schedule::command(
 )
     ->everyMinute()
     ->withoutOverlapping(5);
+
+
+Schedule::command(
+    'resellers:monitor-subscriptions'
+)
+    ->hourly()
+    ->withoutOverlapping()
+    ->timezone(
+        'Asia/Qatar'
+    );
+
+
+Schedule::command(
+    'resellers:snapshot-usage'
+)
+    ->dailyAt('00:15')
+    ->withoutOverlapping()
+    ->timezone(
+        'Asia/Qatar'
+    );

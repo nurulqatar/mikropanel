@@ -20,6 +20,7 @@ use App\Models\IpRange;
 use App\Models\Package;
 use App\Models\Payment;
 use App\Models\Reseller;
+use App\Models\ResellerNotification;
 use App\Models\Router;
 use App\Models\Scopes\ResellerScope;
 use App\Services\Reseller\ResellerUsageService;
@@ -256,6 +257,7 @@ class ResellerTenancyServiceProvider extends ServiceProvider
     {
         $models = [
             Client::class,
+            ResellerNotification::class,
             Router::class,
             Package::class,
             IpRange::class,

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Reseller\DashboardController;
 use App\Http\Controllers\Reseller\OperatorController;
+use App\Http\Controllers\Reseller\NotificationController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware([
@@ -15,6 +16,36 @@ Route::middleware([
             DashboardController::class
         )->name(
             'dashboard'
+        );
+
+        Route::get(
+            'notifications',
+            [
+                NotificationController::class,
+                'index',
+            ]
+        )->name(
+            'notifications.index'
+        );
+
+        Route::post(
+            'notifications/read-all',
+            [
+                NotificationController::class,
+                'readAll',
+            ]
+        )->name(
+            'notifications.read-all'
+        );
+
+        Route::post(
+            'notifications/{notification}/read',
+            [
+                NotificationController::class,
+                'read',
+            ]
+        )->name(
+            'notifications.read'
         );
 
         Route::get(

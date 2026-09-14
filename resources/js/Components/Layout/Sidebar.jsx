@@ -359,6 +359,24 @@ export default function Sidebar() {
                                     active="superadmin.recharges.*"
                                     label="Recharge History"
                                 />
+
+                                <SuperAdminLink
+                                    name="superadmin.reports.index"
+                                    active="superadmin.reports.*"
+                                    label="Reports"
+                                />
+
+                                <SuperAdminLink
+                                    name="superadmin.notifications.index"
+                                    active="superadmin.notifications.*"
+                                    label="Notifications"
+                                />
+
+                                <SuperAdminLink
+                                    name="superadmin.audit.index"
+                                    active="superadmin.audit.*"
+                                    label="Audit Log"
+                                />
                             </div>
                         )}
                     </div>

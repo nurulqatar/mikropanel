@@ -4,6 +4,9 @@ use App\Http\Controllers\SuperAdmin\DashboardController;
 use App\Http\Controllers\SuperAdmin\ResellerController;
 use App\Http\Controllers\SuperAdmin\ResellerFinanceController;
 use App\Http\Controllers\SuperAdmin\ResellerPlanController;
+use App\Http\Controllers\SuperAdmin\ResellerReportController;
+use App\Http\Controllers\SuperAdmin\ResellerAuditController;
+use App\Http\Controllers\SuperAdmin\ResellerNotificationController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware([
@@ -57,6 +60,66 @@ Route::middleware([
             ]
         )->name(
             'plans.destroy'
+        );
+
+        Route::get(
+            'reports',
+            [
+                ResellerReportController::class,
+                'index',
+            ]
+        )->name(
+            'reports.index'
+        );
+
+        Route::get(
+            'reports/csv',
+            [
+                ResellerReportController::class,
+                'csv',
+            ]
+        )->name(
+            'reports.csv'
+        );
+
+        Route::get(
+            'audit',
+            [
+                ResellerAuditController::class,
+                'index',
+            ]
+        )->name(
+            'audit.index'
+        );
+
+        Route::get(
+            'notifications',
+            [
+                ResellerNotificationController::class,
+                'index',
+            ]
+        )->name(
+            'notifications.index'
+        );
+
+        Route::post(
+            'notifications/read-all',
+            [
+                ResellerNotificationController::class,
+                'readAll',
+            ]
+        )->name(
+            'notifications.read-all'
+        );
+
+        Route::post(
+            'notifications/{notification}/read',
+            [
+                ResellerNotificationController::class,
+                'read',
+            ]
+        )->name(
+            'notifications.read'
         );
 
         Route::get(
