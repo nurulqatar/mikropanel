@@ -262,7 +262,8 @@ class ResellerController extends Controller
             DB::transaction(
                 function () use (
                     $request,
-                    $data
+                    $data,
+                    $permissions
                 ): Reseller {
                     $reseller =
                         Reseller::create([
