@@ -3,30 +3,104 @@ import {
     Head,
     Link,
     router,
+    usePage,
 } from '@inertiajs/react';
 
 export default function Index({
     payments = [],
     flash = {},
 }) {
-    const today = localDateString();
+    const finance =
+        usePage().props
+            .unifiedFinance
+        ?? {};
 
-    const totalCollected = payments.reduce(
-        (total, payment) =>
-            total + numberValue(payment.amount),
-        0,
-    );
+    const today =
+        localDateString();
+
+    const paymentListGross =
+        payments.reduce(
+            (total, payment) =>
+                total
+                + numberValue(
+                    payment.amount,
+                ),
+            0,
+        );
+
+    const totalCollected =
+        finance.normal_gross_received
+        !== undefined
+            ? numberValue(
+                finance.normal_gross_received,
+            )
+            : paymentListGross;
+
+    const totalRefunded =
+        numberValue(
+            finance.normal_refunded,
+        );
+
+    const netCollected =
+        finance.normal_received
+        !== undefined
+            ? numberValue(
+                finance.normal_received,
+            )
+            : totalCollected
+                - totalRefunded;
 
     const todayPayments = payments.filter(
         (payment) =>
             dateValue(payment.payment_date) === today,
     );
 
-    const todayCollected = todayPayments.reduce(
-        (total, payment) =>
-            total + numberValue(payment.amount),
-        0,
-    );
+    const paymentListTodayGross =
+        todayPayments.reduce(
+            (total, payment) =>
+                total
+                + numberValue(
+                    payment.amount,
+                ),
+            0,
+        );
+
+    const todayCollected =
+        finance.normal_today_gross
+        !== undefined
+            ? numberValue(
+                finance.normal_today_gross,
+            )
+            : paymentListTodayGross;
+
+    const todayRefunded =
+        numberValue(
+            finance.normal_today_refunded,
+        );
+
+    const todayNet =
+        finance.normal_today
+        !== undefined
+            ? numberValue(
+                finance.normal_today,
+            )
+            : todayCollected
+                - todayRefunded;
+
+    const monthGross =
+        numberValue(
+            finance.normal_month_gross,
+        );
+
+    const monthRefund =
+        numberValue(
+            finance.normal_month_refunded,
+        );
+
+    const monthNet =
+        numberValue(
+            finance.normal_month,
+        );
 
     const uniqueClients = new Set(
         payments
@@ -95,30 +169,83 @@ export default function Index({
 
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <SummaryCard
-                        label="Total Payments"
+                        label="Total Payment Entries"
                         value={payments.length}
-                        description="Recorded transactions"
+                        description="Original immutable payment records"
                         icon="🧾"
                     />
 
                     <SummaryCard
-                        label="Total Collected"
-                        value={formatMoney(totalCollected)}
-                        description="All payment records"
+                        label="Gross Payments"
+                        value={formatMoney(
+                            totalCollected,
+                        )}
+                        description="Cash received before refunds"
                         icon="💰"
                     />
 
                     <SummaryCard
-                        label="Collected Today"
-                        value={formatMoney(todayCollected)}
-                        description={`${todayPayments.length} payments today`}
+                        label="Cash Refunded"
+                        value={formatMoney(
+                            totalRefunded,
+                        )}
+                        description="Cash returned to customers"
+                        icon="↩"
+                    />
+
+                    <SummaryCard
+                        label="Net Collected"
+                        value={formatMoney(
+                            netCollected,
+                        )}
+                        description="Gross payments minus refunds"
+                        icon="✓"
+                    />
+
+                    <SummaryCard
+                        label="Gross Today"
+                        value={formatMoney(
+                            todayCollected,
+                        )}
+                        description={`${todayPayments.length} original payments today`}
                         icon="📅"
+                    />
+
+                    <SummaryCard
+                        label="Refund Today"
+                        value={formatMoney(
+                            todayRefunded,
+                        )}
+                        description="Cash returned today"
+                        icon="↩"
+                    />
+
+                    <SummaryCard
+                        label="Net Today"
+                        value={formatMoney(
+                            todayNet,
+                        )}
+                        description="Today's actual retained cash"
+                        icon="✓"
+                    />
+
+                    <SummaryCard
+                        label="This Month Net"
+                        value={formatMoney(
+                            monthNet,
+                        )}
+                        description={`Gross ${formatMoney(
+                            monthGross,
+                        )} - Refund ${formatMoney(
+                            monthRefund,
+                        )}`}
+                        icon="📊"
                     />
 
                     <SummaryCard
                         label="Paying Clients"
                         value={uniqueClients}
-                        description="Unique clients with payments"
+                        description="Unique clients with payment records"
                         icon="👥"
                     />
                 </div>
@@ -148,11 +275,11 @@ export default function Index({
                     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                         <div className="border-b border-slate-200 px-6 py-5">
                             <h2 className="text-lg font-bold text-slate-800">
-                                Payment History
+                                Original Payment History
                             </h2>
 
                             <p className="mt-1 text-sm text-slate-500">
-                                Complete list of received client payments
+                                Original payments stay permanently recorded. Customer refunds are stored separately as cash-out transactions.
                             </p>
                         </div>
 
@@ -256,17 +383,25 @@ export default function Index({
                                             </td>
 
                                             <td className="px-5 py-4">
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        deletePayment(
-                                                            payment,
-                                                        )
-                                                    }
-                                                    className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
-                                                >
-                                                    Delete
-                                                </button>
+                                                {payment.invoice
+                                                    ?.status
+                                                    === 'refunded' ? (
+                                                    <span className="inline-flex rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-800">
+                                                        Refund Locked
+                                                    </span>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            deletePayment(
+                                                                payment,
+                                                            )
+                                                        }
+                                                        className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
