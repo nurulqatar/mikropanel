@@ -529,7 +529,13 @@ class ClientController extends Controller
         }
 
         return redirect()
-            ->route('clients.index')
+            ->route(
+                $request->input(
+                    'return_to'
+                ) === 'mac-pos'
+                    ? 'reseller.mac-pos'
+                    : 'clients.index'
+            )
             ->with(
                 'success',
                 $isPaid
@@ -881,7 +887,13 @@ class ClientController extends Controller
         }
 
         return redirect()
-            ->route('clients.index')
+            ->route(
+                $request->input(
+                    'return_to'
+                ) === 'mac-pos'
+                    ? 'reseller.mac-pos'
+                    : 'clients.index'
+            )
             ->with(
                 'success',
                 'Client updated across enabled MikroTik routers.'

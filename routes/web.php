@@ -756,3 +756,17 @@ unset(
 
 require __DIR__.'/super_admin.php';
 require __DIR__.'/reseller.php';
+
+
+/*
+|--------------------------------------------------------------------------
+| Reseller MAC Client POS
+|--------------------------------------------------------------------------
+*/
+\Illuminate\Support\Facades\Route::middleware([
+    'auth',
+    \App\Http\Middleware\EnforceResellerAccess::class,
+])->get(
+    '/reseller/mac-pos',
+    \App\Http\Controllers\Reseller\MacClientPosController::class
+)->name('reseller.mac-pos');

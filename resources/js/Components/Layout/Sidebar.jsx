@@ -74,7 +74,8 @@ function ResellerSidebar({
 }) {
     const [open, setOpen] = useState({
         mac:
-            route().current('clients.*')
+            route().current('reseller.mac-pos')
+            || route().current('clients.*')
             || route().current('packages.*')
             || route().current('ip-ranges.*'),
 
@@ -101,6 +102,13 @@ function ResellerSidebar({
     };
 
     const macItems = [
+        {
+            label: 'MAC Client POS',
+            route: 'reseller.mac-pos',
+            active: 'reseller.mac-pos',
+            permission: 'clients.view',
+            icon: '▤',
+        },
         {
             label: 'Clients',
             route: 'clients.index',
@@ -302,6 +310,9 @@ function ResellerSidebar({
                         }
                         active={
                             route().current(
+                                'reseller.mac-pos',
+                            )
+                            || route().current(
                                 'clients.*',
                             )
                             || route().current(
