@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\ActivityLog;
 use App\Models\Client;
+use App\Models\ClientRefund;
 use App\Models\ClientMonthlyUsage;
 use App\Models\ClientRouterBinding;
 use App\Models\Expense;
@@ -257,6 +258,7 @@ class ResellerTenancyServiceProvider extends ServiceProvider
     {
         $models = [
             Client::class,
+            ClientRefund::class,
             ResellerNotification::class,
             Router::class,
             Package::class,

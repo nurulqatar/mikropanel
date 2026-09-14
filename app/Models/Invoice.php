@@ -22,6 +22,13 @@ class Invoice extends Model
         'status',
         'applies_service_period',
         'service_applied_at',
+        'service_validity_days',
+        'service_price_snapshot',
+        'service_start_date',
+        'service_end_date',
+        'initial_due_amount',
+        'refunded_amount',
+        'service_cancelled_at',
         'notes',
         'created_by',
     ];
@@ -36,6 +43,13 @@ class Invoice extends Model
         'due_amount' => 'decimal:2',
         'applies_service_period' => 'boolean',
         'service_applied_at' => 'datetime',
+        'service_validity_days' => 'integer',
+        'service_price_snapshot' => 'decimal:2',
+        'service_start_date' => 'date',
+        'service_end_date' => 'date',
+        'initial_due_amount' => 'decimal:2',
+        'refunded_amount' => 'decimal:2',
+        'service_cancelled_at' => 'datetime',
     ];
 
     public function client()
@@ -47,4 +61,12 @@ class Invoice extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+    public function refunds()
+    {
+        return $this->hasMany(
+            ClientRefund::class
+        );
+    }
+
+
 }

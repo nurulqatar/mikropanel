@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Client;
+use App\Models\ClientRefund;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Services\ClientProvisionService;
@@ -113,6 +114,15 @@ class PaymentController extends Controller
                     ->lockForUpdate()
                     ->findOrFail($data['invoice_id']);
 
+                if (
+                    $invoice
+                        ->service_cancelled_at
+                ) {
+                    throw ValidationException::withMessages([
+                        'invoice_id' =>
+                            'This service invoice was refunded and cannot receive another payment.',
+                    ]);
+                }
                 /*
                  * Selected invoice অবশ্যই selected
                  * client-এর হতে হবে।
@@ -303,6 +313,19 @@ class PaymentController extends Controller
                 ->lockForUpdate()
                 ->findOrFail($payment->id);
 
+            if (
+                ClientRefund::query()
+                    ->where(
+                        'payment_id',
+                        $lockedPayment->id
+                    )
+                    ->exists()
+            ) {
+                throw ValidationException::withMessages([
+                    'payment' =>
+                        'This payment has a refund audit record and cannot be deleted.',
+                ]);
+            }
             $invoice = Invoice::query()
                 ->lockForUpdate()
                 ->findOrFail($lockedPayment->invoice_id);

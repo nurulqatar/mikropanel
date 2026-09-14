@@ -605,7 +605,23 @@ class ClientRenewalController extends Controller
                 Carbon::now(
                     'Asia/Qatar'
                 ),
-        ]);
+
+            'service_validity_days' =>
+                $validityDays,
+
+            'service_price_snapshot' =>
+                $price,
+
+            'service_start_date' =>
+                $baseDate
+                    ->toDateString(),
+
+            'service_end_date' =>
+                $newExpiry
+                    ->toDateString(),
+
+            'initial_due_amount' =>
+                $remainingDue,        ]);
 
         /*
          * Received amount 0 হলে payment record হবে না।

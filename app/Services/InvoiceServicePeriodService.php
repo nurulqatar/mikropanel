@@ -98,11 +98,34 @@ class InvoiceServicePeriodService
                     ->toDateString(),
         ]);
 
+        $servicePrice = max(
+            0,
+            round(
+                (float) $invoice->amount
+                - (float) $invoice->discount,
+                2
+            )
+        );
+
         $invoice->forceFill([
             'service_applied_at' =>
                 Carbon::now(
                     'Asia/Qatar'
                 ),
+
+            'service_validity_days' =>
+                $validityDays,
+
+            'service_price_snapshot' =>
+                $servicePrice,
+
+            'service_start_date' =>
+                $baseDate
+                    ->toDateString(),
+
+            'service_end_date' =>
+                $newExpiry
+                    ->toDateString(),
         ])->save();
 
         return $client->id;

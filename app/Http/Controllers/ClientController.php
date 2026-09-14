@@ -429,6 +429,36 @@ class ClientController extends Controller
 
                         'created_by' =>
                             auth()->id(),
+
+                        'applies_service_period' =>
+                            true,
+
+                        'service_applied_at' =>
+                            Carbon::now(
+                                'Asia/Qatar'
+                            ),
+
+                        'service_validity_days' =>
+                            (int)
+                            $package
+                                ->validity_days,
+
+                        'service_price_snapshot' =>
+                            $connectionAmount,
+
+                        'service_start_date' =>
+                            $paymentDate
+                                ->toDateString(),
+
+                        'service_end_date' =>
+                            $client
+                                ->expiry_date
+                                ?->toDateString(),
+
+                        'initial_due_amount' =>
+                            $isPaid
+                                ? 0
+                                : $connectionAmount,
                     ]);
 
                     /*

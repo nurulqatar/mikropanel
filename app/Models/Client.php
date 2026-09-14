@@ -81,6 +81,13 @@ class Client extends Model
         );
     }
 
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(
+            ClientRefund::class
+        );
+    }
+
     public function monthlyUsages(): HasMany
     {
         return $this->hasMany(

@@ -123,6 +123,23 @@ Route::get(
     Route::resource('payments', \App\Http\Controllers\PaymentController::class)
     ->except(['show', 'edit', 'update']);
 
+
+    Route::get(
+        'clients/{client}/refund-preview',
+        [
+            \App\Http\Controllers\ClientRefundController::class,
+            'preview',
+        ]
+    )->name('payments.refund.preview');
+
+    Route::post(
+        'clients/{client}/refund',
+        [
+            \App\Http\Controllers\ClientRefundController::class,
+            'store',
+        ]
+    )->name('payments.refund.store');
+
     Route::get(
         'accounting/print',
         [AccountingController::class, 'print']
