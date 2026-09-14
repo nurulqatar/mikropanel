@@ -8,8 +8,8 @@ export default function Sidebar() {
     const { props } = usePage();
 
     const user =
-        props.panelAuth?.user
-        ?? props.auth?.user
+        props.auth?.user
+        ?? props.panelAuth?.user
         ?? null;
 
     const panelName =
