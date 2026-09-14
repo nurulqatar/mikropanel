@@ -11,6 +11,7 @@ use App\Models\HotspotSession;
 use App\Models\HotspotVoucher;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\Package;
 use App\Models\Reseller;
 use App\Models\ResellerNotification;
 use App\Models\Router;
@@ -199,6 +200,153 @@ class DashboardController extends Controller
                                 'read_at'
                             )
                             ->count(),
+                ],
+
+                'pos' => [
+                    'can_renew' =>
+                        $user->hasPermission(
+                            'clients.renew'
+                        ),
+
+                    'can_receive_payment' =>
+                        $user->hasPermission(
+                            'payments.manage'
+                        ),
+
+                    'clients' =>
+                        Client::query()
+                            ->with([
+                                'package:id,name,price,validity_days',
+                            ])
+                            ->withSum(
+                                [
+                                    'invoices as total_due' =>
+                                        function ($query) {
+                                            $query->where(
+                                                'status',
+                                                '!=',
+                                                'cancelled'
+                                            );
+                                        },
+                                ],
+                                'due_amount'
+                            )
+                            ->orderBy('name')
+                            ->get()
+                            ->map(
+                                function (
+                                    Client $client
+                                ): array {
+                                    return [
+                                        'id' =>
+                                            $client->id,
+
+                                        'name' =>
+                                            $client->name,
+
+                                        'client_code' =>
+                                            $client->client_code,
+
+                                        'phone' =>
+                                            $client->phone,
+
+                                        'mac_address' =>
+                                            $client->active_mac_address
+                                            ?: $client->mac_address,
+
+                                        'ip_address' =>
+                                            $client->ip_address,
+
+                                        'enabled' =>
+                                            (bool)
+                                            $client->enabled,
+
+                                        'expiry_date' =>
+                                            $client->expiry_date
+                                                ?->format(
+                                                    'Y-m-d'
+                                                ),
+
+                                        'package_id' =>
+                                            $client->package_id,
+
+                                        'package' =>
+                                            $client->package
+                                                ? [
+                                                    'id' =>
+                                                        $client
+                                                            ->package
+                                                            ->id,
+
+                                                    'name' =>
+                                                        $client
+                                                            ->package
+                                                            ->name,
+
+                                                    'price' =>
+                                                        (float)
+                                                        $client
+                                                            ->package
+                                                            ->price,
+
+                                                    'validity_days' =>
+                                                        (int)
+                                                        $client
+                                                            ->package
+                                                            ->validity_days,
+                                                ]
+                                                : null,
+
+                                        'total_due' =>
+                                            round(
+                                                (float) (
+                                                    $client
+                                                        ->total_due
+                                                    ?? 0
+                                                ),
+                                                2
+                                            ),
+                                    ];
+                                }
+                            )
+                            ->values(),
+
+                    'packages' =>
+                        Package::query()
+                            ->where(
+                                'enabled',
+                                true
+                            )
+                            ->orderBy('name')
+                            ->get([
+                                'id',
+                                'name',
+                                'price',
+                                'validity_days',
+                            ])
+                            ->map(
+                                function (
+                                    Package $package
+                                ): array {
+                                    return [
+                                        'id' =>
+                                            $package->id,
+
+                                        'name' =>
+                                            $package->name,
+
+                                        'price' =>
+                                            (float)
+                                            $package->price,
+
+                                        'validity_days' =>
+                                            (int)
+                                            $package
+                                                ->validity_days,
+                                    ];
+                                }
+                            )
+                            ->values(),
                 ],
 
                 'recentClients' =>

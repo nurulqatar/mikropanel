@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Client;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\Package;
 use App\Services\ClientProvisionService;
 use App\Services\InvoiceServicePeriodService;
 use Carbon\Carbon;
@@ -26,6 +27,11 @@ class ClientRenewalController extends Controller
         InvoiceServicePeriodService $servicePeriods
     ): RedirectResponse {
         $data = $request->validate([
+            'package_id' => [
+                'nullable',
+                'integer',
+            ],
+
             'received_amount' => [
                 'required',
                 'numeric',
@@ -157,7 +163,56 @@ class ClientRenewalController extends Controller
 
                 /*
                  * Due না থাকলে নতুন মাসের Pay & Renew।
+                 *
+                 * POS_PACKAGE_CHANGE_START
+                 * POS থেকে package select করা হলে
+                 * শুধুমাত্র নতুন renewal-এর আগে package
+                 * change হবে। পুরোনো Due Payment কখনো
+                 * package change করবে না।
                  */
+                if (
+                    !empty(
+                        $data['package_id']
+                    )
+                ) {
+                    $package =
+                        Package::query()
+                            ->whereKey(
+                                (int)
+                                $data['package_id']
+                            )
+                            ->where(
+                                'enabled',
+                                true
+                            )
+                            ->first();
+
+                    if (!$package) {
+                        throw ValidationException::withMessages([
+                            'package_id' =>
+                                'Selected package is not available.',
+                        ]);
+                    }
+
+                    if (
+                        (int)
+                        $lockedClient->package_id
+                        !==
+                        (int)
+                        $package->id
+                    ) {
+                        $lockedClient->update([
+                            'package_id' =>
+                                $package->id,
+                        ]);
+                    }
+
+                    $lockedClient->setRelation(
+                        'package',
+                        $package
+                    );
+                }
+
                 return $this->renewClient(
                     $lockedClient,
                     $data,
