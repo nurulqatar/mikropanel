@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Client;
 use App\Models\Setting;
+use App\Models\Scopes\ResellerScope;
 use App\Services\ClientProvisionService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -62,7 +63,9 @@ class SuspendExpiredClients extends Command
             . $cutoffDate->toDateString()
         );
 
-        Client::query()
+        Client::withoutGlobalScope(
+            ResellerScope::class
+        )
             ->where('enabled', true)
             ->whereNotNull('expiry_date')
             ->where(
@@ -101,7 +104,7 @@ class SuspendExpiredClients extends Command
                                 )
                                 ->whereDate(
                                     'expiry_date',
-                                    '<=',
+                                    '<',
                                     $cutoffDate
                                         ->toDateString()
                                 );
