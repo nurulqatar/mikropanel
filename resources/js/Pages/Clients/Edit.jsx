@@ -1,6 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
 import ClientCustomFieldsForm from '@/Components/Clients/ClientCustomFieldsForm';
+import ClientIdentityFields from '@/Components/Clients/ClientIdentityFields';
 
 export default function Edit({
     client,
@@ -21,6 +22,21 @@ export default function Edit({
         name: client.name ?? '',
         mac_address: client.mac_address ?? '',
         phone: client.phone ?? '',
+        identity_type:
+            client.identity_type ?? '',
+        identity_number:
+            client.identity_number ?? '',
+        identity_barcode:
+            client.identity_barcode ?? '',
+        nationality:
+            client.nationality ?? '',
+        date_of_birth:
+            client.date_of_birth ?? '',
+        gender:
+            client.gender ?? '',
+        document_expiry_date:
+            client.document_expiry_date ?? '',
+
     });
 
     const submit = (event) => {
@@ -196,6 +212,12 @@ export default function Edit({
                     </section>
 
                     {/* CLIENT_CUSTOM_FIELDS_EDIT */}
+                                        <ClientIdentityFields
+                                            data={data}
+                                            setData={setData}
+                                            errors={errors}
+                                        />
+
                                         <ClientCustomFieldsForm
                                             clientId={client.id}
                                             values={data.custom_fields || {}}

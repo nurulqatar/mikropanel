@@ -19,11 +19,23 @@ class Client extends Model
         'name',
 
         'mac_address',
+        'active_mac_address',
         'ip_address',
 
         'phone',
         'email',
         'address',
+        'identity_type',
+        'identity_number',
+        'identity_barcode',
+        'nationality',
+        'date_of_birth',
+        'gender',
+        'document_expiry_date',
+        'last_recharge_date',
+        'imported_at',
+        'import_batch_uuid',
+
 
         'expiry_date',
         'installed_at',
@@ -40,6 +52,10 @@ class Client extends Model
     protected $casts = [
         'enabled' => 'boolean',
         'connected' => 'boolean',
+        'date_of_birth' => 'date',
+        'document_expiry_date' => 'date',
+        'last_recharge_date' => 'date',
+        'imported_at' => 'datetime',
         'expiry_date' => 'date',
         'installed_at' => 'date',
         'billing_day' => 'integer',

@@ -1,4 +1,6 @@
 import AppLayout from '@/Layouts/AppLayout';
+import ClientIdentityFields from '@/Components/Clients/ClientIdentityFields';
+import ClientCustomFieldsForm from '@/Components/Clients/ClientCustomFieldsForm';
 import {
     Head,
     Link,
@@ -84,6 +86,9 @@ export default function MacClientPos({
                         client.phone,
                         client.mac_address,
                         client.ip_address,
+                        client.identity_number,
+                        client.identity_barcode,
+                        client.nationality,
                         client.package?.name,
                     ]
                         .filter(Boolean)
@@ -161,6 +166,28 @@ export default function MacClientPos({
                         <p className="mt-1 text-sm text-slate-500">
                             Daily MAC client operations from one screen
                         </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                        <Link
+                            href={route(
+                                'reseller.mac-clients.migration',
+                            )}
+                            className="rounded-xl bg-violet-600 px-4 py-3 text-sm font-black text-white shadow-sm hover:bg-violet-700"
+                        >
+                            IMPORT / EXPORT
+                        </Link>
+
+                        {permissions.form_fields && (
+                            <Link
+                                href={route(
+                                    'reseller.mac-clients.form-fields.index',
+                                )}
+                                className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-sm hover:bg-indigo-700"
+                            >
+                                FORM FIELDS
+                            </Link>
+                        )}
                     </div>
 
                     {permissions.create && (
@@ -362,6 +389,9 @@ function QuickClientWorkspace({
                         client.phone,
                         client.mac_address,
                         client.ip_address,
+                        client.identity_number,
+                        client.identity_barcode,
+                        client.nationality,
                         client.package?.name,
                     ]
                         .filter(Boolean)
@@ -416,6 +446,7 @@ function QuickClientWorkspace({
 
                     <input
                         type="text"
+                        autoFocus
                         value={search}
                         onChange={(event) => {
                             setSearch(
@@ -427,7 +458,58 @@ function QuickClientWorkspace({
                                 null,
                             );
                         }}
-                        placeholder="Name / Phone / MAC / IP / Client ID"
+                        onKeyDown={(event) => {
+                            if (
+                                event.key !== 'Enter'
+                            ) {
+                                return;
+                            }
+
+                            event.preventDefault();
+
+                            const needle =
+                                search
+                                    .trim()
+                                    .toLowerCase();
+
+                            const exact =
+                                clients.find(
+                                    (client) =>
+                                        [
+                                            client.identity_barcode,
+                                            client.identity_number,
+                                            client.client_code,
+                                            client.phone,
+                                            client.mac_address,
+                                        ]
+                                            .filter(Boolean)
+                                            .some(
+                                                (value) =>
+                                                    String(
+                                                        value,
+                                                    )
+                                                        .trim()
+                                                        .toLowerCase()
+                                                    === needle,
+                                            ),
+                                );
+
+                            if (exact) {
+                                selectClient(
+                                    exact,
+                                );
+                                return;
+                            }
+
+                            if (
+                                results.length === 1
+                            ) {
+                                selectClient(
+                                    results[0],
+                                );
+                            }
+                        }}
+                        placeholder="Name / Phone / MAC / IP / Client ID / QID / Passport / Barcode"
                         className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
                     />
 
@@ -509,7 +591,7 @@ function QuickClientWorkspace({
                                 </div>
 
                                 <div className="mt-1 text-xs text-slate-400">
-                                    Search by name, phone, MAC, IP or Client ID
+                                    Search by name, phone, MAC, IP, Client ID, Qatar ID, passport or barcode
                                 </div>
                             </div>
                         </div>
@@ -575,6 +657,24 @@ function QuickClientWorkspace({
                                         || '-'
                                     }
                                 />
+
+                                {selectedClient.identity_number && (
+                                    <QuickInfo
+                                        label="QID / Passport"
+                                        value={
+                                            selectedClient.identity_number
+                                        }
+                                    />
+                                )}
+
+                                {selectedClient.nationality && (
+                                    <QuickInfo
+                                        label="Nationality"
+                                        value={
+                                            selectedClient.nationality
+                                        }
+                                    />
+                                )}
 
                                 <QuickInfo
                                     label="Phone"
@@ -1108,6 +1208,14 @@ function CreateClientModal({
     onClose,
 }) {
     const form = useForm({
+        custom_fields: {},
+        identity_type: '',
+        identity_number: '',
+        identity_barcode: '',
+        nationality: '',
+        date_of_birth: '',
+        gender: '',
+        document_expiry_date: '',
         ip_range_id: '',
         package_id: '',
         name: '',
@@ -1156,6 +1264,28 @@ function CreateClientModal({
                 onSubmit={submit}
                 className="space-y-4"
             >
+                        <div className="mb-5 space-y-4">
+                            <ClientIdentityFields
+                                data={data}
+                                setData={setData}
+                                errors={errors}
+                            />
+
+                            <ClientCustomFieldsForm
+                                values={
+                                    data.custom_fields
+                                    || {}
+                                }
+                                onChange={(values) =>
+                                    setData(
+                                        'custom_fields',
+                                        values,
+                                    )
+                                }
+                                errors={errors}
+                            />
+                        </div>
+
                 <div className="grid gap-4 md:grid-cols-2">
                     <Field
                         label="Client Name"
@@ -1834,6 +1964,14 @@ function EditClientModal({
     onClose,
 }) {
     const form = useForm({
+        custom_fields: {},
+        identity_type: client.identity_type ?? '',
+        identity_number: client.identity_number ?? '',
+        identity_barcode: client.identity_barcode ?? '',
+        nationality: client.nationality ?? '',
+        date_of_birth: client.date_of_birth ?? '',
+        gender: client.gender ?? '',
+        document_expiry_date: client.document_expiry_date ?? '',
         ip_range_id:
             String(
                 client.ip_range_id
@@ -1882,6 +2020,29 @@ function EditClientModal({
                 onSubmit={submit}
                 className="space-y-4"
             >
+                        <div className="mb-5 space-y-4">
+                            <ClientIdentityFields
+                                data={data}
+                                setData={setData}
+                                errors={errors}
+                            />
+
+                            <ClientCustomFieldsForm
+                                clientId={client.id}
+                                values={
+                                    data.custom_fields
+                                    || {}
+                                }
+                                onChange={(values) =>
+                                    setData(
+                                        'custom_fields',
+                                        values,
+                                    )
+                                }
+                                errors={errors}
+                            />
+                        </div>
+
                 <div className="grid gap-4 md:grid-cols-2">
                     <Field
                         label="Client Name"

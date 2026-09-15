@@ -67,6 +67,54 @@ class ClientRequest extends FormRequest
              * Edit page compatibility.
              * Create page থেকে এগুলো পাঠাতে হবে না।
              */
+            'identity_type' => [
+                'nullable',
+                'string',
+                Rule::in([
+                    'qatar_id',
+                    'passport',
+                    'other',
+                ]),
+            ],
+
+            'identity_number' => [
+                'nullable',
+                'string',
+                'max:150',
+            ],
+
+            'identity_barcode' => [
+                'nullable',
+                'string',
+                'max:4000',
+            ],
+
+            'nationality' => [
+                'nullable',
+                'string',
+                'max:120',
+            ],
+
+            'date_of_birth' => [
+                'nullable',
+                'date',
+            ],
+
+            'gender' => [
+                'nullable',
+                'string',
+                Rule::in([
+                    'M',
+                    'F',
+                    'X',
+                ]),
+            ],
+
+            'document_expiry_date' => [
+                'nullable',
+                'date',
+            ],
+
             'email' => [
                 'nullable',
                 'email',

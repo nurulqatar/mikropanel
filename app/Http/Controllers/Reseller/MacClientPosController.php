@@ -75,6 +75,33 @@ class MacClientPosController extends Controller
                             'address' =>
                                 $client->address,
 
+                            'identity_type' =>
+                                $client->identity_type,
+
+                            'identity_number' =>
+                                $client->identity_number,
+
+                            'identity_barcode' =>
+                                $client->identity_barcode,
+
+                            'nationality' =>
+                                $client->nationality,
+
+                            'date_of_birth' =>
+                                $client->date_of_birth
+                                    ?->format('Y-m-d'),
+
+                            'gender' =>
+                                $client->gender,
+
+                            'document_expiry_date' =>
+                                $client->document_expiry_date
+                                    ?->format('Y-m-d'),
+
+                            'last_recharge_date' =>
+                                $client->last_recharge_date
+                                    ?->format('Y-m-d'),
+
                             'mac_address' =>
                                 $client
                                     ->active_mac_address
@@ -430,6 +457,12 @@ class MacClientPosController extends Controller
                     'refund' =>
                         $user->hasPermission(
                             'payments.manage'
+                        ),
+
+                    'form_fields' =>
+                        $user->isResellerOwner()
+                        || $user->hasPermission(
+                            'settings.manage'
                         ),
                 ],
 

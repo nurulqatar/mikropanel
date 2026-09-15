@@ -1,6 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
 import ClientCustomFieldsForm from '@/Components/Clients/ClientCustomFieldsForm';
+import ClientIdentityFields from '@/Components/Clients/ClientIdentityFields';
 
 export default function Create({
     routers,
@@ -21,6 +22,14 @@ export default function Create({
         name: '',
         mac_address: '',
         phone: '',
+        identity_type: '',
+        identity_number: '',
+        identity_barcode: '',
+        nationality: '',
+        date_of_birth: '',
+        gender: '',
+        document_expiry_date: '',
+
 
         connection_payment_status:
             canReceivePayment
@@ -388,6 +397,12 @@ export default function Create({
                     </section>
 
                     {/* CLIENT_CUSTOM_FIELDS_CREATE */}
+                                        <ClientIdentityFields
+                                            data={data}
+                                            setData={setData}
+                                            errors={errors}
+                                        />
+
                                         <ClientCustomFieldsForm
                                             values={data.custom_fields || {}}
                                             onChange={(values) =>

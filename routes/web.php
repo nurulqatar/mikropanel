@@ -541,6 +541,96 @@ Route::get(
         });
 
 });
+
+
+/*
+|--------------------------------------------------------------------------
+| Reseller MAC Client Migration
+|--------------------------------------------------------------------------
+*/
+Route::middleware([
+    'auth',
+    'active.panel.user',
+    \App\Http\Middleware\EnforceResellerAccess::class,
+])
+    ->prefix('reseller/mac-clients')
+    ->name('reseller.mac-clients.')
+    ->group(function () {
+        Route::get(
+            '/migration',
+            [
+                \App\Http\Controllers\Reseller\ClientMigrationController::class,
+                'index',
+            ]
+        )->name('migration');
+
+        Route::get(
+            '/template',
+            [
+                \App\Http\Controllers\Reseller\ClientMigrationController::class,
+                'template',
+            ]
+        )->name('template');
+
+        Route::get(
+            '/export',
+            [
+                \App\Http\Controllers\Reseller\ClientMigrationController::class,
+                'export',
+            ]
+        )->name('export');
+
+        Route::post(
+            '/import',
+            [
+                \App\Http\Controllers\Reseller\ClientMigrationController::class,
+                'import',
+            ]
+        )->name('import');
+
+        Route::get(
+            '/form-fields',
+            [
+                \App\Http\Controllers\Reseller\ClientFormFieldController::class,
+                'index',
+            ]
+        )->name('form-fields.index');
+
+        Route::post(
+            '/form-fields',
+            [
+                \App\Http\Controllers\Reseller\ClientFormFieldController::class,
+                'store',
+            ]
+        )->name('form-fields.store');
+
+        Route::patch(
+            '/form-fields/{clientCustomField}/toggle',
+            [
+                \App\Http\Controllers\Reseller\ClientFormFieldController::class,
+                'toggle',
+            ]
+        )->name('form-fields.toggle');
+
+        Route::delete(
+            '/form-fields/{clientCustomField}',
+            [
+                \App\Http\Controllers\Reseller\ClientFormFieldController::class,
+                'destroy',
+            ]
+        )->name('form-fields.destroy');
+    });
+
+Route::post(
+    '/clients/identity-scan',
+    \App\Http\Controllers\ClientIdentityScanController::class
+)
+    ->middleware([
+        'auth',
+        'active.panel.user',
+    ])
+    ->name('clients.identity-scan');
+
 require __DIR__.'/auth.php';
 
 

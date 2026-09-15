@@ -58,17 +58,56 @@ class SuspendExpiredClients extends Command
         );
 
         $this->info(
-            'Suspend clients with expiry before: '
+            'Regular client expiry cutoff: '
             . $cutoffDate->toDateString()
         );
 
         Client::query()
             ->where('enabled', true)
             ->whereNotNull('expiry_date')
-            ->whereDate(
-                'expiry_date',
-                '<',
-                $cutoffDate->toDateString()
+            ->where(
+                function ($query) use (
+                    $today,
+                    $cutoffDate
+                ): void {
+                    /*
+                     * Imported legacy clients preserve
+                     * their exact old-system expiry date.
+                     * Example: expiry 02 Oct means they
+                     * are expired on 02 Oct itself.
+                     */
+                    $query->where(
+                        function ($imported) use (
+                            $today
+                        ): void {
+                            $imported
+                                ->whereNotNull(
+                                    'imported_at'
+                                )
+                                ->whereDate(
+                                    'expiry_date',
+                                    '<=',
+                                    $today
+                                        ->toDateString()
+                                );
+                        }
+                    )->orWhere(
+                        function ($normal) use (
+                            $cutoffDate
+                        ): void {
+                            $normal
+                                ->whereNull(
+                                    'imported_at'
+                                )
+                                ->whereDate(
+                                    'expiry_date',
+                                    '<=',
+                                    $cutoffDate
+                                        ->toDateString()
+                                );
+                        }
+                    );
+                }
             )
             ->with([
                 'router',
