@@ -74,6 +74,12 @@ export default function Index({
                 'Gross customer payments, cash refunds and net collection',
         },
         {
+            key: 'refunds',
+            title: 'Cash Refund Report',
+            description:
+                'All customer cash refunds, reasons and refund audit details',
+        },
+        {
             key: 'expenses',
             title: 'Expense Report',
             description:
@@ -155,7 +161,7 @@ export default function Index({
                     onSubmit={submitFilter}
                     className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
                 >
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                         <Field
                             label="Report Period"
                             error={errors.preset}
@@ -375,7 +381,7 @@ export default function Index({
                         </p>
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                         {reports
                             .filter(
                                 (report) =>

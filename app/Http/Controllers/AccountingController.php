@@ -24,6 +24,7 @@ class AccountingController extends Controller
         'full',
         'profit-loss',
         'collections',
+        'refunds',
         'expenses',
         'receivables',
         'transactions',
@@ -1665,6 +1666,7 @@ class AccountingController extends Controller
 
             'collections' =>
                 'Collection Report',
+            'refunds' => 'Cash Refund Report',
 
             'expenses' =>
                 'Expense Report',

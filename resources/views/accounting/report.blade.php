@@ -768,6 +768,58 @@
 
         @endif
 
+        @if($report === 'refunds')
+<section class="section">
+                <h3 class="section-title">
+                    Cash Refund Details
+                </h3>
+
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Client</th>
+                            <th>Invoice</th>
+                            <th>Reason</th>
+                            <th>Refunded By</th>
+                            <th class="text-right">Cash Out</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        @forelse($refunds as $row)
+                            <tr>
+                                <td>{{ $row['date'] }}</td>
+
+                                <td>
+                                    <strong>{{ $row['client_name'] ?: '-' }}</strong>
+                                    <br>
+                                    <span class="muted">
+                                        {{ $row['client_code'] ?: '-' }}
+                                    </span>
+                                </td>
+
+                                <td>{{ $row['invoice_no'] ?: '-' }}</td>
+                                <td>{{ $row['reason'] ?: '-' }}</td>
+                                <td>{{ $row['refunded_by'] ?: '-' }}</td>
+
+                                <td class="text-right negative bold">
+                                    QAR {{ number_format($row['amount'], 2) }}
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="text-center muted">
+                                    No cash refunds found.
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </section>
+        @endif
+
+
         @if(
             $report === 'full'
             || $report === 'expenses'
