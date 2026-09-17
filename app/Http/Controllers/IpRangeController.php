@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Http\Requests\IpRangeRequest;
 use App\Models\Client;
 use App\Models\IpRange;
+use App\Models\NetworkZone;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -17,17 +19,54 @@ class IpRangeController extends Controller
          * Keep this consistent with IpAllocatorService:
          * only non-archived clients reserve an IP.
          */
-        $usedIps = Client::query()
-            ->whereNotNull('ip_address')
-            ->pluck('ip_address')
-            ->filter()
-            ->unique()
-            ->values();
+        /*
+         * IP_POOL_ZONE_USAGE_V1
+         *
+         * The same private subnet may be reused in
+         * different remote zones. Usage must therefore
+         * be counted independently per zone.
+         */
+        $usedIpsByZone =
+            Client::query()
+                ->whereNotNull(
+                    'ip_address'
+                )
+                ->get([
+                    'zone_id',
+                    'ip_address',
+                ])
+                ->groupBy(
+                    'zone_id'
+                )
+                ->map(
+                    fn ($rows) =>
+                        $rows
+                            ->pluck(
+                                'ip_address'
+                            )
+                            ->filter()
+                            ->unique()
+                            ->values()
+                );
 
         $ranges = IpRange::query()
+            ->with([
+                'zone:id,name,code,service_type',
+            ])
             ->latest()
             ->get()
-            ->map(function (IpRange $range) use ($usedIps) {
+            ->map(function (
+                IpRange $range
+            ) use (
+                $usedIpsByZone
+            ) {
+                $usedIps =
+                    $usedIpsByZone
+                        ->get(
+                            $range->zone_id,
+                            collect()
+                        );
+
                 $start = ip2long(
                     $range->start_ip
                 );
@@ -139,10 +178,26 @@ class IpRangeController extends Controller
         );
     }
 
-    public function create(): Response
-    {
+    public function create(
+        Request $request
+    ): Response {
+        $zones =
+            $this->macZoneOptions(
+                $request->user()
+            );
+
         return Inertia::render(
-            'IpRanges/Create'
+            'IpRanges/Create',
+            [
+                'zones' =>
+                    $zones,
+
+                'selectedZoneId' =>
+                    $this->preferredMacZoneId(
+                        $request,
+                        $zones
+                    ),
+            ]
         );
     }
 
@@ -162,12 +217,34 @@ class IpRangeController extends Controller
     }
 
     public function edit(
+        Request $request,
         IpRange $ipRange
     ): Response {
+        $zones =
+            $this->macZoneOptions(
+                $request->user()
+            );
+
+        $ipRange->loadMissing([
+            'zone:id,name,code,service_type',
+        ]);
+
         return Inertia::render(
             'IpRanges/Edit',
             [
-                'range' => $ipRange,
+                'range' =>
+                    $ipRange,
+
+                'zones' =>
+                    $zones,
+
+                'selectedZoneId' =>
+                    $this->preferredMacZoneId(
+                        $request,
+                        $zones,
+                        (int)
+                        $ipRange->zone_id
+                    ),
             ]
         );
     }
@@ -209,4 +286,138 @@ class IpRangeController extends Controller
             'IP Pool deleted successfully.'
         );
     }
+
+    /*
+     * IP_POOL_MAC_ZONE_OPTIONS_V1
+     */
+    private function macZoneOptions(
+        $user
+    ) {
+        $query =
+            NetworkZone::query()
+                ->where(
+                    'service_type',
+                    'mac'
+                )
+                ->where(
+                    'enabled',
+                    true
+                );
+
+        if (
+            $user
+            && method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin()
+        ) {
+            // All MAC zones.
+
+        } elseif (
+            $user
+            && $user->reseller_id
+        ) {
+            $query->where(
+                'reseller_id',
+                (int)
+                $user->reseller_id
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                $query->whereKey(
+                    (int)
+                    $user->zone_id
+                );
+            }
+
+        } else {
+            $query->whereNull(
+                'reseller_id'
+            );
+        }
+
+        return $query
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+                'code',
+                'service_type',
+            ]);
+    }
+
+    private function preferredMacZoneId(
+        Request $request,
+        $zones,
+        ?int $currentZoneId = null
+    ): ?int {
+        if (
+            $currentZoneId
+            && $zones->contains(
+                'id',
+                $currentZoneId
+            )
+        ) {
+            return $currentZoneId;
+        }
+
+        $user =
+            $request->user();
+
+        if (
+            $user
+            && method_exists(
+                $user,
+                'isOperator'
+            )
+            && $user->isOperator()
+            && $user->zone_id
+            && $zones->contains(
+                'id',
+                (int)
+                $user->zone_id
+            )
+        ) {
+            return (int)
+                $user->zone_id;
+        }
+
+        $sessionZoneId =
+            (int)
+            $request
+                ->session()
+                ->get(
+                    'network_zone_id',
+                    0
+                );
+
+        if (
+            $sessionZoneId
+            && $zones->contains(
+                'id',
+                $sessionZoneId
+            )
+        ) {
+            return $sessionZoneId;
+        }
+
+        if (
+            $zones->count() === 1
+        ) {
+            return (int)
+                $zones
+                    ->first()
+                    ->id;
+        }
+
+        return null;
+    }
+
 }

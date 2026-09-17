@@ -4,11 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\RouterRequest;
 use App\Jobs\SyncRouterStatus;
+use App\Models\NetworkZone;
 use App\Models\Router;
 use App\Services\MikroTik\MikroTikService;
 use App\Services\RouterClientSyncService;
 use App\Services\RouterStatusService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
@@ -21,6 +23,9 @@ class RouterController extends Controller
         RouterStatusService $status
     ): Response {
         $routers = Router::query()
+            ->with([
+                'zone:id,name,code,service_type',
+            ])
             ->latest()
             ->get()
             ->map(
@@ -44,9 +49,27 @@ class RouterController extends Controller
         );
     }
 
-    public function create(): Response
-    {
-        return Inertia::render('Routers/Create');
+    public function create(
+        Request $request
+    ): Response {
+        $zones =
+            $this->macZoneOptions(
+                $request->user()
+            );
+
+        return Inertia::render(
+            'Routers/Create',
+            [
+                'zones' =>
+                    $zones,
+
+                'selectedZoneId' =>
+                    $this->preferredMacZoneId(
+                        $request,
+                        $zones
+                    ),
+            ]
+        );
     }
 
     public function store(
@@ -78,11 +101,36 @@ class RouterController extends Controller
     }
 
     public function edit(
+        Request $request,
         Router $router
     ): Response {
-        return Inertia::render('Routers/Edit', [
-            'router' => $router,
+        $zones =
+            $this->macZoneOptions(
+                $request->user()
+            );
+
+        $router->loadMissing([
+            'zone:id,name,code,service_type',
         ]);
+
+        return Inertia::render(
+            'Routers/Edit',
+            [
+                'router' =>
+                    $router,
+
+                'zones' =>
+                    $zones,
+
+                'selectedZoneId' =>
+                    $this->preferredMacZoneId(
+                        $request,
+                        $zones,
+                        (int)
+                        $router->zone_id
+                    ),
+            ]
+        );
     }
 
     public function update(
@@ -204,6 +252,144 @@ class RouterController extends Controller
             'Router deleted.'
         );
     }
+
+    /*
+     * ROUTER_FORM_MAC_ZONE_OPTIONS_V1
+     *
+     * Router records participate in MAC-client
+     * fanout only. HotspotServer owns the separate
+     * Hotspot Network Zone.
+     */
+    private function macZoneOptions(
+        $user
+    ) {
+        $query =
+            NetworkZone::query()
+                ->where(
+                    'service_type',
+                    'mac'
+                )
+                ->where(
+                    'enabled',
+                    true
+                );
+
+        if (
+            $user
+            && method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin()
+        ) {
+            // All enabled MAC zones.
+
+        } elseif (
+            $user
+            && $user->reseller_id
+        ) {
+            $query->where(
+                'reseller_id',
+                (int)
+                $user->reseller_id
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                $query->whereKey(
+                    (int)
+                    $user->zone_id
+                );
+            }
+
+        } else {
+            $query->whereNull(
+                'reseller_id'
+            );
+        }
+
+        return $query
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+                'code',
+                'service_type',
+            ]);
+    }
+
+    private function preferredMacZoneId(
+        Request $request,
+        $zones,
+        ?int $currentZoneId = null
+    ): ?int {
+        if (
+            $currentZoneId
+            && $zones->contains(
+                'id',
+                $currentZoneId
+            )
+        ) {
+            return $currentZoneId;
+        }
+
+        $user =
+            $request->user();
+
+        if (
+            $user
+            && method_exists(
+                $user,
+                'isOperator'
+            )
+            && $user->isOperator()
+            && $user->zone_id
+            && $zones->contains(
+                'id',
+                (int)
+                $user->zone_id
+            )
+        ) {
+            return (int)
+                $user->zone_id;
+        }
+
+        $sessionZoneId =
+            (int)
+            $request
+                ->session()
+                ->get(
+                    'network_zone_id',
+                    0
+                );
+
+        if (
+            $sessionZoneId
+            && $zones->contains(
+                'id',
+                $sessionZoneId
+            )
+        ) {
+            return $sessionZoneId;
+        }
+
+        if (
+            $zones->count() === 1
+        ) {
+            return (int)
+                $zones
+                    ->first()
+                    ->id;
+        }
+
+        return null;
+    }
+
 
     private function saveLiveStatus(
         Router $router,

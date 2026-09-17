@@ -5,7 +5,11 @@ import {
     useForm,
 } from '@inertiajs/react';
 
-export default function Edit({ router }) {
+export default function Edit({
+    router,
+    zones = [],
+    selectedZoneId = null,
+}) {
     const {
         data,
         setData,
@@ -13,6 +17,12 @@ export default function Edit({ router }) {
         processing,
         errors,
     } = useForm({
+        zone_id:
+            String(
+                selectedZoneId ??
+                    router.zone_id ??
+                    '',
+            ),
         name: router.name ?? '',
         host: router.host ?? '',
         api_port: router.api_port ?? 8728,
@@ -56,6 +66,43 @@ export default function Edit({ router }) {
                     className="space-y-6 rounded-xl bg-white p-6 shadow"
                 >
                     <div className="grid gap-5 md:grid-cols-2">
+                        <Field
+                            label="Network Zone"
+                            error={errors.zone_id}
+                        >
+                            <select
+                                className={inputClass}
+                                value={data.zone_id}
+                                onChange={(event) =>
+                                    setData(
+                                        'zone_id',
+                                        event.target.value,
+                                    )
+                                }
+                            >
+                                <option value="">
+                                    Select MAC Zone
+                                </option>
+
+                                {zones.map((zone) => (
+                                    <option
+                                        key={zone.id}
+                                        value={zone.id}
+                                    >
+                                        {zone.name}
+                                        {zone.code
+                                            ? ` — ${zone.code}`
+                                            : ''}
+                                    </option>
+                                ))}
+                            </select>
+
+                            <p className="mt-1 text-xs text-slate-500">
+                                Moving a router changes which zone's
+                                clients can be synchronized to it.
+                            </p>
+                        </Field>
+
                         <Field
                             label="Router Name"
                             error={errors.name}

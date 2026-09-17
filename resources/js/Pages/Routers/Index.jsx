@@ -158,6 +158,17 @@ function RouterCard({
                                 : ' • API'}
                         </p>
 
+                        <p className="mt-2 text-sm font-semibold text-cyan-700">
+                            Zone:{' '}
+                            <span>
+                                {item.zone?.name ||
+                                    'Unassigned'}
+                            </span>
+                            {item.zone?.code
+                                ? ` • ${item.zone.code}`
+                                : ''}
+                        </p>
+
                         <p className="mt-1 text-xs text-slate-500">
                             Client Interface:{' '}
                             <span className="font-mono">
