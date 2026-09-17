@@ -33,7 +33,6 @@ const passportFields = [
     'passport_expiry_date',
     'place_of_birth',
     'issuing_country',
-    'issuing_authority',
 ];
 
 const allDocumentFields = [
@@ -2213,21 +2212,6 @@ export default function ClientIdentityFields({
                                 />
                             </Field>
 
-                            <Field
-                                label="Issuing Authority"
-                                error={errors.issuing_authority}
-                            >
-                                <input
-                                    className={inputClass}
-                                    value={data.issuing_authority ?? ''}
-                                    onChange={(event) =>
-                                        updateField(
-                                            'issuing_authority',
-                                            event.target.value
-                                        )
-                                    }
-                                />
-                            </Field>
                         </div>
                     </div>
                 )}

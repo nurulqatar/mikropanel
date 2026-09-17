@@ -134,11 +134,6 @@ class ClientRequest extends FormRequest
                 'max:255',
             ],
 
-            'issuing_authority' => [
-                'nullable',
-                'string',
-                'max:255',
-            ],
 
             'identity_type' => [
                 'nullable',

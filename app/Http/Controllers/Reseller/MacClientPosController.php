@@ -103,8 +103,6 @@ class MacClientPosController extends Controller
                                     ?->format('Y-m-d'),
                             'issuing_country' =>
                                 $client->issuing_country,
-                            'issuing_authority' =>
-                                $client->issuing_authority,
 
                             'identity_type' =>
                                 $client->identity_type,

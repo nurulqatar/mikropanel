@@ -58,8 +58,6 @@ export default function Edit({
             client.passport_issue_date ?? '',
         issuing_country:
             client.issuing_country ?? '',
-        issuing_authority:
-            client.issuing_authority ?? '',
         qatar_id_front_scan_token: '',
         qatar_id_back_scan_token: '',
         passport_scan_token: '',

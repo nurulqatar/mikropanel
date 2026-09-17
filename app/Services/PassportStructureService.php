@@ -117,7 +117,8 @@ class PassportStructureService
             );
 
         $name =
-            $this->mrzName(
+            $this->passportHolderName(
+                $text,
                 substr(
                     $line1,
                     5
@@ -174,8 +175,22 @@ class PassportStructureService
         }
 
         if ($issuer !== null) {
+            $countryName =
+                trim(
+                    (string) (
+                        $profile['country']
+                        ?? ''
+                    )
+                );
+
             $fields['issuing_country'] =
-                $issuer;
+                (
+                    $countryName !== ''
+                    && $countryName
+                        !== 'Unknown / ICAO compatible'
+                )
+                    ? $countryName
+                    : $issuer;
         }
 
         /*
@@ -225,30 +240,6 @@ class PassportStructureService
             $fields[
                 'place_of_birth'
             ] = $place;
-        }
-
-        $authority =
-            $this->extractAuthority(
-                $text,
-                $labels[
-                    'issuing_authority'
-                ]
-                ?? []
-            );
-
-        $authority =
-            $this->applyAlias(
-                $authority,
-                $profile[
-                    'authority_aliases'
-                ]
-                ?? []
-            );
-
-        if ($authority !== null) {
-            $fields[
-                'issuing_authority'
-            ] = $authority;
         }
 
         return $fields;
@@ -807,32 +798,72 @@ class PassportStructureService
             : null;
     }
 
-    private function mrzName(
-        string $value
+    private function passportHolderName(
+        string $text,
+        string $mrzValue
     ): ?string {
-        $parts =
-            explode(
-                '<<',
-                $value,
-                2
-            );
-
-        $surname =
-            $this->mrzNamePart(
-                $parts[0]
-                ?? ''
+        $mrzParts =
+            $this->mrzNameParts(
+                $mrzValue
             );
 
         $given =
-            $this->mrzNamePart(
-                $parts[1]
-                ?? ''
+            $this->printedNameValue(
+                $text,
+                [
+                    'Given Names',
+                    'Given Name',
+                    'Given Name(s)',
+                    'Forenames',
+                    'First Names',
+                    'First Name',
+                    'Prénoms',
+                    'Prenoms',
+                    'Nombres',
+                    'Nombre',
+                    'Vornamen',
+                    'Nomi',
+                    'Nome',
+                    'Prenome',
+                ]
+            );
+
+        $surname =
+            $this->printedNameValue(
+                $text,
+                [
+                    'Surname',
+                    'Family Name',
+                    'Last Name',
+                    'Nom de famille',
+                    'Apellido',
+                    'Apellidos',
+                    'Familienname',
+                    'Nachname',
+                    'Cognome',
+                    'Apelido',
+                ]
             );
 
         /*
-         * Client-facing name:
-         * Given Names + Surname.
+         * Printed bio-page fields are preferred.
+         * MRZ is the validated fallback when printed
+         * OCR cannot read either component safely.
          */
+        $given =
+            $given
+            ?: (
+                $mrzParts['given']
+                ?? ''
+            );
+
+        $surname =
+            $surname
+            ?: (
+                $mrzParts['surname']
+                ?? ''
+            );
+
         $name =
             trim(
                 implode(
@@ -841,6 +872,259 @@ class PassportStructureService
                         [
                             $given,
                             $surname,
+                        ],
+                        fn ($value) =>
+                            trim(
+                                (string) $value
+                            ) !== ''
+                    )
+                )
+            );
+
+        return $name !== ''
+            ? $name
+            : null;
+    }
+
+    private function mrzNameParts(
+        string $value
+    ): array {
+        $parts =
+            explode(
+                '<<',
+                $value,
+                2
+            );
+
+        return [
+            'surname' =>
+                $this->mrzNamePart(
+                    $parts[0]
+                    ?? ''
+                ),
+
+            'given' =>
+                $this->mrzNamePart(
+                    $parts[1]
+                    ?? ''
+                ),
+        ];
+    }
+
+    private function printedNameValue(
+        string $text,
+        array $labels
+    ): ?string {
+        $lines =
+            preg_split(
+                '/\R/u',
+                $text
+            )
+            ?: [];
+
+        foreach (
+            $lines as $index => $line
+        ) {
+            foreach ($labels as $label) {
+                $position =
+                    mb_stripos(
+                        $line,
+                        $label
+                    );
+
+                if ($position === false) {
+                    continue;
+                }
+
+                /*
+                 * Value on same physical OCR line.
+                 */
+                $after =
+                    mb_substr(
+                        $line,
+                        $position
+                        + mb_strlen(
+                            $label
+                        )
+                    );
+
+                $after =
+                    trim(
+                        $after,
+                        " \t:;/|-.—_"
+                    );
+
+                $value =
+                    $this->cleanPrintedPersonName(
+                        $after
+                    );
+
+                if ($value !== null) {
+                    return $value;
+                }
+
+                /*
+                 * Value underneath label.
+                 */
+                for (
+                    $step = 1;
+                    $step <= 3;
+                    $step++
+                ) {
+                    $candidate =
+                        $lines[
+                            $index + $step
+                        ]
+                        ?? null;
+
+                    if ($candidate === null) {
+                        break;
+                    }
+
+                    $candidate =
+                        trim(
+                            $candidate
+                        );
+
+                    if ($candidate === '') {
+                        continue;
+                    }
+
+                    if (
+                        $this->looksLikePassportFieldLabel(
+                            $candidate
+                        )
+                    ) {
+                        break;
+                    }
+
+                    $value =
+                        $this->cleanPrintedPersonName(
+                            $candidate
+                        );
+
+                    if ($value !== null) {
+                        return $value;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function cleanPrintedPersonName(
+        string $value
+    ): ?string {
+        $value =
+            preg_replace(
+                '/^[^\p{L}]+/u',
+                '',
+                trim($value)
+            )
+            ?? '';
+
+        $value =
+            preg_replace(
+                '/[^\p{L}\p{M}\s\'\-]+$/u',
+                '',
+                $value
+            )
+            ?? '';
+
+        $value =
+            preg_replace(
+                '/\s+/u',
+                ' ',
+                trim($value)
+            )
+            ?? '';
+
+        if (
+            $value === ''
+            || mb_strlen($value) > 100
+            || preg_match(
+                '/\d/u',
+                $value
+            )
+        ) {
+            return null;
+        }
+
+        if (
+            preg_match(
+                '/\b(?:'
+                . 'PASSPORT'
+                . '|NATIONALITY'
+                . '|DATE'
+                . '|BIRTH'
+                . '|SEX'
+                . '|GENDER'
+                . '|AUTHORITY'
+                . '|EXPIR'
+                . '|COUNTRY'
+                . ')\b/iu',
+                $value
+            )
+        ) {
+            return null;
+        }
+
+        return mb_strtoupper(
+            $value
+        );
+    }
+
+    private function looksLikePassportFieldLabel(
+        string $value
+    ): bool {
+        return preg_match(
+            '/(?:'
+            . 'passport'
+            . '|surname'
+            . '|family\s+name'
+            . '|given\s+name'
+            . '|first\s+name'
+            . '|forename'
+            . '|nationality'
+            . '|date.{0,8}birth'
+            . '|birth.{0,8}date'
+            . '|place.{0,12}birth'
+            . '|birth.{0,12}place'
+            . '|date.{0,8}issue'
+            . '|issue.{0,8}date'
+            . '|date.{0,8}expiry'
+            . '|expiry'
+            . '|expiration'
+            . '|sex'
+            . '|gender'
+            . '|authority'
+            . '|signature'
+            . '|personal\s+no'
+            . '|document\s+no'
+            . ')/iu',
+            $value
+        ) === 1;
+    }
+
+    private function mrzName(
+        string $value
+    ): ?string {
+        $parts =
+            $this->mrzNameParts(
+                $value
+            );
+
+        $name =
+            trim(
+                implode(
+                    ' ',
+                    array_filter(
+                        [
+                            $parts['given']
+                                ?? '',
+                            $parts['surname']
+                                ?? '',
                         ]
                     )
                 )
@@ -1077,6 +1361,58 @@ class PassportStructureService
             }
         }
 
+        /*
+         * Fuzzy worldwide fallback for OCR-damaged
+         * or bilingual issue-date captions.
+         */
+        $lines =
+            preg_split(
+                '/\R/u',
+                $text
+            )
+            ?: [];
+
+        foreach (
+            $lines as $index => $line
+        ) {
+            if (
+                !preg_match(
+                    '/(?:'
+                    . 'date.{0,20}(?:issue|issued|issuance)'
+                    . '|(?:issue|issued|issuance).{0,20}date'
+                    . '|d[ée]livr'
+                    . '|expedi'
+                    . '|emisi'
+                    . '|ausstell'
+                    . '|rilasc'
+                    . '|emiss'
+                    . ')/iu',
+                    $line
+                )
+            ) {
+                continue;
+            }
+
+            $window =
+                implode(
+                    "\n",
+                    array_slice(
+                        $lines,
+                        $index,
+                        5
+                    )
+                );
+
+            $date =
+                $this->findPrintedDate(
+                    $window
+                );
+
+            if ($date !== null) {
+                return $date;
+            }
+        }
+
         return null;
     }
 
@@ -1091,68 +1427,225 @@ class PassportStructureService
             )
             as $window
         ) {
-            $lines =
-                preg_split(
-                    '/\R/u',
+            $place =
+                $this->placeFromWindow(
                     $window
+                );
+
+            if ($place !== null) {
+                return $place;
+            }
+        }
+
+        /*
+         * Fuzzy worldwide label fallback.
+         */
+        $lines =
+            preg_split(
+                '/\R/u',
+                $text
+            )
+            ?: [];
+
+        foreach (
+            $lines as $index => $line
+        ) {
+            if (
+                !preg_match(
+                    '/(?:'
+                    . 'place.{0,18}birth'
+                    . '|birth.{0,18}place'
+                    . '|lieu.{0,18}naissance'
+                    . '|lugar.{0,18}nacimiento'
+                    . '|geburtsort'
+                    . '|luogo.{0,18}nascita'
+                    . '|local.{0,18}nascimento'
+                    . ')/iu',
+                    $line
                 )
-                ?: [];
+            ) {
+                continue;
+            }
 
-            foreach ($lines as $line) {
-                $line =
-                    $this->cleanVizLine(
-                        $line
-                    );
+            $sameLine =
+                preg_replace(
+                    '/^.*?(?:'
+                    . 'place.{0,18}birth'
+                    . '|birth.{0,18}place'
+                    . '|lieu.{0,18}naissance'
+                    . '|lugar.{0,18}nacimiento'
+                    . '|geburtsort'
+                    . '|luogo.{0,18}nascita'
+                    . '|local.{0,18}nascimento'
+                    . ')\s*[:;/|.\-]*/iu',
+                    '',
+                    $line
+                )
+                ?? '';
 
-                /*
-                 * Remove sex marker when both fields
-                 * share one visual row.
-                 */
-                $line =
-                    preg_replace(
-                        '/^[MFX]\s*[\W_]*/i',
-                        '',
-                        $line
-                    )
-                    ?? $line;
+            $parts = [];
 
-                /*
-                 * Remove common trailing personal /
-                 * internal numeric identifiers.
-                 */
-                $line =
-                    preg_replace(
-                        '/[\(\[]?\d{4,}.*$/',
-                        '',
-                        $line
-                    )
-                    ?? $line;
+            if (
+                trim(
+                    $sameLine
+                ) !== ''
+            ) {
+                $parts[] =
+                    $sameLine;
+            }
 
-                $line =
-                    trim(
-                        $line,
-                        " \t\n\r\0\x0B.,;:|>-_<"
-                    );
-
+            for (
+                $step = 1;
+                $step <= 3;
+                $step++
+            ) {
                 if (
-                    $this->validVizText(
-                        $line,
-                        2,
-                        80
-                    )
-                    && !$this->containsAnyLabel(
-                        $line,
-                        $labels
+                    isset(
+                        $lines[
+                            $index + $step
+                        ]
                     )
                 ) {
-                    return strtoupper(
-                        $line
-                    );
+                    $parts[] =
+                        $lines[
+                            $index + $step
+                        ];
                 }
+            }
+
+            $place =
+                $this->placeFromWindow(
+                    implode(
+                        "\n",
+                        $parts
+                    )
+                );
+
+            if ($place !== null) {
+                return $place;
             }
         }
 
         return null;
+    }
+
+    private function placeFromWindow(
+        string $window
+    ): ?string {
+        $lines =
+            preg_split(
+                '/\R/u',
+                $window
+            )
+            ?: [];
+
+        $parts = [];
+
+        foreach ($lines as $line) {
+            $line =
+                $this->cleanVizLine(
+                    $line
+                );
+
+            if ($line === '') {
+                continue;
+            }
+
+            $line =
+                preg_replace(
+                    '/^[MFX]\s*[\W_]*/iu',
+                    '',
+                    $line
+                )
+                ?? $line;
+
+            /*
+             * Remove trailing serial/personal number,
+             * not the place words before it.
+             */
+            $line =
+                preg_replace(
+                    '/\s*[\(\[]?'
+                    . '\d{4,}'
+                    . '.*$/u',
+                    '',
+                    $line
+                )
+                ?? $line;
+
+            $line =
+                trim(
+                    $line,
+                    " \t\n\r\0\x0B.,;:|>-_<"
+                );
+
+            if ($line === '') {
+                continue;
+            }
+
+            if (
+                $this->looksLikePassportFieldLabel(
+                    $line
+                )
+                || $this->findPrintedDate(
+                    $line
+                ) !== null
+                || str_contains(
+                    $line,
+                    '<<'
+                )
+            ) {
+                break;
+            }
+
+            if (
+                !$this->validVizText(
+                    $line,
+                    2,
+                    120
+                )
+            ) {
+                if ($parts !== []) {
+                    break;
+                }
+
+                continue;
+            }
+
+            $parts[] =
+                $line;
+
+            /*
+             * Preserve wrapped place names.
+             */
+            if (count($parts) >= 2) {
+                break;
+            }
+        }
+
+        if ($parts === []) {
+            return null;
+        }
+
+        $place =
+            preg_replace(
+                '/\s+/u',
+                ' ',
+                implode(
+                    ' ',
+                    $parts
+                )
+            )
+            ?? '';
+
+        $place =
+            trim($place);
+
+        return $place !== ''
+            ? mb_strtoupper(
+                $place
+            )
+            : null;
     }
 
     private function extractAuthority(
@@ -1394,33 +1887,52 @@ class PassportStructureService
             return null;
         }
 
-        $normalized =
-            strtoupper(
-                preg_replace(
-                    '/\s+/u',
-                    ' ',
-                    trim($value)
-                )
-                ?? ''
-            );
+        $result =
+            preg_replace(
+                '/\s+/u',
+                ' ',
+                trim($value)
+            )
+            ?? '';
 
         foreach (
             $aliases
             as $from => $to
         ) {
-            if (
-                strtoupper(
-                    trim(
-                        (string) $from
-                    )
-                )
-                === $normalized
-            ) {
-                return (string) $to;
+            $from =
+                trim(
+                    (string) $from
+                );
+
+            if ($from === '') {
+                continue;
             }
+
+            $result =
+                preg_replace(
+                    '/(?<!\p{L})'
+                    . preg_quote(
+                        $from,
+                        '/'
+                    )
+                    . '(?!\p{L})/iu',
+                    (string) $to,
+                    $result
+                )
+                ?? $result;
         }
 
-        return $value;
+        $result =
+            preg_replace(
+                '/\s+/u',
+                ' ',
+                trim($result)
+            )
+            ?? '';
+
+        return $result !== ''
+            ? $result
+            : null;
     }
 
     private function findPrintedDate(
