@@ -126,6 +126,14 @@ class DashboardController extends Controller
                             )
                             ->count(),
 
+                    'online_clients' =>
+                        Client::query()
+                            ->where(
+                                'connected',
+                                true
+                            )
+                            ->count(),
+
                     'routers' =>
                         Router::query()
                             ->count(),

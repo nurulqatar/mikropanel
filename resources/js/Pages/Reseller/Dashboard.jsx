@@ -21,8 +21,8 @@ export default function Dashboard({
         !usage.subscription_usable;
 
     return (
-        <AppLayout title="Reseller Dashboard">
-            <Head title="Reseller Dashboard" />
+        <AppLayout title={isOwner ? 'Reseller Dashboard' : 'Operator Dashboard'}>
+            <Head title={isOwner ? 'Reseller Dashboard' : 'Operator Dashboard'} />
 
             <div className="space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-4">
@@ -32,8 +32,10 @@ export default function Dashboard({
                         </h1>
 
                         <p className="mt-1 text-slate-500">
-                            Reseller Dashboard ·{' '}
-                            {reseller.code}
+                            {isOwner
+                                ? 'Reseller Dashboard'
+                                : 'Operator Dashboard'}{' '}
+                            · {reseller.code}
                         </p>
                     </div>
 
@@ -58,7 +60,7 @@ export default function Dashboard({
                     )}
                 </div>
 
-                {(expired ||
+                {isOwner && (expired ||
                     reseller.status !==
                         'active') && (
                     <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 font-semibold text-amber-800">
@@ -73,147 +75,165 @@ export default function Dashboard({
                     </div>
                 )}
 
-                <QuickRechargePos
-                    pos={pos}
-                />
-
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <Stat
-                        label="Client Limit"
-                        value={
-                            usage.client_limit
-                        }
+                {isOwner && (
+                    <QuickRechargePos
+                        pos={pos}
                     />
+                )}
 
-                    <Stat
-                        label="Used Clients"
-                        value={
-                            usage.used_clients
-                        }
-                    />
-
-                    <Stat
-                        label="Remaining"
-                        value={
-                            usage.remaining_clients
-                        }
-                    />
-
-                    <Stat
-                        label="Wallet"
-                        value={`QAR ${money(
-                            reseller.wallet_balance,
-                        )}`}
-                    />
-
-                    <Stat
-                        label="Active Clients"
-                        value={
-                            stats.active_clients
-                        }
-                    />
-
-                    <Stat
-                        label="Routers"
-                        value={
-                            stats.routers
-                        }
-                    />
-
-                    <Stat
-                        label="Today Collection"
-                        value={`QAR ${money(
-                            stats.today_collection,
-                        )}`}
-                    />
-
-                    <Stat
-                        label="Total Due"
-                        value={`QAR ${money(
-                            Number(
-                                stats.normal_due ??
-                                    0,
-                            ) +
-                                Number(
-                                    stats.hotspot_due ??
-                                        0,
-                                ),
-                        )}`}
-                    />
-
-                    <Stat
-                        label="Hotspot Vouchers"
-                        value={
-                            stats.hotspot_vouchers
-                        }
-                    />
-
-                    <Stat
-                        label="Hotspot Online"
-                        value={
-                            stats.online_hotspot
-                        }
-                    />
-
-                    <Stat
-                        label="Operators"
-                        value={
-                            usage.operators
-                        }
-                    />
-
-                    <Stat
-                        label="Expires"
-                        value={
-                            usage.subscription_expires_at ||
-                            '-'
-                        }
-                    />
-                </div>
-
-                <section className="rounded-2xl border bg-white p-5 shadow-sm">
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        <Quick
-                            routeName="clients.index"
-                            label="Clients"
+                {isOwner ? (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <Stat
+                            label="Client Limit"
+                            value={
+                                usage.client_limit
+                            }
                         />
 
-                        <Quick
-                            routeName="routers.index"
+                        <Stat
+                            label="Used Clients"
+                            value={
+                                usage.used_clients
+                            }
+                        />
+
+                        <Stat
+                            label="Remaining"
+                            value={
+                                usage.remaining_clients
+                            }
+                        />
+
+                        <Stat
+                            label="Wallet"
+                            value={`QAR ${money(
+                                reseller.wallet_balance,
+                            )}`}
+                        />
+
+                        <Stat
+                            label="Active Clients"
+                            value={
+                                stats.active_clients
+                            }
+                        />
+
+                        <Stat
                             label="Routers"
+                            value={
+                                stats.routers
+                            }
                         />
 
-                        <Quick
-                            routeName="packages.index"
-                            label="Packages"
+                        <Stat
+                            label="Today Collection"
+                            value={`QAR ${money(
+                                stats.today_collection,
+                            )}`}
                         />
 
-                        <Quick
-                            routeName="ip-ranges.index"
-                            label="IP Pools"
+                        <Stat
+                            label="Total Due"
+                            value={`QAR ${money(
+                                Number(
+                                    stats.normal_due ??
+                                        0,
+                                ) +
+                                    Number(
+                                        stats.hotspot_due ??
+                                            0,
+                                    ),
+                            )}`}
                         />
 
-                        <Quick
-                            routeName="invoices.index"
-                            label="Invoices"
+                        <Stat
+                            label="Hotspot Vouchers"
+                            value={
+                                stats.hotspot_vouchers
+                            }
                         />
 
-                        <Quick
-                            routeName="payments.index"
-                            label="Payments"
+                        <Stat
+                            label="Hotspot Online"
+                            value={
+                                stats.online_hotspot
+                            }
                         />
 
-                        <Quick
-                            routeName="accounting.index"
-                            label="Accounting"
+                        <Stat
+                            label="Operators"
+                            value={
+                                usage.operators
+                            }
                         />
 
-                        <Quick
-                            routeName="hotspot.index"
-                            label="Hotspot"
+                        <Stat
+                            label="Expires"
+                            value={
+                                usage.subscription_expires_at ||
+                                '-'
+                            }
                         />
                     </div>
-                </section>
+                ) : (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Stat
+                            label="Total Clients"
+                            value={stats.clients ?? 0}
+                        />
+
+                        <Stat
+                            label="Online Clients"
+                            value={stats.online_clients ?? 0}
+                        />
+                    </div>
+                )}
+
+                {isOwner && (
+                    <section className="rounded-2xl border bg-white p-5 shadow-sm">
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            <Quick
+                                routeName="clients.index"
+                                label="Clients"
+                            />
+
+                            <Quick
+                                routeName="routers.index"
+                                label="Routers"
+                            />
+
+                            <Quick
+                                routeName="packages.index"
+                                label="Packages"
+                            />
+
+                            <Quick
+                                routeName="ip-ranges.index"
+                                label="IP Pools"
+                            />
+
+                            <Quick
+                                routeName="invoices.index"
+                                label="Invoices"
+                            />
+
+                            <Quick
+                                routeName="payments.index"
+                                label="Payments"
+                            />
+
+                            <Quick
+                                routeName="accounting.index"
+                                label="Accounting"
+                            />
+
+                            <Quick
+                                routeName="hotspot.index"
+                                label="Hotspot"
+                            />
+                        </div>
+                    </section>
+                )}
 
                 <section className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
                     <div className="border-b px-5 py-4 text-lg font-bold">
