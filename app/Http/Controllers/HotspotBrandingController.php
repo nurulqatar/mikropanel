@@ -126,13 +126,20 @@ class HotspotBrandingController extends Controller
     private function manage(
         Request $request
     ): void {
+        $user =
+            $request->user();
+
+        /*
+         * Branding is reseller-global rather than
+         * an individual Network Zone resource.
+         */
         abort_unless(
-            $request->user()
-            && $request
-                ->user()
-                ->hasPermission(
-                    'hotspot.manage'
-                ),
+            $user
+            && !$user->isManager()
+            && (
+                $user->isAdmin()
+                || $user->isResellerOwner()
+            ),
             403
         );
     }

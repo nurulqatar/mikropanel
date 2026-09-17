@@ -7,6 +7,7 @@ import {
 
 export default function Edit({
     operator,
+    zones = [],
     permissionOptions = {},
 }) {
     const form = useForm({
@@ -14,6 +15,12 @@ export default function Edit({
             operator.name ?? '',
         email:
             operator.email ?? '',
+        zone_id:
+            operator.zone_id
+                ? String(
+                      operator.zone_id,
+                  )
+                : '',
         password: '',
         password_confirmation: '',
         permissions:
@@ -98,6 +105,49 @@ export default function Edit({
                                 )
                             }
                         />
+
+                          <label>
+                              <div className="mb-1 text-sm font-semibold">
+                                  Network Zone
+                              </div>
+
+                              <select
+                                  required
+                                  className="w-full rounded-lg border-slate-300"
+                                  value={
+                                      form.data.zone_id
+                                  }
+                                  onChange={(e) =>
+                                      form.setData(
+                                          'zone_id',
+                                          e.target.value,
+                                      )
+                                  }
+                              >
+                                  <option value="">
+                                      Select Network Zone
+                                  </option>
+
+                                  {zones.map(
+                                      (zone) => (
+                                          <option
+                                              key={zone.id}
+                                              value={zone.id}
+                                          >
+                                              {zone.name}{' '}
+                                              —{' '}
+                                              {zone.service_type.toUpperCase()}
+                                          </option>
+                                      ),
+                                  )}
+                              </select>
+
+                              {form.errors.zone_id && (
+                                  <div className="mt-1 text-sm font-semibold text-red-600">
+                                      {form.errors.zone_id}
+                                  </div>
+                              )}
+                          </label>
 
                         <Input
                             label="New Password"

@@ -527,24 +527,48 @@ class HotspotSectionController extends Controller
         $user =
             $request->user();
 
+        $owner =
+            $user
+            && (
+                $user->isAdmin()
+                || $user->isResellerOwner()
+            );
+
+        $manager =
+            $user
+            && $user->isManager();
+
         return [
             'manage' =>
-                $user->hasPermission(
-                    'hotspot.manage'
+                $owner
+                || (
+                    !$manager
+                    && $user->hasPermission(
+                        'hotspot.manage'
+                    )
                 ),
 
             'sell' =>
-                $user->hasPermission(
-                    'hotspot.sell'
+                $owner
+                || (
+                    !$manager
+                    && $user->hasPermission(
+                        'hotspot.sell'
+                    )
                 ),
 
             'payments' =>
-                $user->hasPermission(
-                    'hotspot.payments'
+                $owner
+                || (
+                    !$manager
+                    && $user->hasPermission(
+                        'hotspot.payments'
+                    )
                 ),
 
             'export' =>
-                $user->hasPermission(
+                $owner
+                || $user->hasPermission(
                     'hotspot.export'
                 ),
         ];

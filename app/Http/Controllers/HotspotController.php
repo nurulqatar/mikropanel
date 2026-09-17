@@ -394,10 +394,7 @@ class HotspotController extends Controller
     public function discover(
         Request $request
     ): RedirectResponse {
-        $this->assertPermission(
-            $request,
-            'hotspot.manage'
-        );
+        $this->assertOwnerAction($request);
 
         DiscoverHotspotServersJob::dispatch();
 
@@ -429,10 +426,7 @@ class HotspotController extends Controller
     public function storePlan(
         Request $request
     ): RedirectResponse {
-        $this->assertPermission(
-            $request,
-            'hotspot.manage'
-        );
+        $this->assertOwnerAction($request);
 
         $data =
             $this->validatePlan(
@@ -451,10 +445,7 @@ class HotspotController extends Controller
         Request $request,
         HotspotPlan $plan
     ): RedirectResponse {
-        $this->assertPermission(
-            $request,
-            'hotspot.manage'
-        );
+        $this->assertOwnerAction($request);
 
         $data =
             $this->validatePlan(
@@ -473,10 +464,7 @@ class HotspotController extends Controller
         Request $request,
         HotspotPlan $plan
     ): RedirectResponse {
-        $this->assertPermission(
-            $request,
-            'hotspot.manage'
-        );
+        $this->assertOwnerAction($request);
 
         if (
             $plan->vouchers()
@@ -560,6 +548,26 @@ class HotspotController extends Controller
                     )
                 )
             );
+
+        /*
+         * HOTSPOT_GENERATION_SERVER_ZONE_GUARD_V1
+         */
+        $authorizedServer =
+            HotspotServer::query()
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->findOrFail(
+                    (int)
+                    $data[
+                        'hotspot_server_id'
+                    ]
+                );
+
+        $data['hotspot_server_id'] =
+            (int)
+            $authorizedServer->id;
 
         DB::transaction(
             function () use (
@@ -925,7 +933,25 @@ class HotspotController extends Controller
         );
     }
 
-    private function assertPermission(
+        private function assertOwnerAction(
+        Request $request
+    ): void {
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user
+            && !$user->isManager()
+            && (
+                $user->isResellerOwner()
+                || $user->isAdmin()
+            ),
+            403,
+            'Only the reseller owner may perform this Hotspot action.'
+        );
+    }
+
+private function assertPermission(
         Request $request,
         string $permission
     ): void {

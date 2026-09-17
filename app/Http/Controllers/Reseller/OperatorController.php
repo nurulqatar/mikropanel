@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
+use App\Models\NetworkZone;
 use App\Models\Reseller;
 use App\Models\User;
 use App\Services\Reseller\ResellerPermissionService;
@@ -23,6 +24,11 @@ class OperatorController extends Controller
                 $request
             );
 
+        $zones =
+            $this->zones(
+                $reseller
+            );
+
         return Inertia::render(
             'Reseller/Operators/Index',
             [
@@ -40,15 +46,22 @@ class OperatorController extends Controller
                     'staff_role',
                     'operator'
                 )
+                        ->with(
+                            'zone:id,name,service_type'
+                        )
                         ->orderBy('name')
                         ->get([
                             'id',
                             'name',
                             'email',
+                            'zone_id',
                             'permissions',
                             'is_active',
                             'created_at',
                         ]),
+
+                  'zones' =>
+                      $zones,
 
                 'permissionOptions' =>
                     $permissions
@@ -97,6 +110,11 @@ class OperatorController extends Controller
                     'confirmed',
                 ],
 
+                  'zone_id' => [
+                      'required',
+                      'integer',
+                  ],
+
                 'permissions' => [
                     'array',
                 ],
@@ -107,6 +125,13 @@ class OperatorController extends Controller
                     ),
                 ],
             ]);
+
+          $zone =
+              $this->operatorZone(
+                  $reseller,
+                  (int)
+                  $data['zone_id']
+              );
 
         User::create([
             'reseller_id' =>
@@ -123,6 +148,19 @@ class OperatorController extends Controller
 
             'role' =>
                 'operator',
+
+
+            'staff_role' =>
+
+
+                'operator',
+
+
+
+            'zone_id' =>
+
+
+                $zone->id,
 
             'permissions' =>
                 array_values(
@@ -162,11 +200,19 @@ class OperatorController extends Controller
                 $operator->id
             );
 
+          $zones =
+              $this->zones(
+                  $reseller
+              );
+
         return Inertia::render(
             'Reseller/Operators/Edit',
             [
                 'operator' =>
                     $operator,
+
+                  'zones' =>
+                      $zones,
 
                 'permissionOptions' =>
                     $permissions
@@ -223,6 +269,11 @@ class OperatorController extends Controller
                     'confirmed',
                 ],
 
+                  'zone_id' => [
+                      'required',
+                      'integer',
+                  ],
+
                 'permissions' => [
                     'array',
                 ],
@@ -233,6 +284,16 @@ class OperatorController extends Controller
                     ),
                 ],
             ]);
+
+          $zone =
+              $this->operatorZone(
+                  $reseller,
+                  (int)
+                  $data['zone_id']
+              );
+
+          $operator->zone_id =
+              $zone->id;
 
         $operator->name =
             $data['name'];
@@ -339,11 +400,116 @@ class OperatorController extends Controller
             );
     }
 
+    private function zones(
+
+        Reseller $reseller
+
+    ) {
+
+        return NetworkZone::query()
+
+            ->where(
+
+                'reseller_id',
+
+                $reseller->id
+
+            )
+
+            ->where(
+
+                'enabled',
+
+                true
+
+            )
+
+            ->whereIn(
+
+                'service_type',
+
+                [
+
+                    'mac',
+
+                    'hotspot',
+
+                ]
+
+            )
+
+            ->orderBy('service_type')
+
+            ->orderBy('name')
+
+            ->get([
+
+                'id',
+
+                'name',
+
+                'service_type',
+
+            ]);
+
+    }
+
+
+    private function operatorZone(
+
+        Reseller $reseller,
+
+        int $zoneId
+
+    ): NetworkZone {
+
+        return NetworkZone::query()
+
+            ->whereKey($zoneId)
+
+            ->where(
+
+                'reseller_id',
+
+                $reseller->id
+
+            )
+
+            ->where(
+
+                'enabled',
+
+                true
+
+            )
+
+            ->whereIn(
+
+                'service_type',
+
+                [
+
+                    'mac',
+
+                    'hotspot',
+
+                ]
+
+            )
+
+            ->firstOrFail();
+
+    }
+
+
     private function operator(
         Reseller $reseller,
         int $id
     ): User {
         return User::query()
+              ->with(
+                  'zone:id,name,service_type'
+              )
             ->whereKey($id)
             ->where(
                 'reseller_id',

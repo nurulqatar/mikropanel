@@ -8,11 +8,18 @@ import {
 
 export default function Index({
     operators = [],
+    zones = [],
     permissionOptions = {},
 }) {
     const form = useForm({
         name: '',
         email: '',
+        zone_id:
+            zones.length === 1
+                ? String(
+                      zones[0].id,
+                  )
+                : '',
         password: '',
         password_confirmation: '',
         permissions: [],
@@ -111,6 +118,49 @@ export default function Index({
                                 }
                             />
 
+                              <label>
+                                  <div className="mb-1 text-sm font-semibold">
+                                      Network Zone
+                                  </div>
+
+                                  <select
+                                      required
+                                      className="w-full rounded-lg border-slate-300"
+                                      value={
+                                          form.data.zone_id
+                                      }
+                                      onChange={(e) =>
+                                          form.setData(
+                                              'zone_id',
+                                              e.target.value,
+                                          )
+                                      }
+                                  >
+                                      <option value="">
+                                          Select Network Zone
+                                      </option>
+
+                                      {zones.map(
+                                          (zone) => (
+                                              <option
+                                                  key={zone.id}
+                                                  value={zone.id}
+                                              >
+                                                  {zone.name}{' '}
+                                                  —{' '}
+                                                  {zone.service_type.toUpperCase()}
+                                              </option>
+                                          ),
+                                      )}
+                                  </select>
+
+                                  {form.errors.zone_id && (
+                                      <div className="mt-1 text-sm font-semibold text-red-600">
+                                          {form.errors.zone_id}
+                                      </div>
+                                  )}
+                              </label>
+
                             <Input
                                 label="Password"
                                 type="password"
@@ -188,6 +238,7 @@ export default function Index({
                             <tr>
                                 <Th>Name</Th>
                                 <Th>Email</Th>
+                                <Th>Zone</Th>
                                 <Th>Permissions</Th>
                                 <Th>Status</Th>
                                 <Th>Actions</Th>
@@ -213,6 +264,23 @@ export default function Index({
                                                 operator.email
                                             }
                                         </Td>
+
+                                          <Td>
+                                              <div className="font-semibold">
+                                                  {operator.zone?.name ||
+                                                      '-'}
+                                              </div>
+
+                                              {operator.zone?.service_type && (
+                                                  <div className="text-xs uppercase text-slate-500">
+                                                      {
+                                                          operator
+                                                              .zone
+                                                              .service_type
+                                                      }
+                                                  </div>
+                                              )}
+                                          </Td>
 
                                         <Td>
                                             {
@@ -294,7 +362,7 @@ export default function Index({
                                 0 && (
                                 <tr>
                                     <td
-                                        colSpan="5"
+                                        colSpan="6"
                                         className="p-8 text-center text-slate-400"
                                     >
                                         No operator yet.

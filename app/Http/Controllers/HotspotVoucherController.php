@@ -107,7 +107,7 @@ class HotspotVoucherController extends Controller
         int $voucher,
         HotspotBillingService $billing
     ): RedirectResponse {
-        $this->admin($request);
+        $this->manageAccess($request);
 
         $voucher =
             HotspotVoucher::query()
@@ -178,7 +178,7 @@ class HotspotVoucherController extends Controller
         Request $request,
         int $voucher
     ): RedirectResponse {
-        $this->admin($request);
+        $this->manageAccess($request);
 
         $voucher =
             HotspotVoucher::query()
@@ -218,7 +218,7 @@ class HotspotVoucherController extends Controller
         Request $request,
         int $voucher
     ): RedirectResponse {
-        $this->admin($request);
+        $this->manageAccess($request);
 
         $voucher =
             HotspotVoucher::query()
@@ -267,7 +267,7 @@ class HotspotVoucherController extends Controller
         Request $request,
         int $voucher
     ): RedirectResponse {
-        $this->admin($request);
+        $this->manageAccess($request);
 
         $data = $request->validate([
             'mac_address' => [
@@ -313,7 +313,7 @@ class HotspotVoucherController extends Controller
         Request $request,
         int $voucher
     ): RedirectResponse {
-        $this->admin($request);
+        $this->manageAccess($request);
 
         $voucher =
             HotspotVoucher::query()
@@ -358,17 +358,40 @@ class HotspotVoucherController extends Controller
     private function admin(
         Request $request
     ): void {
+        $user =
+            $request->user();
+
         abort_unless(
-            $request->user()
-            && $request
-                ->user()
-                ->hasAnyPermission([
+            $user
+            && (
+                $user->isResellerOwner()
+                || $user->hasAnyPermission([
                     'hotspot.view',
                     'hotspot.manage',
                     'hotspot.sell',
                     'hotspot.payments',
                     'hotspot.export',
-                ]),
+                ])
+            ),
+            403
+        );
+    }
+
+    private function manageAccess(
+        Request $request
+    ): void {
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user
+            && !$user->isManager()
+            && (
+                $user->isResellerOwner()
+                || $user->hasPermission(
+                    'hotspot.manage'
+                )
+            ),
             403
         );
     }

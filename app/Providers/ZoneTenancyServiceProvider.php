@@ -7,11 +7,17 @@ use App\Models\ClientMonthlyUsage;
 use App\Models\ClientRefund;
 use App\Models\Expense;
 use App\Models\HotspotServer;
+use App\Models\HotspotBatch;
+use App\Models\HotspotInvoice;
+use App\Models\HotspotPayment;
+use App\Models\HotspotSession;
+use App\Models\HotspotVoucher;
 use App\Models\Invoice;
 use App\Models\IpRange;
 use App\Models\Payment;
 use App\Models\Router;
 use App\Models\User;
+use App\Models\Scopes\HotspotChildZoneScope;
 use App\Models\Scopes\ZoneScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
@@ -70,6 +76,27 @@ class ZoneTenancyServiceProvider extends ServiceProvider
 
 
         /*
+         * HOTSPOT_CHILD_ZONE_SCOPE_V1
+         *
+         * Child Hotspot tables do not carry zone_id.
+         * Their zone is inherited through HotspotServer.
+         */
+        foreach (
+            [
+                HotspotBatch::class,
+                HotspotVoucher::class,
+                HotspotSession::class,
+                HotspotInvoice::class,
+                HotspotPayment::class,
+            ]
+            as $class
+        ) {
+            $class::addGlobalScope(
+                new HotspotChildZoneScope()
+            );
+        }
+
+        /*
          * ZONE_STAFF_ASSIGNMENT_V2
          */
         User::creating(
@@ -112,10 +139,6 @@ class ZoneTenancyServiceProvider extends ServiceProvider
                                 $staff->reseller_id
                             )
                             ->where(
-                                'service_type',
-                                'mac'
-                            )
-                            ->where(
                                 'enabled',
                                 true
                             )
@@ -133,7 +156,7 @@ class ZoneTenancyServiceProvider extends ServiceProvider
                 if (!$zoneId) {
                     throw ValidationException::withMessages([
                         'zone_id' =>
-                            'Select an active MAC zone before creating an operator.',
+                            'Select an active Network Zone before creating an operator.',
                     ]);
                 }
 
@@ -150,10 +173,6 @@ class ZoneTenancyServiceProvider extends ServiceProvider
                             $staff->reseller_id
                         )
                         ->where(
-                            'service_type',
-                            'mac'
-                        )
-                        ->where(
                             'enabled',
                             true
                         )
@@ -162,13 +181,75 @@ class ZoneTenancyServiceProvider extends ServiceProvider
                 if (!$valid) {
                     throw ValidationException::withMessages([
                         'zone_id' =>
-                            'Selected operator MAC zone is invalid.',
+                            'Selected operator Network Zone is invalid.',
                     ]);
                 }
 
                 $staff->zone_id =
                     (int)
                     $zoneId;
+            }
+        );
+
+        /*
+         * OPERATOR_ZONE_UPDATE_GUARD_V1
+         *
+         * Every normal reseller operator must stay
+         * inside one enabled MAC or Hotspot zone
+         * owned by the same reseller.
+         */
+        User::updating(
+            function (
+                User $staff
+            ): void {
+                if (
+                    !$staff->reseller_id
+                    || $staff->role
+                        !== 'operator'
+                    || $staff->staff_role
+                        === 'manager'
+                ) {
+                    return;
+                }
+
+                $zoneId =
+                    (int) (
+                        $staff->zone_id
+                        ?? 0
+                    );
+
+                $valid =
+                    $zoneId
+                    && DB::table(
+                        'network_zones'
+                    )
+                        ->where(
+                            'id',
+                            $zoneId
+                        )
+                        ->where(
+                            'reseller_id',
+                            $staff->reseller_id
+                        )
+                        ->where(
+                            'enabled',
+                            true
+                        )
+                        ->whereIn(
+                            'service_type',
+                            [
+                                'mac',
+                                'hotspot',
+                            ]
+                        )
+                        ->exists();
+
+                if (!$valid) {
+                    throw ValidationException::withMessages([
+                        'zone_id' =>
+                            'Selected operator Network Zone is invalid.',
+                    ]);
+                }
             }
         );
 

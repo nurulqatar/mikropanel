@@ -357,10 +357,6 @@ class NetworkZoneController extends Controller
                     $owner->reseller_id
                 )
                 ->where(
-                    'service_type',
-                    'mac'
-                )
-                ->where(
                     'enabled',
                     true
                 )
