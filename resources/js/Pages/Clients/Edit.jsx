@@ -36,6 +36,30 @@ export default function Edit({
             client.gender ?? '',
         document_expiry_date:
             client.document_expiry_date ?? '',
+        qatar_id_number:
+            client.qatar_id_number ?? '',
+        qatar_id_expiry_date:
+            client.qatar_id_expiry_date ?? '',
+        occupation:
+            client.occupation ?? '',
+        passport_number:
+            client.passport_number ?? '',
+        passport_expiry_date:
+            client.passport_expiry_date ?? '',
+        document_serial_number:
+            client.document_serial_number ?? '',
+        residency_type:
+            client.residency_type ?? '',
+        employer:
+            client.employer ?? '',
+        place_of_birth:
+            client.place_of_birth ?? '',
+        passport_issue_date:
+            client.passport_issue_date ?? '',
+        issuing_country:
+            client.issuing_country ?? '',
+        issuing_authority:
+            client.issuing_authority ?? '',
 
     });
 

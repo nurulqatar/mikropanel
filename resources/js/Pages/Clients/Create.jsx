@@ -29,6 +29,18 @@ export default function Create({
         date_of_birth: '',
         gender: '',
         document_expiry_date: '',
+        qatar_id_number: '',
+        qatar_id_expiry_date: '',
+        occupation: '',
+        passport_number: '',
+        passport_expiry_date: '',
+        document_serial_number: '',
+        residency_type: '',
+        employer: '',
+        place_of_birth: '',
+        passport_issue_date: '',
+        issuing_country: '',
+        issuing_authority: '',
 
 
         connection_payment_status:

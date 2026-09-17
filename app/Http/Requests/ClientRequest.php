@@ -67,6 +67,79 @@ class ClientRequest extends FormRequest
              * Edit page compatibility.
              * Create page থেকে এগুলো পাঠাতে হবে না।
              */
+            /*
+             * Qatar ID / Passport information.
+             * Every document field is optional.
+             */
+            'qatar_id_number' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
+            'qatar_id_expiry_date' => [
+                'nullable',
+                'date',
+            ],
+
+            'occupation' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'passport_number' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
+            'passport_expiry_date' => [
+                'nullable',
+                'date',
+            ],
+
+            'document_serial_number' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
+            'residency_type' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'employer' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'place_of_birth' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'passport_issue_date' => [
+                'nullable',
+                'date',
+            ],
+
+            'issuing_country' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'issuing_authority' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
             'identity_type' => [
                 'nullable',
                 'string',
@@ -103,11 +176,7 @@ class ClientRequest extends FormRequest
             'gender' => [
                 'nullable',
                 'string',
-                Rule::in([
-                    'M',
-                    'F',
-                    'X',
-                ]),
+                'in:M,F,X,male,female,other',
             ],
 
             'document_expiry_date' => [
