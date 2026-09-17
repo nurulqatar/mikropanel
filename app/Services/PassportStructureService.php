@@ -150,26 +150,16 @@ class PassportStructureService
          * Prefer an already-good printed nationality
          * over the three-letter MRZ code.
          */
-        if (
-            empty(
-                $fields[
-                    'nationality'
-                ]
-            )
-            && $nationality !== null
-        ) {
+        /*
+         * Validated MRZ always wins over generic OCR
+         * for nationality and issuing country.
+         */
+        if ($nationality !== null) {
             $fields['nationality'] =
                 $nationality;
         }
 
-        if (
-            empty(
-                $fields[
-                    'issuing_country'
-                ]
-            )
-            && $issuer !== null
-        ) {
+        if ($issuer !== null) {
             $fields['issuing_country'] =
                 $issuer;
         }

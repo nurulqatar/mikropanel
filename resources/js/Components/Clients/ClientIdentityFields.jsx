@@ -331,10 +331,22 @@ export default function ClientIdentityFields({
                          * entered client name.
                          */
                         if (
+                            key === 'phone'
+                        ) {
+                            /*
+                             * Passport / ID scanning must never
+                             * overwrite the customer's phone.
+                             */
+                            return;
+                        }
+
+                        if (
                             key === 'name'
+                            && meta?.type
+                                !== 'ordinary_passport'
                             && String(
                                 merged.name
-                                ?? ''
+                                ?? '',
                             ).trim() !== ''
                         ) {
                             return;

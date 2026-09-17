@@ -127,6 +127,88 @@ class ClientIdentityScanController extends Controller
         }
 
         /*
+         * PASSORT_FIELD_WHITELIST_V1
+         *
+         * A passport scan may only populate fields
+         * that actually belong to a passport/client
+         * identity record.
+         *
+         * Phone, MAC, address, package and network
+         * information must NEVER come from passport
+         * OCR.
+         */
+        if (
+            (
+                $result['document']['type']
+                ?? null
+            )
+            === 'ordinary_passport'
+        ) {
+            $allowedPassportFields = [
+                'identity_type',
+                'identity_number',
+                'name',
+                'nationality',
+                'date_of_birth',
+                'gender',
+                'document_expiry_date',
+                'passport_number',
+                'passport_issue_date',
+                'passport_expiry_date',
+                'place_of_birth',
+                'issuing_country',
+                'issuing_authority',
+            ];
+
+            $result['fields'] =
+                array_intersect_key(
+                    $result['fields']
+                    ?? [],
+                    array_flip(
+                        $allowedPassportFields
+                    )
+                );
+
+            /*
+             * Keep generic identity fields synchronized
+             * with the structured passport fields.
+             */
+            if (
+                !empty(
+                    $result['fields'][
+                        'passport_number'
+                    ]
+                )
+            ) {
+                $result['fields'][
+                    'identity_type'
+                ] = 'passport';
+
+                $result['fields'][
+                    'identity_number'
+                ] =
+                    $result['fields'][
+                        'passport_number'
+                    ];
+            }
+
+            if (
+                !empty(
+                    $result['fields'][
+                        'passport_expiry_date'
+                    ]
+                )
+            ) {
+                $result['fields'][
+                    'document_expiry_date'
+                ] =
+                    $result['fields'][
+                        'passport_expiry_date'
+                    ];
+            }
+        }
+
+        /*
          * OCR uses the original upload. Only after
          * reading it do we create the small permanent
          * candidate image.
