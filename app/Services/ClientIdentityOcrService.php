@@ -62,7 +62,7 @@ class ClientIdentityOcrService
                     'pdftoppm',
                     '-png',
                     '-r',
-                    '220',
+                    '300',
                     $input,
                     $outputBase,
                 ], 45);
@@ -182,6 +182,11 @@ class ClientIdentityOcrService
                 $text
             );
 
+        $text =
+            $this->prependValidatedPassportMrz(
+                $text
+            );
+
         $fields = [
             'identity_type' =>
                 null,
@@ -289,6 +294,23 @@ class ClientIdentityOcrService
 
             $line2 =
                 $mrzLines[$i + 1];
+
+            /* VALIDATED_TD3_PAIR_V2 */
+            $validatedPair =
+                $this->findBestTd3Mrz(
+                    $line1
+                    . "\n"
+                    . $line2
+                );
+
+            if ($validatedPair === null) {
+                continue;
+            }
+
+            [
+                $line1,
+                $line2,
+            ] = $validatedPair;
 
             if (
                 !str_starts_with(
@@ -939,6 +961,12 @@ class ClientIdentityOcrService
                 ];
         }
 
+        $fields =
+            $this->enhancePrintedPassportFields(
+                $fields,
+                $text
+            );
+
         return array_map(
             fn ($value) =>
                 is_string($value)
@@ -971,21 +999,1450 @@ class ClientIdentityOcrService
                 $languages
             )
         ) {
-            $language =
-                'eng+ara';
+            $language = 'eng+ara';
         }
 
-        return $this->run([
+        $texts = [];
+
+        /*
+         * Pass 1:
+         * Original page. Keeps existing Qatar ID
+         * and general document OCR behaviour.
+         */
+        $texts[] =
+            $this->tesseractText(
+                $image,
+                $language,
+                6
+            );
+
+        /*
+         * Passport photos normally need stronger
+         * preprocessing than a flat document scan.
+         */
+        $variants =
+            $this->prepareOcrVariants(
+                $image
+            );
+
+        if (
+            isset(
+                $variants['enhanced']
+            )
+        ) {
+            /*
+             * Structured passport / ID page.
+             */
+            $texts[] =
+                $this->tesseractText(
+                    $variants[
+                        'enhanced'
+                    ],
+                    $language,
+                    6
+                );
+
+            /*
+             * Sparse printed fields. Useful when
+             * labels and values are far apart.
+             */
+            $texts[] =
+                $this->tesseractText(
+                    $variants[
+                        'enhanced'
+                    ],
+                    $language,
+                    11
+                );
+        }
+
+        /*
+         * Dedicated OCR of the lower machine
+         * readable zone. English only because ICAO
+         * MRZ uses A-Z, 0-9 and "<".
+         */
+        foreach (
+            [
+                'mrz_gray',
+                'mrz_bw',
+            ]
+            as $key
+        ) {
+            if (
+                !isset(
+                    $variants[$key]
+                )
+            ) {
+                continue;
+            }
+
+            $texts[] =
+                $this->tesseractText(
+                    $variants[$key],
+                    'eng',
+                    6,
+                    'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
+                );
+        }
+
+        $combined =
+            $this->joinOcrTexts(
+                $texts
+            );
+
+        /*
+         * Phone photos occasionally arrive rotated
+         * without usable EXIF orientation.
+         * Only do extra rotation passes when a
+         * trustworthy TD3 MRZ was not found.
+         */
+        if (
+            $this->findBestTd3Mrz(
+                $combined
+            ) === null
+            && isset(
+                $variants[
+                    'enhanced'
+                ]
+            )
+            && is_executable(
+                '/usr/bin/convert'
+            )
+        ) {
+            foreach (
+                [90, 270]
+                as $rotation
+            ) {
+                $rotated =
+                    dirname($image)
+                    . '/rotated-'
+                    . $rotation
+                    . '.png';
+
+                $this->run(
+                    [
+                        '/usr/bin/convert',
+                        $variants[
+                            'enhanced'
+                        ],
+                        '-rotate',
+                        (string) $rotation,
+                        $rotated,
+                    ],
+                    30,
+                    true
+                );
+
+                if (
+                    !File::exists(
+                        $rotated
+                    )
+                ) {
+                    continue;
+                }
+
+                $texts[] =
+                    $this->tesseractText(
+                        $rotated,
+                        $language,
+                        11
+                    );
+            }
+        }
+
+        return $this->joinOcrTexts(
+            $texts
+        );
+    }
+
+    private function tesseractText(
+        string $image,
+        string $language,
+        int $psm,
+        ?string $whitelist = null
+    ): string {
+        $command = [
             'tesseract',
             $image,
             'stdout',
             '-l',
             $language,
+            '--oem',
+            '1',
             '--psm',
-            '6',
+            (string) $psm,
             '-c',
             'preserve_interword_spaces=1',
-        ], 45, true);
+            '-c',
+            'user_defined_dpi=300',
+        ];
+
+        if ($whitelist !== null) {
+            $command[] = '-c';
+            $command[] =
+                'tessedit_char_whitelist='
+                . $whitelist;
+        }
+
+        return $this->run(
+            $command,
+            45,
+            true
+        );
+    }
+
+    private function prepareOcrVariants(
+        string $image
+    ): array {
+        if (
+            !is_executable(
+                '/usr/bin/convert'
+            )
+            || !is_executable(
+                '/usr/bin/identify'
+            )
+        ) {
+            return [];
+        }
+
+        $directory =
+            dirname(
+                $image
+            );
+
+        $enhanced =
+            $directory
+            . '/ocr-enhanced.png';
+
+        $dimensions =
+            $this->imageDimensions(
+                $image
+            );
+
+        $width =
+            $dimensions[0]
+            ?? 0;
+
+        /*
+         * Keep phone photos manageable on the VPS,
+         * while enlarging low resolution uploads.
+         */
+        if ($width > 0) {
+            if ($width < 1800) {
+                $targetWidth = 1800;
+            } elseif ($width > 3200) {
+                $targetWidth = 3200;
+            } else {
+                $targetWidth = $width;
+            }
+        } else {
+            $targetWidth = 2400;
+        }
+
+        $this->run(
+            [
+                '/usr/bin/convert',
+                $image,
+                '-auto-orient',
+                '-strip',
+                '-colorspace',
+                'Gray',
+                '-filter',
+                'Lanczos',
+                '-resize',
+                $targetWidth . 'x',
+                '-auto-level',
+                '-contrast-stretch',
+                '0.5%x0.5%',
+                '-sharpen',
+                '0x1',
+                $enhanced,
+            ],
+            35,
+            true
+        );
+
+        if (
+            !File::exists(
+                $enhanced
+            )
+        ) {
+            return [];
+        }
+
+        $variants = [
+            'enhanced' =>
+                $enhanced,
+        ];
+
+        $enhancedSize =
+            $this->imageDimensions(
+                $enhanced
+            );
+
+        $enhancedWidth =
+            $enhancedSize[0]
+            ?? 0;
+
+        $enhancedHeight =
+            $enhancedSize[1]
+            ?? 0;
+
+        if (
+            $enhancedWidth < 1
+            || $enhancedHeight < 1
+        ) {
+            return $variants;
+        }
+
+        /*
+         * ICAO passport MRZ is at the bottom of the
+         * bio-data page. Crop a generous lower zone
+         * so different passport layouts still work.
+         */
+        $cropHeight =
+            max(
+                220,
+                (int) round(
+                    $enhancedHeight
+                    * 0.42
+                )
+            );
+
+        $cropTop =
+            max(
+                0,
+                $enhancedHeight
+                - $cropHeight
+            );
+
+        $mrzGray =
+            $directory
+            . '/ocr-mrz-gray.png';
+
+        $this->run(
+            [
+                '/usr/bin/convert',
+                $enhanced,
+                '-crop',
+                $enhancedWidth
+                . 'x'
+                . $cropHeight
+                . '+0+'
+                . $cropTop,
+                '+repage',
+                '-resize',
+                '160%',
+                '-sharpen',
+                '0x1',
+                $mrzGray,
+            ],
+            30,
+            true
+        );
+
+        if (
+            File::exists(
+                $mrzGray
+            )
+        ) {
+            $variants[
+                'mrz_gray'
+            ] = $mrzGray;
+
+            $mrzBw =
+                $directory
+                . '/ocr-mrz-bw.png';
+
+            $this->run(
+                [
+                    '/usr/bin/convert',
+                    $mrzGray,
+                    '-threshold',
+                    '60%',
+                    $mrzBw,
+                ],
+                25,
+                true
+            );
+
+            if (
+                File::exists(
+                    $mrzBw
+                )
+            ) {
+                $variants[
+                    'mrz_bw'
+                ] = $mrzBw;
+            }
+        }
+
+        return $variants;
+    }
+
+    private function imageDimensions(
+        string $image
+    ): array {
+        $value =
+            $this->run(
+                [
+                    '/usr/bin/identify',
+                    '-format',
+                    '%w %h',
+                    $image,
+                ],
+                15,
+                true
+            );
+
+        if (
+            !preg_match(
+                '/^(\d+)\s+(\d+)$/',
+                trim($value),
+                $match
+            )
+        ) {
+            return [0, 0];
+        }
+
+        return [
+            (int) $match[1],
+            (int) $match[2],
+        ];
+    }
+
+    private function joinOcrTexts(
+        array $texts
+    ): string {
+        $unique = [];
+
+        foreach ($texts as $text) {
+            $text =
+                trim(
+                    (string) $text
+                );
+
+            if (
+                $text === ''
+                || in_array(
+                    $text,
+                    $unique,
+                    true
+                )
+            ) {
+                continue;
+            }
+
+            $unique[] = $text;
+        }
+
+        return trim(
+            implode(
+                "\n\n",
+                $unique
+            )
+        );
+    }
+
+    /*
+     * Find the most trustworthy ICAO TD3 passport
+     * MRZ pair and repair common camera/OCR
+     * confusions using MRZ check digits.
+     */
+    private function findBestTd3Mrz(
+        string $text
+    ): ?array {
+        $lines = [];
+
+        foreach (
+            preg_split(
+                '/\R/u',
+                strtoupper($text)
+            ) ?: []
+            as $raw
+        ) {
+            $clean =
+                $this->cleanMrz(
+                    $raw
+                );
+
+            $length =
+                strlen(
+                    $clean
+                );
+
+            if (
+                $length >= 35
+                && $length <= 55
+            ) {
+                $lines[] = $clean;
+            }
+        }
+
+        $best = null;
+        $bestScore = -1;
+
+        foreach (
+            $lines
+            as $index => $rawLine1
+        ) {
+            $line1 =
+                $rawLine1;
+
+            /*
+             * A missing "<" immediately after P is
+             * a very common OCR error.
+             */
+            if (
+                str_starts_with(
+                    $line1,
+                    'P'
+                )
+                && !str_starts_with(
+                    $line1,
+                    'P<'
+                )
+            ) {
+                $line1 =
+                    'P<'
+                    . substr(
+                        $line1,
+                        1
+                    );
+            }
+
+            if (
+                !str_starts_with(
+                    $line1,
+                    'P<'
+                )
+            ) {
+                continue;
+            }
+
+            if (
+                strlen($line1)
+                < 40
+            ) {
+                continue;
+            }
+
+            $line1 =
+                substr(
+                    str_pad(
+                        $line1,
+                        44,
+                        '<'
+                    ),
+                    0,
+                    44
+                );
+
+            /*
+             * Fix numeric OCR inside the issuing
+             * country code.
+             */
+            for (
+                $position = 2;
+                $position <= 4;
+                $position++
+            ) {
+                $line1[$position] =
+                    $this->mrzAlphaChar(
+                        $line1[
+                            $position
+                        ]
+                    );
+            }
+
+            $max =
+                min(
+                    count($lines) - 1,
+                    $index + 3
+                );
+
+            for (
+                $next =
+                    $index + 1;
+                $next <= $max;
+                $next++
+            ) {
+                $line2 =
+                    $lines[$next];
+
+                if (
+                    strlen($line2)
+                    < 40
+                ) {
+                    continue;
+                }
+
+                $line2 =
+                    substr(
+                        str_pad(
+                            $line2,
+                            44,
+                            '<'
+                        ),
+                        0,
+                        44
+                    );
+
+                /*
+                 * Nationality must be alphabetic.
+                 */
+                foreach (
+                    [10, 11, 12]
+                    as $position
+                ) {
+                    $line2[$position] =
+                        $this->mrzAlphaChar(
+                            $line2[
+                                $position
+                            ]
+                        );
+                }
+
+                /*
+                 * These positions are strictly
+                 * numeric in a TD3 passport MRZ.
+                 */
+                foreach (
+                    [
+                        9,
+                        13, 14, 15,
+                        16, 17, 18,
+                        19,
+                        21, 22, 23,
+                        24, 25, 26,
+                        27,
+                        43,
+                    ]
+                    as $position
+                ) {
+                    $line2[$position] =
+                        $this->mrzNumericChar(
+                            $line2[
+                                $position
+                            ]
+                        );
+                }
+
+                $line2[20] =
+                    strtoupper(
+                        $line2[20]
+                    );
+
+                if (
+                    !in_array(
+                        $line2[20],
+                        [
+                            'M',
+                            'F',
+                            'X',
+                            '<',
+                        ],
+                        true
+                    )
+                ) {
+                    $line2[20] = '<';
+                }
+
+                $passport =
+                    substr(
+                        $line2,
+                        0,
+                        9
+                    );
+
+                $passport =
+                    $this
+                        ->correctMrzPassportNumber(
+                            $passport,
+                            $line2[9]
+                        );
+
+                for (
+                    $p = 0;
+                    $p < 9;
+                    $p++
+                ) {
+                    $line2[$p] =
+                        $passport[$p]
+                        ?? '<';
+                }
+
+                $score = 0;
+
+                if (
+                    $this->mrzCheckValid(
+                        substr(
+                            $line2,
+                            0,
+                            9
+                        ),
+                        $line2[9]
+                    )
+                ) {
+                    $score++;
+                }
+
+                if (
+                    $this->mrzCheckValid(
+                        substr(
+                            $line2,
+                            13,
+                            6
+                        ),
+                        $line2[19]
+                    )
+                ) {
+                    $score++;
+                }
+
+                if (
+                    $this->mrzCheckValid(
+                        substr(
+                            $line2,
+                            21,
+                            6
+                        ),
+                        $line2[27]
+                    )
+                ) {
+                    $score++;
+                }
+
+                $composite =
+                    substr(
+                        $line2,
+                        0,
+                        10
+                    )
+                    . substr(
+                        $line2,
+                        13,
+                        7
+                    )
+                    . substr(
+                        $line2,
+                        21,
+                        22
+                    );
+
+                if (
+                    $this->mrzCheckValid(
+                        $composite,
+                        $line2[43]
+                    )
+                ) {
+                    $score++;
+                }
+
+                /*
+                 * DOB + expiry both validating is
+                 * enough to regard the alignment as
+                 * trustworthy. Passport number and
+                 * composite checks improve ranking.
+                 */
+                if (
+                    $score >= 2
+                    && $score > $bestScore
+                ) {
+                    $bestScore =
+                        $score;
+
+                    $best = [
+                        $line1,
+                        $line2,
+                    ];
+                }
+            }
+        }
+
+        return $best;
+    }
+
+    private function prependValidatedPassportMrz(
+        string $text
+    ): string {
+        $mrz =
+            $this->findBestTd3Mrz(
+                $text
+            );
+
+        if ($mrz === null) {
+            return $text;
+        }
+
+        return $mrz[0]
+            . "\n"
+            . $mrz[1]
+            . "\n\n"
+            . $text;
+    }
+
+    private function mrzNumericChar(
+        string $character
+    ): string {
+        $character =
+            strtoupper(
+                $character
+            );
+
+        return match ($character) {
+            'O', 'Q', 'D' => '0',
+            'I', 'L' => '1',
+            'Z' => '2',
+            'S' => '5',
+            'G' => '6',
+            'T' => '7',
+            'B' => '8',
+            default => $character,
+        };
+    }
+
+    private function mrzAlphaChar(
+        string $character
+    ): string {
+        $character =
+            strtoupper(
+                $character
+            );
+
+        return match ($character) {
+            '0' => 'O',
+            '1' => 'I',
+            '2' => 'Z',
+            '5' => 'S',
+            '6' => 'G',
+            '8' => 'B',
+            default => $character,
+        };
+    }
+
+    private function mrzCheckDigit(
+        string $value
+    ): int {
+        $weights = [
+            7,
+            3,
+            1,
+        ];
+
+        $total = 0;
+
+        foreach (
+            str_split(
+                strtoupper($value)
+            )
+            as $index => $character
+        ) {
+            if (
+                ctype_digit(
+                    $character
+                )
+            ) {
+                $number =
+                    (int) $character;
+            } elseif (
+                $character >= 'A'
+                && $character <= 'Z'
+            ) {
+                $number =
+                    ord($character)
+                    - ord('A')
+                    + 10;
+            } else {
+                $number = 0;
+            }
+
+            $total +=
+                $number
+                * $weights[
+                    $index % 3
+                ];
+        }
+
+        return $total % 10;
+    }
+
+    private function mrzCheckValid(
+        string $value,
+        string $check
+    ): bool {
+        $check =
+            $this->mrzNumericChar(
+                $check
+            );
+
+        if (
+            !ctype_digit(
+                $check
+            )
+        ) {
+            return false;
+        }
+
+        return $this->mrzCheckDigit(
+            $value
+        ) === (int) $check;
+    }
+
+    private function correctMrzPassportNumber(
+        string $value,
+        string $check
+    ): string {
+        if (
+            $this->mrzCheckValid(
+                $value,
+                $check
+            )
+        ) {
+            return $value;
+        }
+
+        $alternatives = [
+            'O' => ['O', '0'],
+            '0' => ['0', 'O'],
+            'I' => ['I', '1'],
+            'L' => ['L', '1'],
+            '1' => ['1', 'I', 'L'],
+            'B' => ['B', '8'],
+            '8' => ['8', 'B'],
+            'S' => ['S', '5'],
+            '5' => ['5', 'S'],
+            'Z' => ['Z', '2'],
+            '2' => ['2', 'Z'],
+            'G' => ['G', '6'],
+            '6' => ['6', 'G'],
+        ];
+
+        $candidates = [''];
+
+        foreach (
+            str_split(
+                $value
+            )
+            as $character
+        ) {
+            $options =
+                $alternatives[
+                    $character
+                ]
+                ?? [$character];
+
+            $next = [];
+
+            foreach (
+                $candidates
+                as $candidate
+            ) {
+                foreach (
+                    $options
+                    as $option
+                ) {
+                    $next[] =
+                        $candidate
+                        . $option;
+
+                    if (
+                        count($next)
+                        >= 1024
+                    ) {
+                        break 2;
+                    }
+                }
+            }
+
+            $candidates = $next;
+        }
+
+        foreach (
+            $candidates
+            as $candidate
+        ) {
+            if (
+                strlen($candidate) === 9
+                && $this->mrzCheckValid(
+                    $candidate,
+                    $check
+                )
+            ) {
+                return $candidate;
+            }
+        }
+
+        return $value;
+    }
+
+    private function enhancePrintedPassportFields(
+        array $fields,
+        string $text
+    ): array {
+        $looksLikePassport =
+            (
+                $fields[
+                    'identity_type'
+                ] ?? null
+            ) === 'passport'
+            || preg_match(
+                '/\bpassport\b/iu',
+                $text
+            )
+            || $this->findBestTd3Mrz(
+                $text
+            ) !== null;
+
+        /*
+         * Never let passport fallback logic alter a
+         * Qatar ID-only scan.
+         */
+        if (!$looksLikePassport) {
+            return $fields;
+        }
+
+        $fields[
+            'identity_type'
+        ] = 'passport';
+
+        if (
+            empty(
+                $fields[
+                    'passport_number'
+                ]
+            )
+        ) {
+            $number =
+                $this->lineValue(
+                    $text,
+                    [
+                        'Passport Number',
+                        'Passport No',
+                        'Passport No.',
+                        'Passport #',
+                        'Document Number',
+                        'Document No',
+                        'Document No.',
+                    ]
+                );
+
+            if ($number !== null) {
+                $number =
+                    strtoupper(
+                        preg_replace(
+                            '/[^A-Z0-9]/i',
+                            '',
+                            $number
+                        )
+                        ?? ''
+                    );
+
+                if (
+                    strlen($number) >= 5
+                    && strlen($number) <= 15
+                ) {
+                    $fields[
+                        'passport_number'
+                    ] = $number;
+                }
+            }
+        }
+
+        if (
+            empty(
+                $fields[
+                    'identity_number'
+                ]
+            )
+            && !empty(
+                $fields[
+                    'passport_number'
+                ]
+            )
+        ) {
+            $fields[
+                'identity_number'
+            ] =
+                $fields[
+                    'passport_number'
+                ];
+        }
+
+        if (
+            empty(
+                $fields[
+                    'name'
+                ]
+            )
+        ) {
+            $surname =
+                $this->lineValue(
+                    $text,
+                    [
+                        'Surname',
+                        'Family Name',
+                        'Last Name',
+                    ]
+                );
+
+            $given =
+                $this->lineValue(
+                    $text,
+                    [
+                        'Given Names',
+                        'Given Name',
+                        'First Name',
+                    ]
+                );
+
+            $combined =
+                trim(
+                    ($surname ?? '')
+                    . ' '
+                    . ($given ?? '')
+                );
+
+            if ($combined === '') {
+                $combined =
+                    $this->lineValue(
+                        $text,
+                        [
+                            'Full Name',
+                            'Name',
+                        ]
+                    ) ?? '';
+            }
+
+            $fields[
+                'name'
+            ] =
+                $this->cleanTextValue(
+                    $combined
+                );
+        }
+
+        if (
+            empty(
+                $fields[
+                    'nationality'
+                ]
+            )
+        ) {
+            $fields[
+                'nationality'
+            ] =
+                $this->cleanTextValue(
+                    $this->lineValue(
+                        $text,
+                        [
+                            'Nationality',
+                            'Citizenship',
+                        ]
+                    )
+                );
+        }
+
+        if (
+            empty(
+                $fields[
+                    'date_of_birth'
+                ]
+            )
+        ) {
+            $fields[
+                'date_of_birth'
+            ] =
+                $this->flexiblePassportDate(
+                    $this->lineValue(
+                        $text,
+                        [
+                            'Date of Birth',
+                            'Birth Date',
+                            'DOB',
+                        ]
+                    )
+                );
+        }
+
+        if (
+            empty(
+                $fields[
+                    'passport_expiry_date'
+                ]
+            )
+        ) {
+            $fields[
+                'passport_expiry_date'
+            ] =
+                $this->flexiblePassportDate(
+                    $this->lineValue(
+                        $text,
+                        [
+                            'Date of Expiry',
+                            'Date of Expiration',
+                            'Expiry Date',
+                            'Expiration Date',
+                            'Valid Until',
+                            'Valid To',
+                        ]
+                    )
+                );
+        }
+
+        if (
+            empty(
+                $fields[
+                    'passport_issue_date'
+                ]
+            )
+        ) {
+            $fields[
+                'passport_issue_date'
+            ] =
+                $this->flexiblePassportDate(
+                    $this->lineValue(
+                        $text,
+                        [
+                            'Date of Issue',
+                            'Issue Date',
+                            'Issued On',
+                            'Passport Issue',
+                        ]
+                    )
+                );
+        }
+
+        if (
+            empty(
+                $fields[
+                    'place_of_birth'
+                ]
+            )
+        ) {
+            $fields[
+                'place_of_birth'
+            ] =
+                $this->cleanTextValue(
+                    $this->lineValue(
+                        $text,
+                        [
+                            'Place of Birth',
+                            'Birth Place',
+                        ]
+                    )
+                );
+        }
+
+        if (
+            empty(
+                $fields[
+                    'issuing_country'
+                ]
+            )
+        ) {
+            $fields[
+                'issuing_country'
+            ] =
+                $this->cleanTextValue(
+                    $this->lineValue(
+                        $text,
+                        [
+                            'Issuing Country',
+                            'Country of Issue',
+                            'Country Code',
+                        ]
+                    )
+                );
+        }
+
+        if (
+            empty(
+                $fields[
+                    'issuing_authority'
+                ]
+            )
+        ) {
+            $fields[
+                'issuing_authority'
+            ] =
+                $this->cleanTextValue(
+                    $this->lineValue(
+                        $text,
+                        [
+                            'Issuing Authority',
+                            'Passport Authority',
+                            'Authority',
+                        ]
+                    )
+                );
+        }
+
+        if (
+            empty(
+                $fields[
+                    'gender'
+                ]
+            )
+        ) {
+            $sex =
+                strtoupper(
+                    trim(
+                        $this->lineValue(
+                            $text,
+                            [
+                                'Sex',
+                                'Gender',
+                            ]
+                        )
+                        ?? ''
+                    )
+                );
+
+            if (
+                str_starts_with(
+                    $sex,
+                    'M'
+                )
+            ) {
+                $fields[
+                    'gender'
+                ] = 'M';
+            } elseif (
+                str_starts_with(
+                    $sex,
+                    'F'
+                )
+            ) {
+                $fields[
+                    'gender'
+                ] = 'F';
+            } elseif (
+                str_starts_with(
+                    $sex,
+                    'X'
+                )
+            ) {
+                $fields[
+                    'gender'
+                ] = 'X';
+            }
+        }
+
+        if (
+            empty(
+                $fields[
+                    'document_expiry_date'
+                ]
+            )
+            && !empty(
+                $fields[
+                    'passport_expiry_date'
+                ]
+            )
+        ) {
+            $fields[
+                'document_expiry_date'
+            ] =
+                $fields[
+                    'passport_expiry_date'
+                ];
+        }
+
+        return $fields;
+    }
+
+    private function flexiblePassportDate(
+        ?string $value
+    ): ?string {
+        $normal =
+            $this->printedDate(
+                $value
+            );
+
+        if ($normal !== null) {
+            return $normal;
+        }
+
+        if (!$value) {
+            return null;
+        }
+
+        $months = [
+            'JAN' => 1,
+            'FEB' => 2,
+            'MAR' => 3,
+            'APR' => 4,
+            'MAY' => 5,
+            'JUN' => 6,
+            'JUL' => 7,
+            'AUG' => 8,
+            'SEP' => 9,
+            'SEPT' => 9,
+            'OCT' => 10,
+            'NOV' => 11,
+            'DEC' => 12,
+        ];
+
+        if (
+            preg_match(
+                '/(\d{1,2})\s+([A-Z]{3,9})\s+(\d{4})/i',
+                $value,
+                $match
+            )
+        ) {
+            $monthKey =
+                strtoupper(
+                    substr(
+                        $match[2],
+                        0,
+                        4
+                    )
+                );
+
+            if (
+                !isset(
+                    $months[
+                        $monthKey
+                    ]
+                )
+            ) {
+                $monthKey =
+                    strtoupper(
+                        substr(
+                            $match[2],
+                            0,
+                            3
+                        )
+                    );
+            }
+
+            if (
+                isset(
+                    $months[
+                        $monthKey
+                    ]
+                )
+            ) {
+                try {
+                    return Carbon::create(
+                        (int) $match[3],
+                        $months[
+                            $monthKey
+                        ],
+                        (int) $match[1],
+                        0,
+                        0,
+                        0,
+                        'Asia/Qatar'
+                    )->toDateString();
+                } catch (\Throwable) {
+                    return null;
+                }
+            }
+        }
+
+        return null;
     }
 
     private function readBarcode(
