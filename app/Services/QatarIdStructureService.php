@@ -254,7 +254,746 @@ class QatarIdStructureService
             }
         }
 
+        return $this->normalizeStructuredFields(
+            $fields,
+            $text
+        );
+    }
+
+    private function normalizeStructuredFields(
+        array $fields,
+        string $text
+    ): array {
+        /*
+         * English nationality has priority.
+         */
+        $nationality =
+            $this->englishLabelValue(
+                $text,
+                [
+                    'Nationality',
+                ],
+                3
+            );
+
+        if ($nationality !== null) {
+            $fields[
+                'nationality'
+            ] =
+                strtoupper(
+                    $nationality
+                );
+        } elseif (
+            !empty(
+                $fields[
+                    'nationality'
+                ]
+            )
+            && preg_match(
+                '/\p{Arabic}/u',
+                (string) $fields[
+                    'nationality'
+                ]
+            )
+        ) {
+            $fields[
+                'nationality'
+            ] = null;
+        }
+
+        /*
+         * Qatar ID front:
+         * Prefer readable Arabic occupation over
+         * damaged Latin OCR such as "dadl wv".
+         */
+        $arabicOccupation =
+            $this->arabicValueAfterLabel(
+                $text,
+                [
+                    'المهنة',
+                ]
+            );
+
+        if (
+            $arabicOccupation
+            !== null
+        ) {
+            $fields[
+                'occupation'
+            ] =
+                $arabicOccupation;
+        } elseif (
+            !empty(
+                $fields[
+                    'occupation'
+                ]
+            )
+            && !$this->validDocumentValue(
+                (string) $fields[
+                    'occupation'
+                ],
+                4
+            )
+        ) {
+            $fields[
+                'occupation'
+            ] = null;
+        }
+
+        /*
+         * Back-side residency type.
+         */
+        $arabicResidency =
+            $this->arabicValueAfterLabel(
+                $text,
+                [
+                    'نوع الإقامة',
+                    'نوع الرخصة',
+                ]
+            );
+
+        $englishResidency =
+            $this->englishLabelValue(
+                $text,
+                [
+                    'Residency Type',
+                    'Residence Type',
+                    'Permit Type',
+                    'Permit Class',
+                ],
+                4
+            );
+
+        if (
+            $arabicResidency
+            !== null
+        ) {
+            $fields[
+                'residency_type'
+            ] =
+                $this->normalizeResidencyType(
+                    $arabicResidency
+                );
+        } elseif (
+            $englishResidency
+            !== null
+        ) {
+            $fields[
+                'residency_type'
+            ] =
+                $this->normalizeResidencyType(
+                    $englishResidency
+                );
+        } elseif (
+            !empty(
+                $fields[
+                    'residency_type'
+                ]
+            )
+            && !$this->validDocumentValue(
+                (string) $fields[
+                    'residency_type'
+                ],
+                4
+            )
+        ) {
+            $fields[
+                'residency_type'
+            ] = null;
+        }
+
+        /*
+         * Back-side employer / sponsor.
+         */
+        $arabicEmployer =
+            $this->arabicValueAfterLabel(
+                $text,
+                [
+                    'المستقدم',
+                    'الكفيل',
+                    'صاحب العمل',
+                ]
+            );
+
+        $englishEmployer =
+            $this->englishLabelValue(
+                $text,
+                [
+                    'Employer / Sponsor',
+                    'Employer',
+                    'Sponsor',
+                ],
+                4
+            );
+
+        if (
+            $arabicEmployer
+            !== null
+        ) {
+            $fields[
+                'employer'
+            ] =
+                $arabicEmployer;
+        } elseif (
+            $englishEmployer
+            !== null
+        ) {
+            $fields[
+                'employer'
+            ] =
+                $englishEmployer;
+        } elseif (
+            !empty(
+                $fields[
+                    'employer'
+                ]
+            )
+            && !$this->validDocumentValue(
+                (string) $fields[
+                    'employer'
+                ],
+                4
+            )
+        ) {
+            $fields[
+                'employer'
+            ] = null;
+        }
+
+        /*
+         * Never infer Qatar-ID gender from name,
+         * nationality or QID number.
+         */
+        if (
+            !in_array(
+                $fields[
+                    'gender'
+                ]
+                ?? null,
+                [
+                    'M',
+                    'F',
+                    'X',
+                ],
+                true
+            )
+        ) {
+            $fields[
+                'gender'
+            ] = null;
+        }
+
         return $fields;
+    }
+
+    private function englishLabelValue(
+        string $text,
+        array $labels,
+        int $minimumLetters = 4
+    ): ?string {
+        $lines =
+            preg_split(
+                '/\R/u',
+                $this->stripBidi(
+                    $text
+                )
+            ) ?: [];
+
+        /*
+         * Pass 1:
+         * Prefer value on the SAME line.
+         *
+         * Real OCR example:
+         * Nationality BANGLADESH
+         */
+        foreach (
+            $lines
+            as $line
+        ) {
+            foreach (
+                $labels
+                as $label
+            ) {
+                $position =
+                    stripos(
+                        $line,
+                        $label
+                    );
+
+                if (
+                    $position
+                    === false
+                ) {
+                    continue;
+                }
+
+                $value =
+                    substr(
+                        $line,
+                        $position
+                        + strlen(
+                            $label
+                        )
+                    );
+
+                $value =
+                    preg_split(
+                        '/\p{Arabic}/u',
+                        $value,
+                        2
+                    )[0]
+                    ?? '';
+
+                $value =
+                    $this->cleanEnglishValue(
+                        $value
+                    );
+
+                if (
+                    $this->validEnglishValue(
+                        $value,
+                        $minimumLetters
+                    )
+                ) {
+                    return $value;
+                }
+            }
+        }
+
+        /*
+         * Pass 2:
+         * Some OCR puts the value on the next line.
+         */
+        foreach (
+            $lines
+            as $index => $line
+        ) {
+            foreach (
+                $labels
+                as $label
+            ) {
+                if (
+                    stripos(
+                        $line,
+                        $label
+                    ) === false
+                ) {
+                    continue;
+                }
+
+                if (
+                    !isset(
+                        $lines[
+                            $index + 1
+                        ]
+                    )
+                ) {
+                    continue;
+                }
+
+                $value =
+                    $this->cleanEnglishValue(
+                        $lines[
+                            $index + 1
+                        ]
+                    );
+
+                if (
+                    $this->looksLikeFieldLabel(
+                        $value
+                    )
+                ) {
+                    continue;
+                }
+
+                if (
+                    $this->validEnglishValue(
+                        $value,
+                        $minimumLetters
+                    )
+                ) {
+                    return $value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function arabicValueAfterLabel(
+        string $text,
+        array $labels
+    ): ?string {
+        $lines =
+            preg_split(
+                '/\R/u',
+                $this->stripBidi(
+                    $text
+                )
+            ) ?: [];
+
+        foreach (
+            $lines
+            as $line
+        ) {
+            foreach (
+                $labels
+                as $label
+            ) {
+                $position =
+                    mb_stripos(
+                        $line,
+                        $label,
+                        0,
+                        'UTF-8'
+                    );
+
+                if (
+                    $position
+                    === false
+                ) {
+                    continue;
+                }
+
+                $after =
+                    mb_substr(
+                        $line,
+                        $position
+                        + mb_strlen(
+                            $label,
+                            'UTF-8'
+                        ),
+                        null,
+                        'UTF-8'
+                    );
+
+                $after =
+                    preg_replace(
+                        '/^[\s:：.\-]+/u',
+                        '',
+                        $after
+                    )
+                    ?? '';
+
+                if (
+                    preg_match(
+                        '/([\p{Arabic}]'
+                        . '[\p{Arabic}\s\-]{1,80})/u',
+                        $after,
+                        $match
+                    )
+                ) {
+                    $value =
+                        trim(
+                            preg_replace(
+                                '/\s+/u',
+                                ' ',
+                                $match[1]
+                            )
+                            ?? ''
+                        );
+
+                    if (
+                        mb_strlen(
+                            preg_replace(
+                                '/[^\p{Arabic}]/u',
+                                '',
+                                $value
+                            )
+                            ?? '',
+                            'UTF-8'
+                        ) >= 2
+                    ) {
+                        return $value;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function cleanEnglishValue(
+        ?string $value
+    ): ?string {
+        if ($value === null) {
+            return null;
+        }
+
+        $value =
+            $this->stripBidi(
+                $value
+            );
+
+        $value =
+            preg_replace(
+                '/^[\s:：.\-]+/u',
+                '',
+                $value
+            )
+            ?? '';
+
+        $value =
+            preg_replace(
+                '/[^A-Za-z0-9 &\'().\/\-]+/',
+                ' ',
+                $value
+            )
+            ?? '';
+
+        $value =
+            trim(
+                preg_replace(
+                    '/\s+/',
+                    ' ',
+                    $value
+                )
+                ?? ''
+            );
+
+        return $value === ''
+            ? null
+            : $value;
+    }
+
+    private function validEnglishValue(
+        ?string $value,
+        int $minimumLetters = 4
+    ): bool {
+        if ($value === null) {
+            return false;
+        }
+
+        $letters =
+            preg_replace(
+                '/[^A-Za-z]/',
+                '',
+                $value
+            )
+            ?? '';
+
+        if (
+            strlen(
+                $letters
+            ) < $minimumLetters
+        ) {
+            return false;
+        }
+
+        /*
+         * Fully-uppercase document values are
+         * strong OCR candidates.
+         */
+        if (
+            strtoupper(
+                $value
+            ) === $value
+        ) {
+            return true;
+        }
+
+        /*
+         * Otherwise require mostly sensible
+         * Title-Case words. This rejects examples
+         * from the real OCR such as:
+         *
+         * dadl wv
+         * la bily oYglia Hola slo
+         */
+        $words =
+            preg_split(
+                '/\s+/',
+                trim(
+                    $value
+                )
+            ) ?: [];
+
+        $total = 0;
+        $good = 0;
+
+        foreach (
+            $words
+            as $word
+        ) {
+            $word =
+                trim(
+                    $word,
+                    ".,&'()/-"
+                );
+
+            if ($word === '') {
+                continue;
+            }
+
+            $total++;
+
+            if (
+                preg_match(
+                    '/^[A-Z][a-z]+$/',
+                    $word
+                )
+                || preg_match(
+                    '/^[A-Z]{2,}$/',
+                    $word
+                )
+                || in_array(
+                    strtolower(
+                        $word
+                    ),
+                    [
+                        'of',
+                        'the',
+                        'and',
+                        'bin',
+                        'bint',
+                    ],
+                    true
+                )
+            ) {
+                $good++;
+            }
+        }
+
+        return $total > 0
+            && (
+                $good / $total
+            ) >= 0.70;
+    }
+
+    private function validDocumentValue(
+        ?string $value,
+        int $minimumLetters = 3
+    ): bool {
+        if ($value === null) {
+            return false;
+        }
+
+        if (
+            preg_match(
+                '/\p{Arabic}/u',
+                $value
+            )
+        ) {
+            $arabic =
+                preg_replace(
+                    '/[^\p{Arabic}]/u',
+                    '',
+                    $value
+                )
+                ?? '';
+
+            return mb_strlen(
+                $arabic,
+                'UTF-8'
+            ) >= $minimumLetters;
+        }
+
+        return $this->validEnglishValue(
+            $value,
+            $minimumLetters
+        );
+    }
+
+    private function looksLikeFieldLabel(
+        ?string $value
+    ): bool {
+        if ($value === null) {
+            return false;
+        }
+
+        $normalized =
+            strtolower(
+                trim(
+                    $value,
+                    " \t\n\r:.-"
+                )
+            );
+
+        return in_array(
+            $normalized,
+            [
+                'nationality',
+                'occupation',
+                'name',
+                'id no',
+                'id.no',
+                'expiry',
+                'passport number',
+                'passport expiry',
+                'serial no',
+                'serial number',
+                'residency type',
+                'employer',
+                'employer / sponsor',
+                'sponsor',
+            ],
+            true
+        );
+    }
+
+    private function normalizeResidencyType(
+        string $value
+    ): string {
+        $value =
+            trim(
+                preg_replace(
+                    '/\s+/u',
+                    ' ',
+                    $value
+                )
+                ?? $value
+            );
+
+        $compact =
+            preg_replace(
+                '/[\sـ]+/u',
+                '',
+                $value
+            )
+            ?? $value;
+
+        foreach (
+            [
+                'عمل' =>
+                    'WORK',
+
+                'عائلي' =>
+                    'FAMILY',
+
+                'عائلية' =>
+                    'FAMILY',
+
+                'مستثمر' =>
+                    'INVESTOR',
+
+                'طالب' =>
+                    'STUDENT',
+            ]
+            as $arabic => $english
+        ) {
+            if (
+                str_contains(
+                    $compact,
+                    $arabic
+                )
+            ) {
+                return $english;
+            }
+        }
+
+        return $value;
+    }
+
+    private function stripBidi(
+        string $value
+    ): string {
+        return preg_replace(
+            '/[\x{200E}\x{200F}'
+            . '\x{202A}-\x{202E}'
+            . '\x{2066}-\x{2069}]/u',
+            '',
+            $value
+        ) ?? $value;
     }
 
     public function frontMissing(
