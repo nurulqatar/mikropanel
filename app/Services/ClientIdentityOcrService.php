@@ -961,6 +961,18 @@ class ClientIdentityOcrService
                 ];
         }
 
+        /*
+         * MRZ_PRIORITY_V2:
+         * Printed OCR is useful for fields not present
+         * in MRZ, but it must never replace validated
+         * passport core identity data.
+         */
+        $fields =
+            $this->applyValidatedPassportMrz(
+                $fields,
+                $text
+            );
+
         $fields =
             $this->enhancePrintedPassportFields(
                 $fields,
@@ -1976,6 +1988,227 @@ class ClientIdentityOcrService
         return $value;
     }
 
+    private function applyValidatedPassportMrz(
+        array $fields,
+        string $text
+    ): array {
+        $pair =
+            $this->findBestTd3Mrz(
+                $text
+            );
+
+        if ($pair === null) {
+            return $fields;
+        }
+
+        [
+            $line1,
+            $line2,
+        ] = $pair;
+
+        if (
+            strlen($line1) < 44
+            || strlen($line2) < 44
+        ) {
+            return $fields;
+        }
+
+        /*
+         * A validated passport MRZ wins over weak
+         * printed OCR for core passport identity.
+         */
+        $fields[
+            'identity_type'
+        ] = 'passport';
+
+        /*
+         * A normal passport bio page does not contain
+         * a Qatar residency ID. This also prevents an
+         * accidental 11-digit OCR sequence from
+         * changing a passport into a Qatar ID.
+         */
+        $fields[
+            'qatar_id_number'
+        ] = null;
+
+        $fields[
+            'qatar_id_expiry_date'
+        ] = null;
+
+        $passportNumber =
+            str_replace(
+                '<',
+                '',
+                substr(
+                    $line2,
+                    0,
+                    9
+                )
+            );
+
+        if ($passportNumber !== '') {
+            $fields[
+                'passport_number'
+            ] = $passportNumber;
+
+            $fields[
+                'identity_number'
+            ] = $passportNumber;
+        }
+
+        $nationality =
+            str_replace(
+                '<',
+                '',
+                substr(
+                    $line2,
+                    10,
+                    3
+                )
+            );
+
+        if ($nationality !== '') {
+            $fields[
+                'nationality'
+            ] = $nationality;
+        }
+
+        $dob =
+            $this->mrzDate(
+                substr(
+                    $line2,
+                    13,
+                    6
+                ),
+                false
+            );
+
+        if ($dob !== null) {
+            $fields[
+                'date_of_birth'
+            ] = $dob;
+        }
+
+        $sex =
+            substr(
+                $line2,
+                20,
+                1
+            );
+
+        if (
+            in_array(
+                $sex,
+                [
+                    'M',
+                    'F',
+                    'X',
+                ],
+                true
+            )
+        ) {
+            $fields[
+                'gender'
+            ] = $sex;
+        }
+
+        $expiry =
+            $this->mrzDate(
+                substr(
+                    $line2,
+                    21,
+                    6
+                ),
+                true
+            );
+
+        if ($expiry !== null) {
+            $fields[
+                'passport_expiry_date'
+            ] = $expiry;
+
+            $fields[
+                'document_expiry_date'
+            ] = $expiry;
+        }
+
+        $issuingCountry =
+            str_replace(
+                '<',
+                '',
+                substr(
+                    $line1,
+                    2,
+                    3
+                )
+            );
+
+        if ($issuingCountry !== '') {
+            $fields[
+                'issuing_country'
+            ] = $issuingCountry;
+        }
+
+        /*
+         * ICAO TD3:
+         * surname<<given<names
+         */
+        $rawName =
+            substr(
+                $line1,
+                5
+            );
+
+        $parts =
+            explode(
+                '<<',
+                $rawName,
+                2
+            );
+
+        $surname =
+            trim(
+                str_replace(
+                    '<',
+                    ' ',
+                    $parts[0]
+                    ?? ''
+                )
+            );
+
+        $givenNames =
+            trim(
+                str_replace(
+                    '<',
+                    ' ',
+                    $parts[1]
+                    ?? ''
+                )
+            );
+
+        $name =
+            trim(
+                preg_replace(
+                    '/\s+/u',
+                    ' ',
+                    trim(
+                        $surname
+                        . ' '
+                        . $givenNames
+                    )
+                )
+                ?? ''
+            );
+
+        if ($name !== '') {
+            $fields[
+                'name'
+            ] = $name;
+        }
+
+        return $fields;
+    }
+
     private function enhancePrintedPassportFields(
         array $fields,
         string $text
@@ -2480,12 +2713,13 @@ class ClientIdentityOcrService
             ) {
                 if (
                     !preg_match(
-                        '/'
+                        /* LINE_VALUE_BOUNDARY_V2 */
+                        '/(?<![\pL\pN])'
                         . preg_quote(
                             $label,
                             '/'
                         )
-                        . '\s*[:\-]?\s*(.*)$/iu',
+                        . '(?![\pL\pN])\s*[:\-]?\s*(.*)$/iu',
                         $line,
                         $match
                     )
