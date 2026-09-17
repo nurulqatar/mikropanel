@@ -238,6 +238,65 @@ class ClientIdentityImageService
                 0640
             );
 
+            /*
+             * Extract only the portrait from the
+             * compressed document candidate.
+             *
+             * Failure is intentionally non-fatal:
+             * OCR/document storage must still work.
+             */
+            $faceRelative =
+                self::TEMP_DIRECTORY
+                . '/'
+                . $token
+                . '-face.webp';
+
+            $faceOutput =
+                $disk->path(
+                    $faceRelative
+                );
+
+            try {
+                $process =
+                    new Process([
+                        '/usr/bin/python3',
+                        base_path(
+                            'scripts/identity_face_crop.py'
+                        ),
+                        $output,
+                        $faceOutput,
+                    ]);
+
+                $process->setTimeout(
+                    20
+                );
+
+                $process->run();
+
+                if (
+                    !$process->isSuccessful()
+                ) {
+                    $disk->delete(
+                        $faceRelative
+                    );
+                } elseif (
+                    !$disk->exists(
+                        $faceRelative
+                    )
+                    || $disk->size(
+                        $faceRelative
+                    ) < 100
+                ) {
+                    $disk->delete(
+                        $faceRelative
+                    );
+                }
+            } catch (\Throwable) {
+                $disk->delete(
+                    $faceRelative
+                );
+            }
+
             return $token;
         } catch (\Throwable $exception) {
             $disk->delete(
@@ -285,6 +344,26 @@ class ClientIdentityImageService
                 );
             }
         }
+    }
+
+    public function faceExists(
+        string $token
+    ): bool {
+        if (
+            !$this->validToken(
+                $token
+            )
+        ) {
+            return false;
+        }
+
+        return Storage::disk('local')
+            ->exists(
+                self::TEMP_DIRECTORY
+                . '/'
+                . $token
+                . '-face.webp'
+            );
     }
 
     public function finalizeTokens(
@@ -427,6 +506,88 @@ class ClientIdentityImageService
                     'column'
                 ]
             ] = $target;
+
+            /*
+             * Qatar ID front and passport bio-page
+             * are allowed to become the client face
+             * source. Qatar ID back never becomes
+             * a profile photo.
+             */
+            if (
+                in_array(
+                    $key,
+                    [
+                        'qatar_id_front',
+                        'passport',
+                    ],
+                    true
+                )
+            ) {
+                $faceSource =
+                    self::TEMP_DIRECTORY
+                    . '/'
+                    . $token
+                    . '-face.webp';
+
+                $profileTarget =
+                    $directory
+                    . '/profile-face.webp';
+
+                $oldProfile =
+                    $client->profile_image_path;
+
+                if (
+                    is_string(
+                        $oldProfile
+                    )
+                    && $oldProfile !== ''
+                ) {
+                    $this->deleteClientPath(
+                        $client,
+                        $oldProfile
+                    );
+                }
+
+                if (
+                    $disk->exists(
+                        $profileTarget
+                    )
+                ) {
+                    $disk->delete(
+                        $profileTarget
+                    );
+                }
+
+                if (
+                    $disk->exists(
+                        $faceSource
+                    )
+                ) {
+                    if (
+                        !$disk->move(
+                            $faceSource,
+                            $profileTarget
+                        )
+                    ) {
+                        throw new RuntimeException(
+                            'Could not attach client face photo.'
+                        );
+                    }
+
+                    $updates[
+                        'profile_image_path'
+                    ] = $profileTarget;
+                } else {
+                    /*
+                     * Do not keep a stale portrait if a
+                     * newly scanned identity document
+                     * did not produce a valid face.
+                     */
+                    $updates[
+                        'profile_image_path'
+                    ] = null;
+                }
+            }
 
             if (
                 $key === 'passport'

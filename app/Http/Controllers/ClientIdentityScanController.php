@@ -103,6 +103,47 @@ class ClientIdentityScanController extends Controller
                             $imageToken,
                     ]
                 );
+
+
+            $documentType =
+                $result['document']['type']
+                ?? null;
+
+            $documentSide =
+                $result['document']['side']
+                ?? null;
+
+            $mayUseFace =
+                $documentType
+                    === 'ordinary_passport'
+                || (
+                    $documentType
+                        === 'qatar_id'
+                    && in_array(
+                        $documentSide,
+                        [
+                            'front',
+                            'both',
+                        ],
+                        true
+                    )
+                );
+
+            $result['face_preview_url'] =
+                (
+                    $mayUseFace
+                    && $images->faceExists(
+                        $imageToken
+                    )
+                )
+                    ? route(
+                        'clients.identity-face-preview',
+                        [
+                            'token' =>
+                                $imageToken,
+                        ]
+                    )
+                    : null;
         } catch (\Throwable $exception) {
             \Illuminate\Support\Facades\Log::warning(
                 'Identity image staging failed.',
@@ -116,6 +157,9 @@ class ClientIdentityScanController extends Controller
                 null;
 
             $result['image_preview_url'] =
+                null;
+
+            $result['face_preview_url'] =
                 null;
         }
 

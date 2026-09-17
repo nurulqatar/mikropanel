@@ -171,6 +171,7 @@ export default function ClientIdentityFields({
 
     const [imagePreviews, setImagePreviews] =
         useState({
+            face: null,
             qidFront: null,
             qidBack: null,
             passport: null,
@@ -281,7 +282,8 @@ export default function ClientIdentityFields({
                 detected,
                 meta,
                 imageToken = null,
-                previewUrl = null
+                previewUrl = null,
+                facePreviewUrl = null
             ) => {
                 const merged = {
                     ...data,
@@ -461,6 +463,17 @@ export default function ClientIdentityFields({
                             };
 
                             if (
+                                facePreviewUrl
+                                && (
+                                    meta?.side === 'front'
+                                    || meta?.side === 'both'
+                                )
+                            ) {
+                                next.face =
+                                    facePreviewUrl;
+                            }
+
+                            if (
                                 meta?.side === 'front'
                             ) {
                                 next.qidFront =
@@ -495,6 +508,8 @@ export default function ClientIdentityFields({
                         === 'ordinary_passport'
                 ) {
                     setImagePreviews({
+                        face:
+                            facePreviewUrl,
                         qidFront: null,
                         qidBack: null,
                         passport:
@@ -593,6 +608,9 @@ export default function ClientIdentityFields({
                             ?? null,
                         response.data
                             ?.image_preview_url
+                            ?? null,
+                        response.data
+                            ?.face_preview_url
                             ?? null
                     );
 
@@ -1768,6 +1786,55 @@ export default function ClientIdentityFields({
                         >
                             BACK {qidBackDone ? '✓' : 'WAITING'}
                         </span>
+                    </div>
+                )}
+
+                {(imagePreviews.face
+                    || imagePreviews.qidFront
+                    || imagePreviews.passport) && (
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                            <div className="shrink-0">
+                                {imagePreviews.face ? (
+                                    <a
+                                        href={imagePreviews.face}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="block"
+                                    >
+                                        <img
+                                            src={imagePreviews.face}
+                                            alt="Client Face"
+                                            className="h-32 w-32 rounded-full border-4 border-white object-cover shadow-md ring-1 ring-slate-200"
+                                        />
+                                    </a>
+                                ) : (
+                                    <div className="flex h-32 w-32 items-center justify-center rounded-full border-2 border-dashed border-amber-300 bg-amber-50 p-4 text-center text-xs font-semibold text-amber-700">
+                                        Face not detected
+                                    </div>
+                                )}
+                            </div>
+
+                            <div>
+                                <h4 className="text-base font-black text-slate-900">
+                                    Client Face Photo
+                                </h4>
+
+                                {imagePreviews.face ? (
+                                    <p className="mt-1 text-sm text-emerald-600">
+                                        Face extracted from the identity document.
+                                    </p>
+                                ) : (
+                                    <p className="mt-1 text-sm text-amber-600">
+                                        Face could not be extracted. Try a clearer Qatar ID front or passport scan.
+                                    </p>
+                                )}
+
+                                <p className="mt-1 text-xs text-slate-400">
+                                    A small compressed WebP portrait will be saved with the client.
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 )}
 

@@ -65,6 +65,7 @@ class Client extends Model
         'qatar_id_front_image_path',
         'qatar_id_back_image_path',
         'passport_image_path',
+        'profile_image_path',
     ];
 
     protected $casts = [

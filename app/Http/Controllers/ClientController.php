@@ -727,14 +727,20 @@ class ClientController extends Controller
                 'passport'
             );
 
+
+        $profileFaceUrl =
+            $identityImageUrl(
+                $client,
+                'profile_image_path',
+                'face'
+            );
+
         return Inertia::render('Clients/Show', [
             'client' => $client,
 
             'identityImages' => [
                 'profile_url' =>
-                    $qidFrontUrl
-                    ?? $passportUrl
-                    ?? $qidBackUrl,
+                    $profileFaceUrl,
 
                 'qatar_id_front_url' =>
                     $qidFrontUrl,
