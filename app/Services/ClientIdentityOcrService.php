@@ -162,6 +162,14 @@ class ClientIdentityOcrService
             return [
                 'fields' =>
                     $fields,
+
+                /*
+                 * Internal-only OCR text.
+                 * Controller removes this before
+                 * returning JSON to the browser.
+                 */
+                '_raw_text' =>
+                    $text,
             ];
 
         } finally {

@@ -482,24 +482,43 @@ export default function ClientIdentityFields({
                         && meta.side
                         === 'front'
                     ) {
+                        if (
+                            meta.side_complete
+                            === false
+                        ) {
+                            setQidFrontDone(
+                                false
+                            );
+
+                            setScanOk(
+                                false
+                            );
+
+                            setMessage(
+                                `Qatar ID front detected, but some information was not read: ${(meta.missing_fields ?? []).join(', ')}. Reposition or rescan the front side.`
+                            );
+
+                            waitForChangeRef.current =
+                                true;
+
+                            stableCountRef.current =
+                                0;
+
+                            return meta;
+                        }
+
                         setQidFrontDone(
                             true
                         );
 
                         setMessage(
-                            'Qatar ID front scanned. Turn the card over — waiting for the back side.'
+                            'Qatar ID front scanned completely. Turn the card over — waiting for the back side.'
                         );
 
                         setScanOk(
                             true
                         );
 
-                        /*
-                         * Camera must see an actual
-                         * scene change before it is
-                         * allowed to auto-capture
-                         * the second side.
-                         */
                         waitForChangeRef.current =
                             true;
 
@@ -515,6 +534,31 @@ export default function ClientIdentityFields({
                         && meta.side
                         === 'back'
                     ) {
+                        if (
+                            meta.side_complete
+                            === false
+                        ) {
+                            setQidBackDone(
+                                false
+                            );
+
+                            setScanOk(
+                                false
+                            );
+
+                            setMessage(
+                                `Qatar ID back detected, but some information was not read: ${(meta.missing_fields ?? []).join(', ')}. Reposition or rescan the back side.`
+                            );
+
+                            waitForChangeRef.current =
+                                true;
+
+                            stableCountRef.current =
+                                0;
+
+                            return meta;
+                        }
+
                         setQidBackDone(
                             true
                         );
@@ -525,6 +569,48 @@ export default function ClientIdentityFields({
 
                         setScanOk(
                             true
+                        );
+
+                        stopCamera();
+
+                        return meta;
+                    }
+
+                    if (
+                        meta.type
+                        === 'qatar_id'
+                        && meta.side
+                        === 'both'
+                    ) {
+                        if (
+                            meta.side_complete
+                            === false
+                        ) {
+                            setScanOk(
+                                false
+                            );
+
+                            setMessage(
+                                `Qatar ID front/back detected, but some information was not read: ${(meta.missing_fields ?? []).join(', ')}. Please rescan the missing side.`
+                            );
+
+                            return meta;
+                        }
+
+                        setQidFrontDone(
+                            true
+                        );
+
+                        setQidBackDone(
+                            true
+                        );
+
+                        setScanOk(
+                            true
+                        );
+
+                        setMessage(
+                            'Qatar ID front and back scanned completely. Please verify before saving.'
                         );
 
                         stopCamera();

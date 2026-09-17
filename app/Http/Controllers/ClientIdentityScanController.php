@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\ClientIdentityOcrService;
 use App\Services\IdentityDocumentClassifier;
+use App\Services\QatarIdStructureService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -12,6 +13,7 @@ class ClientIdentityScanController extends Controller
     public function __invoke(
         Request $request,
         ClientIdentityOcrService $ocr,
+        QatarIdStructureService $qatarId,
         IdentityDocumentClassifier $classifier
     ): JsonResponse {
         $user =
@@ -47,10 +49,43 @@ class ClientIdentityScanController extends Controller
                 ]
             );
 
-        $result['document'] =
-            $classifier->classify(
-                $result
+        $rawText =
+            (string) (
+                $result[
+                    '_raw_text'
+                ]
+                ?? ''
             );
+
+        $result['fields'] =
+            $qatarId->augment(
+                $result[
+                    'fields'
+                ]
+                ?? [],
+                $rawText
+            );
+
+        $result['document'] =
+            $classifier->classify([
+                'fields' =>
+                    $result[
+                        'fields'
+                    ],
+
+                'raw_text' =>
+                    $rawText,
+            ]);
+
+        /*
+         * Never expose full OCR text containing
+         * identity-document data to the browser.
+         */
+        unset(
+            $result[
+                '_raw_text'
+            ]
+        );
 
         return response()
             ->json(
