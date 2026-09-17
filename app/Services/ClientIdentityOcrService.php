@@ -2386,8 +2386,13 @@ class ClientIdentityOcrService
         }
 
         /*
-         * ICAO TD3:
-         * surname<<given<names
+         * ICAO TD3 name has no check digit.
+         * OCR may therefore turn trailing "<"
+         * filler characters into C/E/B etc.
+         *
+         * Prefer clearly labelled printed
+         * Surname + Given Names when both are
+         * available. Otherwise keep MRZ name.
          */
         $rawName =
             substr(
@@ -2422,7 +2427,7 @@ class ClientIdentityOcrService
                 )
             );
 
-        $name =
+        $mrzName =
             trim(
                 preg_replace(
                     '/\s+/u',
@@ -2436,13 +2441,103 @@ class ClientIdentityOcrService
                 ?? ''
             );
 
-        if ($name !== '') {
+        $printedName =
+            $this->printedPassportFullName(
+                $text
+            );
+
+        $name =
+            $printedName
+            ?? (
+                $mrzName !== ''
+                    ? $mrzName
+                    : null
+            );
+
+        if ($name !== null) {
             $fields[
                 'name'
             ] = $name;
         }
 
         return $fields;
+    }
+
+    private function printedPassportFullName(
+        string $text
+    ): ?string {
+        $surname =
+            $this->cleanTextValue(
+                $this->lineValue(
+                    $text,
+                    [
+                        'Surname',
+                        'Family Name',
+                        'Last Name',
+                    ]
+                )
+            );
+
+        $givenNames =
+            $this->cleanTextValue(
+                $this->lineValue(
+                    $text,
+                    [
+                        'Given Names',
+                        'Given Name',
+                        'First Names',
+                        'First Name',
+                    ]
+                )
+            );
+
+        /*
+         * Require both labelled components before
+         * overriding the MRZ-derived name.
+         */
+        if (
+            $surname === null
+            || $givenNames === null
+        ) {
+            return null;
+        }
+
+        $name =
+            trim(
+                preg_replace(
+                    '/\s+/u',
+                    ' ',
+                    $surname
+                    . ' '
+                    . $givenNames
+                )
+                ?? ''
+            );
+
+        if (
+            mb_strlen($name) < 3
+            || mb_strlen($name) > 120
+        ) {
+            return null;
+        }
+
+        /*
+         * Reject obvious OCR garbage.
+         */
+        if (
+            !preg_match(
+                '/[\pL]{2}/u',
+                $surname
+            )
+            || !preg_match(
+                '/[\pL]{2}/u',
+                $givenNames
+            )
+        ) {
+            return null;
+        }
+
+        return $name;
     }
 
     private function enhancePrintedPassportFields(
