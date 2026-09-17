@@ -10,6 +10,7 @@ import {
 import {
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from 'react';
 
@@ -1303,7 +1304,6 @@ function CreateClientModal({
                         }
                     >
                         <input
-                            autoFocus
                             value={
                                 form.data.name
                             }
@@ -2328,9 +2328,34 @@ function Modal({
     children,
     onClose,
 }) {
+    const scrollRef =
+        useRef(null);
+
+    useEffect(() => {
+        const frame =
+            window.requestAnimationFrame(
+                () => {
+                    if (
+                        scrollRef.current
+                    ) {
+                        scrollRef.current.scrollTop =
+                            0;
+                    }
+                },
+            );
+
+        return () =>
+            window.cancelAnimationFrame(
+                frame,
+            );
+    }, []);
+
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4">
-            <div className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div
+                ref={scrollRef}
+                className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
+            >
                 <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-5 py-4">
                     <h2 className="text-xl font-black text-slate-900">
                         {title}
