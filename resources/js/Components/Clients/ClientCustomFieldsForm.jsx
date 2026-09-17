@@ -180,6 +180,21 @@ export default function ClientCustomFieldsForm({
         );
     };
 
+    /*
+     * CUSTOM_FIELDS_SILENT_EMPTY_GUARD_V1
+     *
+     * No configured fields = render nothing.
+     * A helper-endpoint failure must not clutter
+     * the New Client modal either.
+     */
+    if (
+        loading
+        || loadError
+        || fields.length === 0
+    ) {
+        return null;
+    }
+
     const commonClass =
         'w-full rounded-lg border border-slate-300 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100';
 

@@ -123,6 +123,41 @@ class CheckPanelPermission
     private function permissionRequirementForRoute(
         ?string $routeName
     ): string|array|null {
+
+        /*
+         * CLIENT_HELPER_PERMISSION_MAP_V1
+         *
+         * These helper endpoints are used inside
+         * Add/Edit Client and are not standalone
+         * privileged modules.
+         */
+        if (
+            $routeName
+            === 'clients.identity-scan'
+        ) {
+            return [
+                'clients.create',
+                'clients.edit',
+            ];
+        }
+
+        if (
+            in_array(
+                $routeName,
+                [
+                    'client-custom-fields.data',
+                    'client-custom-fields.list-data',
+                ],
+                true
+            )
+        ) {
+            return [
+                'clients.view',
+                'clients.create',
+                'clients.edit',
+            ];
+        }
+
         if (!$routeName) {
             return '__deny__';
         }
