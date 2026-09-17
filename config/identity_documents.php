@@ -90,8 +90,6 @@ return [
                 'passport_number',
                 'passport_expiry_date',
                 'document_serial_number',
-                'residency_type',
-                'employer',
             ],
 
             'fields' => [

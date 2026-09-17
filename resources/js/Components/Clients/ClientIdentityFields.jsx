@@ -25,8 +25,6 @@ const qatarBackFields = [
     'passport_number',
     'passport_expiry_date',
     'document_serial_number',
-    'residency_type',
-    'employer',
 ];
 
 const passportFields = [
@@ -1769,7 +1767,7 @@ export default function ClientIdentityFields({
                             </h4>
 
                             <p className="mb-4 text-xs text-slate-500">
-                                Passport and residency information detected from the back side.
+                                Passport information detected from the back side.
                             </p>
 
                             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1822,37 +1820,7 @@ export default function ClientIdentityFields({
                                     />
                                 </Field>
 
-                                <Field
-                                    label="Residency Type"
-                                    error={errors.residency_type}
-                                >
-                                    <input
-                                        className={inputClass}
-                                        value={data.residency_type ?? ''}
-                                        onChange={(event) =>
-                                            updateField(
-                                                'residency_type',
-                                                event.target.value
-                                            )
-                                        }
-                                    />
-                                </Field>
 
-                                <Field
-                                    label="Employer / Sponsor"
-                                    error={errors.employer}
-                                >
-                                    <input
-                                        className={inputClass}
-                                        value={data.employer ?? ''}
-                                        onChange={(event) =>
-                                            updateField(
-                                                'employer',
-                                                event.target.value
-                                            )
-                                        }
-                                    />
-                                </Field>
                             </div>
                         </div>
                     </>
