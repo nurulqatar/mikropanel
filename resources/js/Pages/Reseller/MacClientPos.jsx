@@ -236,6 +236,12 @@ export default function MacClientPos({
                             client,
                         )
                     }
+                    onRenewAll={(client) =>
+                        openModal(
+                            'renew-all',
+                            client,
+                        )
+                    }
                 />
 
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -328,6 +334,21 @@ export default function MacClientPos({
                 />
             )}
 
+            {modal === 'renew-all'
+                && selected
+                && permissions.renew && (
+                <RenewAllDevicesModal
+                    client={selected}
+                    clients={clients}
+                    canReceivePayment={
+                        permissions.receive_payment
+                    }
+                    onClose={
+                        closeModal
+                    }
+                />
+            )}
+
             {modal === 'recharge'
                 && selected
                 && permissions.renew && (
@@ -378,6 +399,7 @@ function QuickClientWorkspace({
     onToggle,
     onRefund,
     onAddDevice,
+    onRenewAll,
 }) {
     const [search, setSearch] =
         useState('');
@@ -957,19 +979,36 @@ function QuickClientWorkspace({
                                         </div>
                                     </div>
 
-                                    {permissions.create && (
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                onAddDevice(
-                                                    selectedClient,
-                                                )
-                                            }
-                                            className="rounded-lg bg-cyan-600 px-4 py-2 text-xs font-black text-white hover:bg-cyan-700"
-                                        >
-                                            + ADD DEVICE
-                                        </button>
-                                    )}
+                                    <div className="flex flex-wrap gap-2">
+                                        {permissions.renew
+                                            && clientDevices.length > 1 && (
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    onRenewAll(
+                                                        selectedClient,
+                                                    )
+                                                }
+                                                className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-black text-white hover:bg-emerald-700"
+                                            >
+                                                Renew All Devices
+                                            </button>
+                                        )}
+
+                                        {permissions.create && (
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    onAddDevice(
+                                                        selectedClient,
+                                                    )
+                                                }
+                                                className="rounded-lg bg-cyan-600 px-4 py-2 text-xs font-black text-white hover:bg-cyan-700"
+                                            >
+                                                + ADD DEVICE
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {additionalDevices.length === 0 ? (
@@ -1982,6 +2021,360 @@ function CreateClientModal({
                         {form.processing
                             ? 'Creating...'
                             : 'CREATE & ACTIVATE'}
+                    </button>
+                </div>
+            </form>
+        </Modal>
+    );
+}
+
+
+
+/*
+ * RENEW_ALL_DEVICES_UI_V1
+ */
+function RenewAllDevicesModal({
+    client,
+    clients = [],
+    canReceivePayment = false,
+    onClose,
+}) {
+    const devices =
+        useMemo(
+            () =>
+                clients
+                    .filter(
+                        (item) =>
+                            Number(item.id)
+                                === Number(
+                                    client.id,
+                                )
+                            || Number(
+                                item.parent_client_id,
+                            ) === Number(
+                                client.id,
+                            ),
+                    )
+                    .sort(
+                        (left, right) =>
+                            Number(left.id)
+                            - Number(right.id),
+                    ),
+            [
+                client.id,
+                clients,
+            ],
+        );
+
+    const totalAmount =
+        devices.reduce(
+            (total, device) =>
+                total
+                + Number(
+                    device.package?.price
+                    ?? 0,
+                ),
+            0,
+        );
+
+    const existingDue =
+        devices.reduce(
+            (total, device) =>
+                total
+                + Number(
+                    device.total_due
+                    ?? 0,
+                ),
+            0,
+        );
+
+    const form = useForm({
+        payment_status:
+            canReceivePayment
+                ? 'paid'
+                : 'due',
+        payment_method:
+            'Cash',
+        transaction_id:
+            '',
+        notes:
+            '',
+    });
+
+    const submit = (event) => {
+        event.preventDefault();
+
+        if (
+            existingDue > 0
+            || devices.length < 2
+        ) {
+            return;
+        }
+
+        form.post(
+            route(
+                'clients.renew-all',
+                client.id,
+            ),
+            {
+                preserveScroll: true,
+                onSuccess:
+                    onClose,
+            },
+        );
+    };
+
+    return (
+        <Modal
+            title={`Renew All Devices · ${client.name}`}
+            onClose={onClose}
+        >
+            <form
+                onSubmit={submit}
+                className="space-y-5"
+            >
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                    <div className="text-xs font-black uppercase tracking-wide text-emerald-700">
+                        Account Renewal
+                    </div>
+
+                    <div className="mt-1 text-lg font-black text-slate-900">
+                        {devices.length} Devices
+                    </div>
+
+                    <div className="mt-1 text-sm font-bold text-slate-600">
+                        Total QAR {money(totalAmount)}
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    {devices.map(
+                        (device, index) => (
+                            <div
+                                key={device.id}
+                                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3"
+                            >
+                                <div>
+                                    <div className="font-black text-slate-800">
+                                        {index === 0
+                                            ? 'Primary Device'
+                                            : (
+                                                device.device_label
+                                                || `Device ${index + 1}`
+                                            )}
+                                    </div>
+
+                                    <div className="mt-1 text-xs text-slate-500">
+                                        {device.mac_address || '-'}
+                                        {' · '}
+                                        {device.package?.name || '-'}
+                                        {' · Expiry '}
+                                        {device.expiry_date || '-'}
+                                    </div>
+                                </div>
+
+                                <div className="font-black text-slate-700">
+                                    QAR {money(
+                                        device.package?.price,
+                                    )}
+                                </div>
+                            </div>
+                        ),
+                    )}
+                </div>
+
+                {existingDue > 0 && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+                        Existing due QAR {money(existingDue)} must be paid first. Renew All Devices will not create another service period while old due exists.
+                    </div>
+                )}
+
+                {form.errors.renew_all && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
+                        {form.errors.renew_all}
+                    </div>
+                )}
+
+                <div className="grid gap-4 md:grid-cols-2">
+                    <Field
+                        label="Payment Status"
+                        error={
+                            form.errors.payment_status
+                        }
+                    >
+                        <select
+                            value={
+                                form.data.payment_status
+                            }
+                            onChange={(event) =>
+                                form.setData(
+                                    'payment_status',
+                                    event.target.value,
+                                )
+                            }
+                            className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                        >
+                            {canReceivePayment && (
+                                <option value="paid">
+                                    Paid - Receive Full Amount
+                                </option>
+                            )}
+
+                            <option value="due">
+                                Due - Renew Now, Pay Later
+                            </option>
+                        </select>
+                    </Field>
+
+                    {form.data.payment_status
+                        === 'paid' && (
+                        <Field
+                            label="Payment Method"
+                            error={
+                                form.errors.payment_method
+                            }
+                        >
+                            <select
+                                value={
+                                    form.data.payment_method
+                                }
+                                onChange={(event) =>
+                                    form.setData(
+                                        'payment_method',
+                                        event.target.value,
+                                    )
+                                }
+                                className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                            >
+                                <option value="Cash">
+                                    Cash
+                                </option>
+                                <option value="Bank Transfer">
+                                    Bank Transfer
+                                </option>
+                                <option value="bKash">
+                                    bKash
+                                </option>
+                                <option value="Nagad">
+                                    Nagad
+                                </option>
+                                <option value="Rocket">
+                                    Rocket
+                                </option>
+                                <option value="Upay">
+                                    Upay
+                                </option>
+                                <option value="Ooredoo Money">
+                                    Ooredoo Money
+                                </option>
+                                <option value="iPay">
+                                    iPay
+                                </option>
+                                <option value="Stripe">
+                                    Stripe
+                                </option>
+                                <option value="PayPal">
+                                    PayPal
+                                </option>
+                                <option value="Manual Adjustment">
+                                    Manual Adjustment
+                                </option>
+                            </select>
+                        </Field>
+                    )}
+
+                    {form.data.payment_status
+                        === 'paid' && (
+                        <Field
+                            label="Transaction ID"
+                            error={
+                                form.errors.transaction_id
+                            }
+                        >
+                            <input
+                                value={
+                                    form.data.transaction_id
+                                }
+                                onChange={(event) =>
+                                    form.setData(
+                                        'transaction_id',
+                                        event.target.value,
+                                    )
+                                }
+                                placeholder="Optional"
+                                className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                            />
+                        </Field>
+                    )}
+
+                    <Field
+                        label="Note"
+                        error={
+                            form.errors.notes
+                        }
+                    >
+                        <input
+                            value={
+                                form.data.notes
+                            }
+                            onChange={(event) =>
+                                form.setData(
+                                    'notes',
+                                    event.target.value,
+                                )
+                            }
+                            placeholder="Optional"
+                            className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                        />
+                    </Field>
+                </div>
+
+                <div className="rounded-xl bg-slate-50 p-4">
+                    <div className="flex justify-between gap-4 text-sm">
+                        <span className="font-bold text-slate-500">
+                            Devices
+                        </span>
+
+                        <span className="font-black text-slate-900">
+                            {devices.length}
+                        </span>
+                    </div>
+
+                    <div className="mt-2 flex justify-between gap-4">
+                        <span className="font-bold text-slate-500">
+                            Total
+                        </span>
+
+                        <span className="text-xl font-black text-emerald-700">
+                            QAR {money(totalAmount)}
+                        </span>
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-3">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-xl border border-slate-300 px-5 py-3 font-bold text-slate-600"
+                    >
+                        Cancel
+                    </button>
+
+                    <button
+                        type="submit"
+                        disabled={
+                            form.processing
+                            || existingDue > 0
+                            || devices.length < 2
+                        }
+                        className="rounded-xl bg-emerald-600 px-5 py-3 font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        {form.processing
+                            ? 'RENEWING...'
+                            : form.data.payment_status
+                                === 'paid'
+                              ? `PAY QAR ${money(totalAmount)} & RENEW ALL`
+                              : `RENEW ALL · DUE QAR ${money(totalAmount)}`}
                     </button>
                 </div>
             </form>

@@ -176,6 +176,19 @@ class CheckPanelPermission
             ];
         }
 
+        /*
+         * RENEW_ALL_DEVICE_PERMISSION_V1
+         *
+         * Renew All Devices uses the same
+         * permission as normal client renewal.
+         */
+        if (
+            $routeName
+            === 'clients.renew-all'
+        ) {
+            return 'clients.renew';
+        }
+
         if (!$routeName) {
             return '__deny__';
         }

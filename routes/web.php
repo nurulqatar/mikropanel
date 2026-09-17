@@ -207,6 +207,15 @@ Route::get(
     [ClientRenewalController::class, 'store']
 )->name('clients.renew');
 
+    Route::post(
+        '/clients/{client}/renew-all-devices',
+        [
+            \App\Http\Controllers\ClientBulkRenewalController::class,
+            'store',
+        ]
+    )->name('clients.renew-all');
+
+
 
     Route::resource(
         'users',
