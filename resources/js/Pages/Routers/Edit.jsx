@@ -81,7 +81,7 @@ export default function Edit({
                                 }
                             >
                                 <option value="">
-                                    Select MAC Zone
+                                    Select Network Zone
                                 </option>
 
                                 {zones.map((zone) => (
@@ -89,7 +89,7 @@ export default function Edit({
                                         key={zone.id}
                                         value={zone.id}
                                     >
-                                        {zone.name}
+                                        {zone.service_type?.toUpperCase()} — {zone.name}
                                         {zone.code
                                             ? ` — ${zone.code}`
                                             : ''}
@@ -98,8 +98,8 @@ export default function Edit({
                             </select>
 
                             <p className="mt-1 text-xs text-slate-500">
-                                Moving a router changes which zone's
-                                clients can be synchronized to it.
+                                The selected zone determines whether this
+                                router serves MAC clients or Hotspot service.
                             </p>
                         </Field>
 
@@ -187,7 +187,7 @@ export default function Edit({
                         </Field>
 
                         <Field
-                            label="Client Interface"
+                            label="MAC Client Interface"
                             error={errors.client_interface}
                         >
                             <input
@@ -207,7 +207,7 @@ export default function Edit({
                         </Field>
 
                         <Field
-                            label="DHCP Server"
+                            label="MAC DHCP Server"
                             error={errors.dhcp_server}
                         >
                             <input

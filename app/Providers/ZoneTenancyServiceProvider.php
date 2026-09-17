@@ -605,9 +605,15 @@ class ZoneTenancyServiceProvider extends ServiceProvider
 
         $type = null;
 
+        /*
+         * ROUTER_DUAL_SERVICE_ZONE_V1
+         *
+         * Router itself may belong to either a
+         * MAC or Hotspot zone. Child MAC resources
+         * remain MAC-only.
+         */
         if (
-            $model instanceof Router
-            || $model instanceof IpRange
+            $model instanceof IpRange
             || $model instanceof Client
         ) {
             $type = 'mac';

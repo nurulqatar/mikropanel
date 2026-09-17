@@ -28,13 +28,125 @@ class DiscoverHotspotServersJob implements ShouldQueue
     public function handle(
         HotspotRouterService $service
     ): void {
+        /*
+         * HOTSPOT_ROUTER_ZONE_FILTER_V2
+         *
+         * New routers:
+         *   only Hotspot-zone MikroTik routers are
+         *   eligible for Hotspot discovery.
+         *
+         * Legacy compatibility:
+         *   a Router that already owns a HotspotServer
+         *   remains eligible even if its historical
+         *   Router.zone_id is a MAC zone.
+         *
+         * Therefore adding a normal new MAC router can
+         * never accidentally activate Hotspot discovery.
+         */
         Router::query()
-            ->where('enabled', true)
+            ->with([
+                'zone:id,reseller_id,name,code,service_type,enabled',
+            ])
+            ->where(
+                'enabled',
+                true
+            )
+            ->where(
+                function ($query): void {
+                    $query
+                        ->whereHas(
+                            'zone',
+                            function ($zone): void {
+                                $zone
+                                    ->where(
+                                        'service_type',
+                                        'hotspot'
+                                    )
+                                    ->where(
+                                        'enabled',
+                                        true
+                                    );
+                            }
+                        )
+                        ->orWhereIn(
+                            'id',
+                            HotspotServer::query()
+                                ->select(
+                                    'router_id'
+                                )
+                        );
+                }
+            )
             ->orderBy('id')
             ->each(
                 function (
                     Router $router
                 ) use ($service): void {
+                    /*
+                     * New Hotspot router:
+                     * inherit its own Hotspot zone.
+                     *
+                     * Legacy mixed router:
+                     * preserve the existing Hotspot
+                     * server's established Hotspot zone.
+                     */
+                    $legacyServer =
+                        HotspotServer::query()
+                            ->where(
+                                'router_id',
+                                $router->id
+                            )
+                            ->orderBy('id')
+                            ->first([
+                                'zone_id',
+                                'reseller_id',
+                            ]);
+
+                    $routerIsHotspot =
+                        $router->zone
+                        && $router
+                            ->zone
+                            ->service_type
+                            === 'hotspot';
+
+                    $targetZoneId =
+                        $routerIsHotspot
+                            ? (int)
+                                $router->zone_id
+                            : (
+                                $legacyServer
+                                    ? (int)
+                                        $legacyServer
+                                            ->zone_id
+                                    : null
+                            );
+
+                    $targetResellerId =
+                        $routerIsHotspot
+                            ? (
+                                $router->reseller_id
+                                    ? (int)
+                                        $router
+                                            ->reseller_id
+                                    : null
+                            )
+                            : (
+                                $legacyServer
+                                    ? (
+                                        $legacyServer
+                                            ->reseller_id
+                                            ? (int)
+                                                $legacyServer
+                                                    ->reseller_id
+                                            : null
+                                    )
+                                    : null
+                            );
+
+                    if (!$targetZoneId) {
+                        return;
+                    }
+
                     try {
                         $rows =
                             $service->discover(
@@ -43,7 +155,10 @@ class DiscoverHotspotServersJob implements ShouldQueue
 
                         $foundNames = [];
 
-                        foreach ($rows as $row) {
+                        foreach (
+                            $rows
+                            as $row
+                        ) {
                             $name =
                                 $row['name']
                                 ?? null;
@@ -55,6 +170,9 @@ class DiscoverHotspotServersJob implements ShouldQueue
                             $foundNames[] =
                                 $name;
 
+                            /*
+                             * HOTSPOT_PARENT_ZONE_INHERIT_V2
+                             */
                             HotspotServer::query()
                                 ->updateOrCreate(
                                     [
@@ -65,6 +183,12 @@ class DiscoverHotspotServersJob implements ShouldQueue
                                             $name,
                                     ],
                                     [
+                                        'reseller_id' =>
+                                            $targetResellerId,
+
+                                        'zone_id' =>
+                                            $targetZoneId,
+
                                         'name' =>
                                             $name,
 
@@ -92,7 +216,8 @@ class DiscoverHotspotServersJob implements ShouldQueue
                                             (
                                                 $row[
                                                     'disabled'
-                                                ] ?? 'no'
+                                                ]
+                                                ?? 'no'
                                             ) !== 'yes',
 
                                         'connected' =>
@@ -112,13 +237,20 @@ class DiscoverHotspotServersJob implements ShouldQueue
                                 ->where(
                                     'router_id',
                                     $router->id
+                                )
+                                ->where(
+                                    'zone_id',
+                                    $targetZoneId
                                 );
 
-                        if ($foundNames !== []) {
-                            $missing->whereNotIn(
-                                'mikrotik_name',
-                                $foundNames
-                            );
+                        if (
+                            $foundNames !== []
+                        ) {
+                            $missing
+                                ->whereNotIn(
+                                    'mikrotik_name',
+                                    $foundNames
+                                );
                         }
 
                         $missing->update([
@@ -126,34 +258,46 @@ class DiscoverHotspotServersJob implements ShouldQueue
                                 false,
                         ]);
 
-                    } catch (Throwable $e) {
+                    } catch (
+                        Throwable $exception
+                    ) {
+                        /*
+                         * One unreachable remote site
+                         * must not prevent discovery on
+                         * the other Hotspot zones.
+                         */
                         HotspotServer::query()
                             ->where(
                                 'router_id',
                                 $router->id
+                            )
+                            ->where(
+                                'zone_id',
+                                $targetZoneId
                             )
                             ->update([
                                 'connected' =>
                                     false,
 
                                 'last_error' =>
-                                    $e
+                                    $exception
                                         ->getMessage(),
                             ]);
 
-                        Log::error(
-                            'Hotspot discovery failed.',
+                        Log::warning(
+                            'Hotspot discovery skipped an unavailable router.',
                             [
                                 'router_id' =>
                                     $router->id,
 
+                                'zone_id' =>
+                                    $targetZoneId,
+
                                 'message' =>
-                                    $e
+                                    $exception
                                         ->getMessage(),
                             ]
                         );
-
-                        throw $e;
                     }
                 }
             );

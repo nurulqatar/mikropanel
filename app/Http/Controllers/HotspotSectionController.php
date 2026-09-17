@@ -207,9 +207,10 @@ class HotspotSectionController extends Controller
             [
                 'servers' =>
                     HotspotServer::query()
-                        ->with(
-                            'router:id,name'
-                        )
+                        ->with([
+                            'router:id,name,zone_id',
+                            'zone:id,name,code,service_type',
+                        ])
                         ->orderBy('name')
                         ->get(),
 

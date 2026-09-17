@@ -53,7 +53,7 @@ class RouterController extends Controller
         Request $request
     ): Response {
         $zones =
-            $this->macZoneOptions(
+            $this->routerZoneOptions(
                 $request->user()
             );
 
@@ -64,7 +64,7 @@ class RouterController extends Controller
                     $zones,
 
                 'selectedZoneId' =>
-                    $this->preferredMacZoneId(
+                    $this->preferredRouterZoneId(
                         $request,
                         $zones
                     ),
@@ -105,7 +105,7 @@ class RouterController extends Controller
         Router $router
     ): Response {
         $zones =
-            $this->macZoneOptions(
+            $this->routerZoneOptions(
                 $request->user()
             );
 
@@ -123,7 +123,7 @@ class RouterController extends Controller
                     $zones,
 
                 'selectedZoneId' =>
-                    $this->preferredMacZoneId(
+                    $this->preferredRouterZoneId(
                         $request,
                         $zones,
                         (int)
@@ -254,24 +254,27 @@ class RouterController extends Controller
     }
 
     /*
-     * ROUTER_FORM_MAC_ZONE_OPTIONS_V1
+     * ROUTER_FORM_SERVICE_ZONE_OPTIONS_V2
      *
-     * Router records participate in MAC-client
-     * fanout only. HotspotServer owns the separate
-     * Hotspot Network Zone.
+     * Router service is selected by Network Zone.
+     * MAC-zone routers participate in MAC/IP fanout.
+     * Hotspot-zone routers are used by Hotspot discovery.
      */
-    private function macZoneOptions(
+    private function routerZoneOptions(
         $user
     ) {
         $query =
             NetworkZone::query()
                 ->where(
-                    'service_type',
-                    'mac'
-                )
-                ->where(
                     'enabled',
                     true
+                )
+                ->whereIn(
+                    'service_type',
+                    [
+                        'mac',
+                        'hotspot',
+                    ]
                 );
 
         if (
@@ -323,7 +326,7 @@ class RouterController extends Controller
             ]);
     }
 
-    private function preferredMacZoneId(
+    private function preferredRouterZoneId(
         Request $request,
         $zones,
         ?int $currentZoneId = null

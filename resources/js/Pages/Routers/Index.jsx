@@ -164,6 +164,9 @@ function RouterCard({
                                 {item.zone?.name ||
                                     'Unassigned'}
                             </span>
+                            {item.zone?.service_type
+                                ? ` • ${item.zone.service_type.toUpperCase()}`
+                                : ''}
                             {item.zone?.code
                                 ? ` • ${item.zone.code}`
                                 : ''}

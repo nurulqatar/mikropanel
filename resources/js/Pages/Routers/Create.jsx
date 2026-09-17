@@ -53,7 +53,7 @@ export default function Create({
                     </h1>
 
                     <p className="mt-1 text-slate-500">
-                        Bind this MikroTik to one MAC Network Zone
+                        Bind this MikroTik to one MAC or Hotspot Network Zone
                     </p>
                 </div>
 
@@ -77,7 +77,7 @@ export default function Create({
                                 }
                             >
                                 <option value="">
-                                    Select MAC Zone
+                                    Select Network Zone
                                 </option>
 
                                 {zones.map((zone) => (
@@ -85,7 +85,7 @@ export default function Create({
                                         key={zone.id}
                                         value={zone.id}
                                     >
-                                        {zone.name}
+                                        {zone.service_type?.toUpperCase()} — {zone.name}
                                         {zone.code
                                             ? ` — ${zone.code}`
                                             : ''}
@@ -94,8 +94,8 @@ export default function Create({
                             </select>
 
                             <p className="mt-1 text-xs text-slate-500">
-                                Clients in this zone are synchronized
-                                only with MikroTik routers in this same zone.
+                                MAC zones synchronize MAC/IP clients.
+                                Hotspot zones are isolated for MikroTik Hotspot service.
                             </p>
                         </Field>
 
@@ -185,7 +185,7 @@ export default function Create({
                         </Field>
 
                         <Field
-                            label="Client Interface"
+                            label="MAC Client Interface"
                             error={errors.client_interface}
                         >
                             <input
@@ -206,7 +206,7 @@ export default function Create({
                         </Field>
 
                         <Field
-                            label="DHCP Server"
+                            label="MAC DHCP Server"
                             error={errors.dhcp_server}
                         >
                             <input

@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class RouterRequest extends FormRequest
@@ -19,18 +20,50 @@ class RouterRequest extends FormRequest
                 ? ['required', 'string']
                 : ['nullable', 'string'];
 
+        /*
+         * ROUTER_SERVICE_ZONE_VALIDATION_V2
+         *
+         * Router service is determined by its
+         * Network Zone:
+         *
+         * mac     => MAC/DHCP/ARP client router
+         * hotspot => MikroTik Hotspot router
+         */
+        $isMacZone =
+            $this->selectedZoneType()
+            === 'mac';
+
+        $clientInterfaceRules =
+            $isMacZone
+                ? [
+                    'required',
+                    'string',
+                    'max:100',
+                ]
+                : [
+                    'nullable',
+                    'string',
+                    'max:100',
+                ];
+
+        $dhcpServerRules =
+            $isMacZone
+                ? [
+                    'required',
+                    'string',
+                    'max:100',
+                ]
+                : [
+                    'nullable',
+                    'string',
+                    'max:100',
+                ];
+
         return [
-            /*
-             * ROUTER_MAC_ZONE_VALIDATION_V1
-             *
-             * Router records are MAC-client routers.
-             * Hotspot service ownership is carried by
-             * HotspotServer.zone_id separately.
-             */
             'zone_id' => [
                 'required',
                 'integer',
-                $this->macZoneRule(),
+                $this->routerZoneRule(),
             ],
 
             'name' => [
@@ -59,17 +92,11 @@ class RouterRequest extends FormRequest
             'password' =>
                 $passwordRule,
 
-            'client_interface' => [
-                'required',
-                'string',
-                'max:100',
-            ],
+            'client_interface' =>
+                $clientInterfaceRules,
 
-            'dhcp_server' => [
-                'required',
-                'string',
-                'max:100',
-            ],
+            'dhcp_server' =>
+                $dhcpServerRules,
 
             'use_ssl' => [
                 'nullable',
@@ -87,10 +114,10 @@ class RouterRequest extends FormRequest
     {
         return [
             'zone_id.required' =>
-                'Select the MAC Network Zone for this router.',
+                'Select a Network Zone for this MikroTik router.',
 
             'zone_id.exists' =>
-                'Selected MAC Network Zone is not available to your account.',
+                'Selected Network Zone is not available to your account.',
 
             'name.required' =>
                 'Router name is required.',
@@ -111,14 +138,14 @@ class RouterRequest extends FormRequest
                 'Password is required.',
 
             'client_interface.required' =>
-                'Client Interface is required.',
+                'MAC Client Interface is required for a MAC Network Zone.',
 
             'dhcp_server.required' =>
-                'DHCP Server is required.',
+                'DHCP Server is required for a MAC Network Zone.',
         ];
     }
 
-    private function macZoneRule()
+    private function routerZoneRule()
     {
         $user =
             $this->user();
@@ -130,17 +157,17 @@ class RouterRequest extends FormRequest
             function ($query) use ($user): void {
                 $query
                     ->where(
-                        'service_type',
-                        'mac'
-                    )
-                    ->where(
                         'enabled',
                         true
+                    )
+                    ->whereIn(
+                        'service_type',
+                        [
+                            'mac',
+                            'hotspot',
+                        ]
                     );
 
-                /*
-                 * Super Admin may manage all tenants.
-                 */
                 if (
                     $user
                     && method_exists(
@@ -152,10 +179,6 @@ class RouterRequest extends FormRequest
                     return;
                 }
 
-                /*
-                 * Reseller owner/manager/operator:
-                 * zone must belong to their reseller.
-                 */
                 if (
                     $user
                     && $user->reseller_id
@@ -167,8 +190,8 @@ class RouterRequest extends FormRequest
                     );
 
                     /*
-                     * Normal Operator is permanently
-                     * locked to one MAC zone.
+                     * Normal operators remain locked
+                     * to their assigned zone.
                      */
                     if (
                         method_exists(
@@ -187,14 +210,40 @@ class RouterRequest extends FormRequest
                     return;
                 }
 
-                /*
-                 * Platform admin/operator only uses
-                 * platform-owned MAC zones.
-                 */
                 $query->whereNull(
                     'reseller_id'
                 );
             }
         );
+    }
+
+    private function selectedZoneType(): ?string
+    {
+        $zoneId =
+            (int)
+            $this->input(
+                'zone_id',
+                0
+            );
+
+        if (!$zoneId) {
+            return null;
+        }
+
+        $type =
+            DB::table(
+                'network_zones'
+            )
+                ->where(
+                    'id',
+                    $zoneId
+                )
+                ->value(
+                    'service_type'
+                );
+
+        return $type
+            ? (string) $type
+            : null;
     }
 }

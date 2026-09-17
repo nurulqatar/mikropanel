@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class HotspotServer extends Model
 {
     protected $fillable = [
+        'reseller_id',
         'zone_id',
         'router_id',
         'name',
