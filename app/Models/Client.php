@@ -61,6 +61,12 @@ class Client extends Model
         'mikrotik_queue_id',
     ];
 
+    protected $hidden = [
+        'qatar_id_front_image_path',
+        'qatar_id_back_image_path',
+        'passport_image_path',
+    ];
+
     protected $casts = [
         'enabled' => 'boolean',
         'connected' => 'boolean',
@@ -76,6 +82,105 @@ class Client extends Model
         'billing_day' => 'integer',
         'deleted_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::saved(
+            function (Client $client): void {
+                if (
+                    app()->runningInConsole()
+                    || !app()->bound('request')
+                ) {
+                    return;
+                }
+
+                $request =
+                    request();
+
+                $tokens = [
+                    'qatar_id_front' =>
+                        $request->input(
+                            'qatar_id_front_scan_token'
+                        ),
+
+                    'qatar_id_back' =>
+                        $request->input(
+                            'qatar_id_back_scan_token'
+                        ),
+
+                    'passport' =>
+                        $request->input(
+                            'passport_scan_token'
+                        ),
+                ];
+
+                $hasToken = false;
+
+                foreach (
+                    $tokens
+                    as $token
+                ) {
+                    if (
+                        is_string(
+                            $token
+                        )
+                        && trim(
+                            $token
+                        ) !== ''
+                    ) {
+                        $hasToken = true;
+                        break;
+                    }
+                }
+
+                if (!$hasToken) {
+                    return;
+                }
+
+                $finalize =
+                    static function () use (
+                        $client,
+                        $tokens
+                    ): void {
+                        try {
+                            app(
+                                \App\Services\ClientIdentityImageService::class
+                            )->finalizeTokens(
+                                $client,
+                                $tokens
+                            );
+                        } catch (
+                            \Throwable $exception
+                        ) {
+                            \Illuminate\Support\Facades\Log::error(
+                                'Client identity image finalization failed.',
+                                [
+                                    'client_id' =>
+                                        $client->id,
+
+                                    'message' =>
+                                        $exception
+                                            ->getMessage(),
+                                ]
+                            );
+                        }
+                    };
+
+                if (
+                    \Illuminate\Support\Facades\DB::transactionLevel()
+                    > 0
+                ) {
+                    \Illuminate\Support\Facades\DB::afterCommit(
+                        $finalize
+                    );
+
+                    return;
+                }
+
+                $finalize();
+            }
+        );
+    }
 
     public function router()
     {

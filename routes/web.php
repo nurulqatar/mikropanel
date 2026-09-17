@@ -631,6 +631,17 @@ Route::post(
     ])
     ->name('clients.identity-scan');
 
+
+Route::get(
+    '/clients/{client}/identity-image/{kind}',
+    \App\Http\Controllers\ClientIdentityImageController::class
+)
+    ->middleware([
+        'auth',
+        'active.panel.user',
+    ])
+    ->name('clients.identity-image');
+
 require __DIR__.'/auth.php';
 
 

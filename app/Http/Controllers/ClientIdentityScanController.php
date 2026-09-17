@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ClientIdentityImageService;
 use App\Services\ClientIdentityOcrService;
 use App\Services\IdentityDocumentClassifier;
 use App\Services\QatarIdStructureService;
@@ -14,7 +15,8 @@ class ClientIdentityScanController extends Controller
         Request $request,
         ClientIdentityOcrService $ocr,
         QatarIdStructureService $qatarId,
-        IdentityDocumentClassifier $classifier
+        IdentityDocumentClassifier $classifier,
+        ClientIdentityImageService $images
     ): JsonResponse {
         $user =
             $request->user();
@@ -76,6 +78,31 @@ class ClientIdentityScanController extends Controller
                 'raw_text' =>
                     $rawText,
             ]);
+
+        /*
+         * OCR uses the original upload. Only after
+         * reading it do we create the small permanent
+         * candidate image.
+         */
+        try {
+            $result['image_token'] =
+                $images->stage(
+                    $validated[
+                        'document'
+                    ]
+                );
+        } catch (\Throwable $exception) {
+            \Illuminate\Support\Facades\Log::warning(
+                'Identity image staging failed.',
+                [
+                    'message' =>
+                        $exception->getMessage(),
+                ]
+            );
+
+            $result['image_token'] =
+                null;
+        }
 
         /*
          * Never expose full OCR text containing
