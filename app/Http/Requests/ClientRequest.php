@@ -23,6 +23,18 @@ class ClientRequest extends FormRequest
 
         return [
 
+            'parent_client_id' => [
+                'nullable',
+                'integer',
+                'exists:clients,id',
+            ],
+
+            'device_label' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
             'ip_range_id' => [
                 'required',
                 'integer',

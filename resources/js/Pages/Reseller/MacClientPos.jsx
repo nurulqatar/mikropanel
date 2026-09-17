@@ -230,6 +230,12 @@ export default function MacClientPos({
                             client,
                         )
                     }
+                                    onAddDevice={(client) =>
+                        openModal(
+                            'add-device',
+                            client,
+                        )
+                    }
                 />
 
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -306,6 +312,22 @@ export default function MacClientPos({
                 />
             )}
 
+            {modal === 'add-device'
+                && selected
+                && permissions.create && (
+                <AddDeviceModal
+                    client={selected}
+                    packages={packages}
+                    ipRanges={ipRanges}
+                    canReceivePayment={
+                        permissions.receive_payment
+                    }
+                    onClose={
+                        closeModal
+                    }
+                />
+            )}
+
             {modal === 'recharge'
                 && selected
                 && permissions.renew && (
@@ -355,6 +377,7 @@ function QuickClientWorkspace({
     onEdit,
     onToggle,
     onRefund,
+    onAddDevice,
 }) {
     const [search, setSearch] =
         useState('');
@@ -368,6 +391,59 @@ function QuickClientWorkspace({
                 Number(client.id)
                 === Number(selectedId),
         ) ?? null;
+
+    /*
+     * MULTI_DEVICE_UI_START
+     */
+    const clientDevices =
+        useMemo(() => {
+            if (!selectedClient) {
+                return [];
+            }
+
+            return clients
+                .filter(
+                    (client) =>
+                        Number(client.id)
+                            === Number(
+                                selectedClient.id,
+                            )
+                        || Number(
+                            client
+                                .parent_client_id,
+                        ) === Number(
+                            selectedClient.id,
+                        ),
+                )
+                .sort(
+                    (left, right) =>
+                        Number(left.id)
+                        - Number(right.id),
+                );
+        }, [
+            clients,
+            selectedClient,
+        ]);
+
+    const additionalDevices =
+        clientDevices.filter(
+            (device) =>
+                Number(device.id)
+                !== Number(
+                    selectedClient?.id,
+                ),
+        );
+
+    const accountDue =
+        clientDevices.reduce(
+            (total, device) =>
+                total
+                + Number(
+                    device.total_due
+                    ?? 0,
+                ),
+            0,
+        );
 
     const results =
         useMemo(() => {
@@ -413,14 +489,29 @@ function QuickClientWorkspace({
     const selectClient = (
         client,
     ) => {
+        const primary =
+            client?.parent_client_id
+                ? (
+                    clients.find(
+                        (item) =>
+                            Number(item.id)
+                            === Number(
+                                client
+                                    .parent_client_id,
+                            ),
+                    )
+                    ?? client
+                )
+                : client;
+
         setSelectedId(
-            client.id,
+            primary.id,
         );
 
         setSearch(
-            `${client.name}${
-                client.client_code
-                    ? ` · ${client.client_code}`
+            `${primary.name}${
+                primary.client_code
+                    ? ` · ${primary.client_code}`
                     : ''
             }`,
         );
@@ -552,16 +643,8 @@ function QuickClientWorkspace({
 
                 event.preventDefault();
 
-                setSelectedId(
-                    client.id,
-                );
-
-                setSearch(
-                    `${client.name}${
-                        client.client_code
-                            ? ` · ${client.client_code}`
-                            : ''
-                    }`,
+                selectClient(
+                    client,
                 );
 
                 return;
@@ -855,11 +938,176 @@ function QuickClientWorkspace({
                                 />
 
                                 <QuickInfo
-                                    label="Due"
+                                    label="Account Due"
                                     value={`QAR ${money(
-                                        selectedClient.total_due,
+                                        accountDue,
                                     )}`}
                                 />
+                            </div>
+
+                            <div className="rounded-xl border border-cyan-100 bg-white p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <div className="font-black text-slate-800">
+                                            Additional Devices
+                                        </div>
+
+                                        <div className="mt-1 text-xs text-slate-500">
+                                            {additionalDevices.length} additional device(s)
+                                        </div>
+                                    </div>
+
+                                    {permissions.create && (
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                onAddDevice(
+                                                    selectedClient,
+                                                )
+                                            }
+                                            className="rounded-lg bg-cyan-600 px-4 py-2 text-xs font-black text-white hover:bg-cyan-700"
+                                        >
+                                            + ADD DEVICE
+                                        </button>
+                                    )}
+                                </div>
+
+                                {additionalDevices.length === 0 ? (
+                                    <div className="mt-3 rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-400">
+                                        No additional device yet.
+                                    </div>
+                                ) : (
+                                    <div className="mt-3 space-y-3">
+                                        {additionalDevices.map(
+                                            (device) => (
+                                                <div
+                                                    key={device.id}
+                                                    className="rounded-xl border border-slate-200 p-4"
+                                                >
+                                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                                        <div>
+                                                            <div className="font-black text-slate-800">
+                                                                {device.device_label
+                                                                    || 'Device'}
+                                                            </div>
+
+                                                            <div className="mt-1 text-xs text-slate-500">
+                                                                {device.mac_address
+                                                                    || '-'}
+                                                                {' · '}
+                                                                {device.ip_address
+                                                                    || '-'}
+                                                            </div>
+
+                                                            <div className="mt-1 text-xs text-slate-500">
+                                                                {device.package
+                                                                    ?.name
+                                                                    || '-'}
+                                                                {' · Expiry '}
+                                                                {device.expiry_date
+                                                                    || '-'}
+                                                                {' · Due QAR '}
+                                                                {money(
+                                                                    device.total_due,
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <span
+                                                            className={`rounded-full px-3 py-1 text-xs font-black ${
+                                                                !device.enabled
+                                                                    ? 'bg-red-100 text-red-700'
+                                                                    : device.connected
+                                                                      ? 'bg-emerald-100 text-emerald-700'
+                                                                      : 'bg-slate-100 text-slate-600'
+                                                            }`}
+                                                        >
+                                                            {!device.enabled
+                                                                ? 'SUSPENDED'
+                                                                : device.connected
+                                                                  ? 'ONLINE'
+                                                                  : 'OFFLINE'}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                                                        {permissions.renew && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    onRecharge(
+                                                                        device,
+                                                                    )
+                                                                }
+                                                                className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white"
+                                                            >
+                                                                Renew
+                                                            </button>
+                                                        )}
+
+                                                        {permissions.refund && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    onRefund(
+                                                                        device,
+                                                                    )
+                                                                }
+                                                                className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white"
+                                                            >
+                                                                Refund
+                                                            </button>
+                                                        )}
+
+                                                        {permissions.edit && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    onEdit(
+                                                                        device,
+                                                                    )
+                                                                }
+                                                                className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-black text-white"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                        )}
+
+                                                        {permissions.suspend && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    onToggle(
+                                                                        device,
+                                                                    )
+                                                                }
+                                                                className={`rounded-lg px-3 py-2 text-xs font-black text-white ${
+                                                                    device.enabled
+                                                                        ? 'bg-red-600'
+                                                                        : 'bg-cyan-600'
+                                                                }`}
+                                                            >
+                                                                {device.enabled
+                                                                    ? 'Suspend'
+                                                                    : 'Activate'}
+                                                            </button>
+                                                        )}
+
+                                                        <Link
+                                                            href={route(
+                                                                'clients.show',
+                                                                device.id,
+                                                            )}
+                                                            className="rounded-lg bg-slate-700 px-3 py-2 text-center text-xs font-black text-white"
+                                                        >
+                                                            Details
+                                                        </Link>
+                                                    </div>
+                                                </div>
+                                            ),
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="grid gap-2 pt-2 sm:grid-cols-2">
@@ -1740,6 +1988,314 @@ function CreateClientModal({
         </Modal>
     );
 }
+
+
+function AddDeviceModal({
+    client,
+    packages = [],
+    ipRanges = [],
+    canReceivePayment = false,
+    onClose,
+}) {
+    const form = useForm({
+        parent_client_id: client.id,
+        device_label: '',
+        ip_range_id: '',
+        package_id: '',
+        name: client.name ?? '',
+        mac_address: '',
+        phone: client.phone ?? '',
+        connection_payment_status:
+            canReceivePayment
+                ? 'paid'
+                : 'due',
+        connection_payment_method:
+            'Cash',
+        connection_transaction_id: '',
+        return_to: 'mac-pos',
+    });
+
+    const selectedPackage =
+        packages.find(
+            (item) =>
+                String(item.id)
+                === String(
+                    form.data.package_id,
+                ),
+        ) ?? null;
+
+    const submit = (event) => {
+        event.preventDefault();
+
+        form.post(
+            route('clients.store'),
+            {
+                preserveScroll: true,
+                onSuccess: onClose,
+            },
+        );
+    };
+
+    return (
+        <Modal
+            title={`Add Device · ${client.name}`}
+            onClose={onClose}
+        >
+            <form
+                onSubmit={submit}
+                className="space-y-4"
+            >
+                <div className="rounded-xl border border-cyan-100 bg-cyan-50 p-4">
+                    <div className="font-black text-slate-900">
+                        {client.name}
+                    </div>
+
+                    <div className="mt-1 text-xs text-slate-500">
+                        {client.client_code
+                            || `#${client.id}`}
+                    </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                    <Field
+                        label="Device Name"
+                        error={
+                            form.errors.device_label
+                        }
+                    >
+                        <input
+                            autoFocus
+                            value={
+                                form.data.device_label
+                            }
+                            onChange={(event) =>
+                                form.setData(
+                                    'device_label',
+                                    event.target.value,
+                                )
+                            }
+                            placeholder="Mobile 2 / Room Router"
+                            className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-cyan-500"
+                        />
+                    </Field>
+
+                    <Field
+                        label="MAC Address"
+                        error={
+                            form.errors.mac_address
+                        }
+                    >
+                        <input
+                            value={
+                                form.data.mac_address
+                            }
+                            onChange={(event) =>
+                                form.setData(
+                                    'mac_address',
+                                    formatMac(
+                                        event.target.value,
+                                    ),
+                                )
+                            }
+                            placeholder="AA:BB:CC:DD:EE:FF"
+                            className="w-full rounded-xl border border-slate-300 px-4 py-3 font-mono outline-none focus:border-cyan-500"
+                        />
+                    </Field>
+
+                    <Field
+                        label="IP Pool"
+                        error={
+                            form.errors.ip_range_id
+                        }
+                    >
+                        <select
+                            value={
+                                form.data.ip_range_id
+                            }
+                            onChange={(event) =>
+                                form.setData(
+                                    'ip_range_id',
+                                    event.target.value,
+                                )
+                            }
+                            className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                        >
+                            <option value="">
+                                Select IP Pool
+                            </option>
+
+                            {ipRanges.map(
+                                (range) => (
+                                    <option
+                                        key={range.id}
+                                        value={range.id}
+                                    >
+                                        {range.name}
+                                        {' · '}
+                                        {range.start_ip}
+                                        {' - '}
+                                        {range.end_ip}
+                                    </option>
+                                ),
+                            )}
+                        </select>
+                    </Field>
+
+                    <Field
+                        label="Package"
+                        error={
+                            form.errors.package_id
+                        }
+                    >
+                        <select
+                            value={
+                                form.data.package_id
+                            }
+                            onChange={(event) =>
+                                form.setData(
+                                    'package_id',
+                                    event.target.value,
+                                )
+                            }
+                            className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                        >
+                            <option value="">
+                                Select Package
+                            </option>
+
+                            {packages.map(
+                                (pkg) => (
+                                    <option
+                                        key={pkg.id}
+                                        value={pkg.id}
+                                    >
+                                        {pkg.name}
+                                        {' · QAR '}
+                                        {money(pkg.price)}
+                                    </option>
+                                ),
+                            )}
+                        </select>
+                    </Field>
+
+                    <Field
+                        label="Payment Status"
+                        error={
+                            form.errors
+                                .connection_payment_status
+                        }
+                    >
+                        <select
+                            value={
+                                form.data
+                                    .connection_payment_status
+                            }
+                            onChange={(event) =>
+                                form.setData(
+                                    'connection_payment_status',
+                                    event.target.value,
+                                )
+                            }
+                            className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                        >
+                            {canReceivePayment && (
+                                <option value="paid">
+                                    Paid
+                                </option>
+                            )}
+
+                            <option value="due">
+                                Due
+                            </option>
+                        </select>
+                    </Field>
+
+                    {form.data
+                        .connection_payment_status
+                        === 'paid' && (
+                        <Field
+                            label="Payment Method"
+                            error={
+                                form.errors
+                                    .connection_payment_method
+                            }
+                        >
+                            <select
+                                value={
+                                    form.data
+                                        .connection_payment_method
+                                }
+                                onChange={(event) =>
+                                    form.setData(
+                                        'connection_payment_method',
+                                        event.target.value,
+                                    )
+                                }
+                                className="w-full rounded-xl border border-slate-300 px-4 py-3"
+                            >
+                                <option value="Cash">
+                                    Cash
+                                </option>
+
+                                <option value="Bank Transfer">
+                                    Bank Transfer
+                                </option>
+
+                                <option value="Ooredoo Money">
+                                    Ooredoo Money
+                                </option>
+
+                                <option value="Manual Adjustment">
+                                    Manual Adjustment
+                                </option>
+                            </select>
+                        </Field>
+                    )}
+                </div>
+
+                {selectedPackage && (
+                    <div className="rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-600">
+                        {selectedPackage.name}
+                        {' · QAR '}
+                        {money(
+                            selectedPackage.price,
+                        )}
+                        {' · '}
+                        {selectedPackage.validity_days}
+                        {' days'}
+                    </div>
+                )}
+
+                {form.errors.parent_client_id && (
+                    <div className="rounded-xl bg-red-50 p-3 text-sm font-bold text-red-600">
+                        {form.errors.parent_client_id}
+                    </div>
+                )}
+
+                <div className="flex justify-end gap-3">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-xl border border-slate-300 px-5 py-3 font-bold"
+                    >
+                        Cancel
+                    </button>
+
+                    <button
+                        type="submit"
+                        disabled={form.processing}
+                        className="rounded-xl bg-cyan-600 px-5 py-3 font-black text-white disabled:opacity-50"
+                    >
+                        {form.processing
+                            ? 'ADDING...'
+                            : 'ADD DEVICE & ACTIVATE'}
+                    </button>
+                </div>
+            </form>
+        </Modal>
+    );
+}
+
 
 function RechargeModal({
     client,

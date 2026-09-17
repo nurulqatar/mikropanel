@@ -119,6 +119,102 @@ class ClientController extends Controller
         );
 
         /*
+         * MULTI_DEVICE_PARENT_START
+         *
+         * Extra devices remain normal Client rows.
+         * Existing billing / renewal / MikroTik
+         * logic can therefore continue unchanged.
+         */
+        if (
+            !empty(
+                $data['parent_client_id']
+            )
+        ) {
+            $parent =
+                Client::query()
+                    ->whereNull(
+                        'parent_client_id'
+                    )
+                    ->find(
+                        (int)
+                        $data[
+                            'parent_client_id'
+                        ]
+                    );
+
+            if (!$parent) {
+                return back()
+                    ->withErrors([
+                        'parent_client_id' =>
+                            'Primary client was not found.',
+                    ])
+                    ->withInput();
+            }
+
+            $deviceNumber =
+                Client::query()
+                    ->where(
+                        'parent_client_id',
+                        $parent->id
+                    )
+                    ->count()
+                + 2;
+
+            $data['device_label'] =
+                trim(
+                    (string) (
+                        $data['device_label']
+                        ?? ''
+                    )
+                )
+                ?: 'Device '
+                    . $deviceNumber;
+
+            /*
+             * Customer identity/account information
+             * comes from the primary client.
+             */
+            foreach ([
+                'name',
+                'phone',
+                'email',
+                'address',
+                'identity_type',
+                'identity_number',
+                'identity_barcode',
+                'nationality',
+                'date_of_birth',
+                'gender',
+                'document_expiry_date',
+                'qatar_id_number',
+                'qatar_id_expiry_date',
+                'occupation',
+                'passport_number',
+                'passport_expiry_date',
+                'document_serial_number',
+                'residency_type',
+                'employer',
+                'place_of_birth',
+                'passport_issue_date',
+                'issuing_country',
+                'issuing_authority',
+            ] as $field) {
+                $data[$field] =
+                    $parent->{$field};
+            }
+        } else {
+            $data['parent_client_id'] =
+                null;
+
+            $data['device_label'] =
+                null;
+        }
+
+        /*
+         * MULTI_DEVICE_PARENT_END
+         */
+
+        /*
          * New connection billing is separate
          * from ClientRequest because the same
          * ClientRequest is also used by Edit.

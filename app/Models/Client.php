@@ -12,6 +12,8 @@ class Client extends Model
 
     protected $fillable = [
         'client_code',
+        'parent_client_id',
+        'device_label',
         'router_id',
         'ip_range_id',
         'package_id',
@@ -180,6 +182,22 @@ class Client extends Model
 
                 $finalize();
             }
+        );
+    }
+
+    public function primaryClient()
+    {
+        return $this->belongsTo(
+            self::class,
+            'parent_client_id'
+        )->withTrashed();
+    }
+
+    public function devices(): HasMany
+    {
+        return $this->hasMany(
+            self::class,
+            'parent_client_id'
         );
     }
 

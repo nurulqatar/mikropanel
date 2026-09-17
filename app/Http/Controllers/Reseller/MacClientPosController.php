@@ -63,6 +63,14 @@ class MacClientPosController extends Controller
                             'client_code' =>
                                 $client->client_code,
 
+                            'parent_client_id' =>
+                                $client
+                                    ->parent_client_id,
+
+                            'device_label' =>
+                                $client
+                                    ->device_label,
+
                             'name' =>
                                 $client->name,
 
@@ -348,6 +356,9 @@ class MacClientPosController extends Controller
 
         $newClientsToday =
             Client::query()
+                ->whereNull(
+                    'parent_client_id'
+                )
                 ->whereDate(
                     'created_at',
                     $today
