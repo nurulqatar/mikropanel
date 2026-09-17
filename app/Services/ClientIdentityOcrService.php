@@ -993,108 +993,144 @@ class ClientIdentityOcrService
     private function ocrImage(
         string $image
     ): string {
-        $language = 'eng';
+        /*
+         * Keep language discovery once per request.
+         * PDFs may contain several pages.
+         */
+        static $language = null;
 
-        $languages =
-            $this->run(
-                [
-                    'tesseract',
-                    '--list-langs',
-                ],
-                15,
-                true
-            );
+        if ($language === null) {
+            $languages =
+                $this->run(
+                    [
+                        'tesseract',
+                        '--list-langs',
+                    ],
+                    15,
+                    true
+                );
 
-        if (
-            preg_match(
-                '/^ara$/m',
-                $languages
-            )
-        ) {
-            $language = 'eng+ara';
+            $language =
+                preg_match(
+                    '/^ara$/m',
+                    $languages
+                )
+                    ? 'eng+ara'
+                    : 'eng';
         }
 
-        $texts = [];
-
-        /*
-         * Pass 1:
-         * Original page. Keeps existing Qatar ID
-         * and general document OCR behaviour.
-         */
-        $texts[] =
-            $this->tesseractText(
-                $image,
-                $language,
-                6
-            );
-
-        /*
-         * Passport photos normally need stronger
-         * preprocessing than a flat document scan.
-         */
         $variants =
             $this->prepareOcrVariants(
                 $image
             );
 
-        if (
-            isset(
-                $variants['enhanced']
-            )
-        ) {
-            /*
-             * Structured passport / ID page.
-             */
-            $texts[] =
-                $this->tesseractText(
-                    $variants[
-                        'enhanced'
-                    ],
-                    $language,
-                    6
-                );
+        $enhanced =
+            $variants[
+                'enhanced'
+            ]
+            ?? $image;
 
-            /*
-             * Sparse printed fields. Useful when
-             * labels and values are far apart.
-             */
-            $texts[] =
-                $this->tesseractText(
-                    $variants[
-                        'enhanced'
-                    ],
-                    $language,
-                    11
-                );
-        }
+        $texts = [];
 
         /*
-         * Dedicated OCR of the lower machine
-         * readable zone. English only because ICAO
-         * MRZ uses A-Z, 0-9 and "<".
+         * ==========================================
+         * FAST PATH 1: PASSPORT MRZ
+         * ==========================================
+         *
+         * Most normal passports and e-passports
+         * contain a TD3 MRZ at the bottom.
+         *
+         * Read this first. It is much smaller than
+         * the whole page and therefore faster.
          */
-        foreach (
-            [
-                'mrz_gray',
-                'mrz_bw',
-            ]
-            as $key
+        if (
+            isset(
+                $variants[
+                    'mrz_gray'
+                ]
+            )
         ) {
-            if (
-                !isset(
-                    $variants[$key]
-                )
-            ) {
-                continue;
-            }
-
-            $texts[] =
+            $mrzText =
                 $this->tesseractText(
-                    $variants[$key],
+                    $variants[
+                        'mrz_gray'
+                    ],
                     'eng',
                     6,
                     'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
                 );
+
+            if (
+                trim(
+                    $mrzText
+                ) !== ''
+            ) {
+                $texts[] =
+                    $mrzText;
+            }
+
+            /*
+             * If MRZ is already valid, one English
+             * sparse-text pass is enough for fields
+             * not present in MRZ:
+             *
+             * - Place of Birth
+             * - Issue Date
+             * - Issuing Authority
+             */
+            if (
+                $this->findBestTd3Mrz(
+                    $mrzText
+                ) !== null
+            ) {
+                $printed =
+                    $this->tesseractText(
+                        $enhanced,
+                        'eng',
+                        11
+                    );
+
+                if (
+                    trim(
+                        $printed
+                    ) !== ''
+                ) {
+                    $texts[] =
+                        $printed;
+                }
+
+                return $this->joinOcrTexts(
+                    $texts
+                );
+            }
+        }
+
+        /*
+         * ==========================================
+         * FAST PATH 2: PRINTED PAGE
+         * ==========================================
+         *
+         * PSM 11 works well for passport / ID pages
+         * where labels and values are spread around.
+         *
+         * English first is substantially faster than
+         * eng+ara and reads the English side of Qatar
+         * residency cards/passports.
+         */
+        $printed =
+            $this->tesseractText(
+                $enhanced,
+                'eng',
+                11
+            );
+
+        if (
+            trim(
+                $printed
+            ) !== ''
+        ) {
+            $texts[] =
+                $printed;
         }
 
         $combined =
@@ -1103,20 +1139,196 @@ class ClientIdentityOcrService
             );
 
         /*
-         * Phone photos occasionally arrive rotated
-         * without usable EXIF orientation.
-         * Only do extra rotation passes when a
-         * trustworthy TD3 MRZ was not found.
+         * Whole-page OCR may itself have recovered
+         * the MRZ. Stop immediately if so.
          */
         if (
             $this->findBestTd3Mrz(
                 $combined
-            ) === null
+            ) !== null
+        ) {
+            return $combined;
+        }
+
+        $looksLikeQatarId =
+            preg_match(
+                '/(?:'
+                . 'STATE\s+OF\s+QATAR'
+                . '|RESIDENCY\s+PERMIT'
+                . '|RESIDENCE\s+PERMIT'
+                . '|QATAR\s+ID'
+                . '|QID'
+                . '|ID\.?\s*(?:NO|NUMBER)'
+                . ')/iu',
+                $combined
+            )
+            || preg_match(
+                '/(?<!\d)\d{11}(?!\d)/',
+                $combined
+            );
+
+        $looksLikePassport =
+            preg_match(
+                '/(?:'
+                . '\bPASSPORT\b'
+                . '|PASSPORT\s*(?:NO|NUMBER)'
+                . '|DATE\s+OF\s+EXPIRY'
+                . '|PLACE\s+OF\s+BIRTH'
+                . ')/iu',
+                $combined
+            );
+
+        /*
+         * ==========================================
+         * QATAR ID PATH
+         * ==========================================
+         *
+         * Qatar cards can be bilingual. Run the
+         * heavier Arabic-aware structured pass only
+         * when the first pass indicates a Qatar ID.
+         */
+        if ($looksLikeQatarId) {
+            $qatarText =
+                $this->tesseractText(
+                    $enhanced,
+                    $language,
+                    6
+                );
+
+            if (
+                trim(
+                    $qatarText
+                ) !== ''
+            ) {
+                $texts[] =
+                    $qatarText;
+            }
+
+            return $this->joinOcrTexts(
+                $texts
+            );
+        }
+
+        /*
+         * ==========================================
+         * PASSPORT MRZ RECOVERY
+         * ==========================================
+         *
+         * Thresholded MRZ is used only when the fast
+         * gray MRZ could not validate.
+         */
+        if (
+            $looksLikePassport
             && isset(
                 $variants[
-                    'enhanced'
+                    'mrz_bw'
                 ]
             )
+        ) {
+            $mrzBw =
+                $this->tesseractText(
+                    $variants[
+                        'mrz_bw'
+                    ],
+                    'eng',
+                    6,
+                    'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
+                );
+
+            if (
+                trim(
+                    $mrzBw
+                ) !== ''
+            ) {
+                $texts[] =
+                    $mrzBw;
+            }
+
+            $combined =
+                $this->joinOcrTexts(
+                    $texts
+                );
+
+            if (
+                $this->findBestTd3Mrz(
+                    $combined
+                ) !== null
+            ) {
+                return $combined;
+            }
+
+            /*
+             * Printed-only or damaged MRZ passport:
+             * one structured English fallback.
+             */
+            $structured =
+                $this->tesseractText(
+                    $enhanced,
+                    'eng',
+                    6
+                );
+
+            if (
+                trim(
+                    $structured
+                ) !== ''
+            ) {
+                $texts[] =
+                    $structured;
+            }
+
+            return $this->joinOcrTexts(
+                $texts
+            );
+        }
+
+        /*
+         * ==========================================
+         * GENERIC FALLBACK
+         * ==========================================
+         *
+         * Unknown layout: one bilingual structured
+         * OCR pass.
+         */
+        $fallback =
+            $this->tesseractText(
+                $enhanced,
+                $language,
+                6
+            );
+
+        if (
+            trim(
+                $fallback
+            ) !== ''
+        ) {
+            $texts[] =
+                $fallback;
+        }
+
+        $combined =
+            $this->joinOcrTexts(
+                $texts
+            );
+
+        /*
+         * Only attempt expensive rotation recovery
+         * when there is still very little readable
+         * text. Normal correctly-oriented scans will
+         * never reach this section.
+         */
+        $plainLength =
+            mb_strlen(
+                preg_replace(
+                    '/\s+/u',
+                    '',
+                    $combined
+                )
+                ?? ''
+            );
+
+        if (
+            $plainLength < 45
             && is_executable(
                 '/usr/bin/convert'
             )
@@ -1127,16 +1339,14 @@ class ClientIdentityOcrService
             ) {
                 $rotated =
                     dirname($image)
-                    . '/rotated-'
+                    . '/rotated-fast-'
                     . $rotation
                     . '.png';
 
                 $this->run(
                     [
                         '/usr/bin/convert',
-                        $variants[
-                            'enhanced'
-                        ],
+                        $enhanced,
                         '-rotate',
                         (string) $rotation,
                         $rotated,
@@ -1153,12 +1363,38 @@ class ClientIdentityOcrService
                     continue;
                 }
 
-                $texts[] =
+                $rotationText =
                     $this->tesseractText(
                         $rotated,
-                        $language,
+                        'eng',
                         11
                     );
+
+                if (
+                    trim(
+                        $rotationText
+                    ) !== ''
+                ) {
+                    $texts[] =
+                        $rotationText;
+                }
+
+                $combined =
+                    $this->joinOcrTexts(
+                        $texts
+                    );
+
+                if (
+                    $this->findBestTd3Mrz(
+                        $combined
+                    ) !== null
+                    || preg_match(
+                        '/(?:PASSPORT|QATAR|RESIDENCY|QID)/iu',
+                        $combined
+                    )
+                ) {
+                    break;
+                }
             }
         }
 
