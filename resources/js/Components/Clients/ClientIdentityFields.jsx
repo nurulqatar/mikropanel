@@ -136,6 +136,12 @@ export default function ClientIdentityFields({
     const scannerPollBusyRef =
         useRef(false);
 
+    const scannerTokenRef =
+        useRef({
+            token: '',
+            refreshAfter: 0,
+        });
+
     const scanDocumentRef =
         useRef(null);
 
@@ -190,11 +196,6 @@ export default function ClientIdentityFields({
             lastError: '',
             connectionError: '',
         });
-
-    const scannerInstallCommand =
-        typeof window === 'undefined'
-            ? ''
-            : `powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=Join-Path $env:TEMP 'MikroPanelScannerAgent.ps1'; iwr '${window.location.origin}/scanner/MikroPanelScannerAgent.ps1' -OutFile $p; & $p -Install -PairOrigin '${window.location.origin}'"`;
 
     const updateField = (
         field,
@@ -1109,6 +1110,56 @@ export default function ClientIdentityFields({
             let cancelled =
                 false;
 
+            const getScannerToken =
+                async () => {
+                    const cached =
+                        scannerTokenRef.current;
+
+                    if (
+                        cached.token
+                        && Date.now()
+                            < cached.refreshAfter
+                    ) {
+                        return cached.token;
+                    }
+
+                    const response =
+                        await axios.get(
+                            '/scanner/agent-token',
+                            {
+                                headers: {
+                                    Accept:
+                                        'application/json',
+                                },
+                            }
+                        );
+
+                    const token =
+                        String(
+                            response.data?.token
+                            ?? ''
+                        );
+
+                    if (!token) {
+                        throw new Error(
+                            'SCANNER_TOKEN_MISSING'
+                        );
+                    }
+
+                    /*
+                     * Server token lifetime is 5 minutes.
+                     * Refresh locally after 4 minutes.
+                     */
+                    scannerTokenRef.current = {
+                        token,
+                        refreshAfter:
+                            Date.now()
+                            + (4 * 60 * 1000),
+                    };
+
+                    return token;
+                };
+
             const pollAgent =
                 async () => {
                     if (
@@ -1122,9 +1173,18 @@ export default function ClientIdentityFields({
                         true;
 
                     try {
+                        const scannerToken =
+                            await getScannerToken();
+
                         const pairResponse =
                             await scannerAgentFetch(
-                                '/pair'
+                                '/pair',
+                                {
+                                    headers: {
+                                        'X-MikroPanel-Token':
+                                            scannerToken,
+                                    },
+                                }
                             );
 
                         if (!pairResponse.ok) {
@@ -1732,29 +1792,12 @@ export default function ClientIdentityFields({
                                     ? (
                                         <div className="flex shrink-0 flex-wrap gap-2">
                                             <a
-                                                href="/scanner/MikroPanelScannerAgent.ps1"
-                                                download
-                                                className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-black text-indigo-700"
+                                                href="/scanner/MikroPanelScannerAgentSetup.exe"
+                                                download="MikroPanelScannerAgentSetup.exe"
+                                                className="rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white shadow-sm hover:bg-indigo-700"
                                             >
-                                                DOWNLOAD AGENT
+                                                DOWNLOAD WINDOWS AGENT
                                             </a>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    navigator.clipboard
-                                                        ?.writeText(
-                                                            scannerInstallCommand
-                                                        );
-
-                                                    setMessage(
-                                                        'Windows Scanner Agent install command copied.'
-                                                    );
-                                                }}
-                                                className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white"
-                                            >
-                                                COPY INSTALL COMMAND
-                                            </button>
                                         </div>
                                     )
                                     : null}
