@@ -27,7 +27,7 @@ class HotspotController extends Controller
     public function index(
         Request $request
     ): Response {
-        $this->assertAdmin($request);
+        $this->assertViewAccess($request);
 
         $today = Carbon::now(
             'Asia/Qatar'
@@ -394,7 +394,10 @@ class HotspotController extends Controller
     public function discover(
         Request $request
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.manage'
+        );
 
         DiscoverHotspotServersJob::dispatch();
 
@@ -408,7 +411,10 @@ class HotspotController extends Controller
         Request $request,
         HotspotServer $server
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.manage'
+        );
 
         SyncHotspotServer::dispatch(
             $server->id
@@ -423,7 +429,10 @@ class HotspotController extends Controller
     public function storePlan(
         Request $request
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.manage'
+        );
 
         $data =
             $this->validatePlan(
@@ -442,7 +451,10 @@ class HotspotController extends Controller
         Request $request,
         HotspotPlan $plan
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.manage'
+        );
 
         $data =
             $this->validatePlan(
@@ -461,7 +473,10 @@ class HotspotController extends Controller
         Request $request,
         HotspotPlan $plan
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.manage'
+        );
 
         if (
             $plan->vouchers()
@@ -485,7 +500,10 @@ class HotspotController extends Controller
     public function generateVouchers(
         Request $request
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.manage'
+        );
 
         $data = $request->validate([
             'hotspot_server_id' => [
@@ -673,7 +691,10 @@ class HotspotController extends Controller
         HotspotVoucher $voucher,
         HotspotBillingService $billing
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.sell'
+        );
 
         $data = $request->validate([
             'customer_name' => [
@@ -737,7 +758,10 @@ class HotspotController extends Controller
         HotspotInvoice $invoice,
         HotspotBillingService $billing
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.payments'
+        );
 
         $data = $request->validate([
             'amount' => [
@@ -784,7 +808,10 @@ class HotspotController extends Controller
         Request $request,
         HotspotSession $session
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.manage'
+        );
 
         DisconnectHotspotSession::dispatch(
             $session->id
@@ -867,22 +894,67 @@ class HotspotController extends Controller
         ]);
     }
 
-    private function assertAdmin(
+    private function assertViewAccess(
         Request $request
     ): void {
+        $user =
+            $request->user();
+
+        /*
+         * HOTSPOT_READ_ACCESS_V2
+         *
+         * Reseller Owner has full tenant access.
+         * Manager remains read/export only.
+         * Operators require an assigned Hotspot permission.
+         */
         abort_unless(
-            $request->user()
-                && $request
-                    ->user()
+            $user
+            && (
+                $user->isResellerOwner()
+                || $user
                     ->hasAnyPermission([
                         'hotspot.view',
                         'hotspot.manage',
                         'hotspot.sell',
                         'hotspot.payments',
                         'hotspot.export',
-                    ]),
+                    ])
+            ),
             403,
-            'Hotspot management is currently restricted to administrators.'
+            'You do not have permission to view Hotspot data.'
+        );
+    }
+
+    private function assertPermission(
+        Request $request,
+        string $permission
+    ): void {
+        $user =
+            $request->user();
+
+        /*
+         * HOTSPOT_MUTATION_PERMISSION_V2
+         *
+         * Manager is always read/export only,
+         * even if a stale permission array contains
+         * a historical mutation permission.
+         *
+         * Reseller Owner has full tenant control.
+         * Platform Admin passes hasPermission().
+         * Normal operators require the exact action permission.
+         */
+        abort_unless(
+            $user
+            && !$user->isManager()
+            && (
+                $user->isResellerOwner()
+                || $user
+                    ->hasPermission(
+                        $permission
+                    )
+            ),
+            403,
+            'You do not have permission to perform this Hotspot action.'
         );
     }
 }
