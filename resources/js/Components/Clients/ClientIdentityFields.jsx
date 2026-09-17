@@ -187,6 +187,7 @@ export default function ClientIdentityFields({
 
     const [scannerAgent, setScannerAgent] =
         useState({
+            checked: false,
             online: false,
             scannerConnected: false,
             scannerName: null,
@@ -1212,6 +1213,7 @@ export default function ClientIdentityFields({
                         }
 
                         setScannerAgent({
+                            checked: true,
                             online: true,
 
                             scannerConnected:
@@ -1292,6 +1294,9 @@ export default function ClientIdentityFields({
                             setScannerAgent(
                                 (previous) => ({
                                     ...previous,
+
+                                    checked:
+                                        true,
 
                                     online:
                                         false,
@@ -1768,7 +1773,9 @@ export default function ClientIdentityFields({
                                         )
                                         : (
                                             <p className="mt-2 text-xs leading-5 text-slate-500">
-                                                Install the Scanner Agent once on this Windows PC. It will then start automatically with Windows.
+                                                {scannerAgent.checked
+                                                    ? 'Scanner Agent is not installed or is not currently running on this Windows PC.'
+                                                    : 'Checking for the Windows Scanner Agent...'}
                                             </p>
                                         )}
                             </div>
@@ -1788,7 +1795,8 @@ export default function ClientIdentityFields({
                                         SCAN FROM CONNECTED SCANNER
                                     </button>
                                 )
-                                : !scannerAgent.online
+                                : scannerAgent.checked
+                                    && !scannerAgent.online
                                     ? (
                                         <div className="flex shrink-0 flex-wrap gap-2">
                                             <a
