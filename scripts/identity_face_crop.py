@@ -2,170 +2,174 @@
 
 import os
 import sys
+
 import cv2
-import numpy as np
 
 
-CASCADE_PATHS = [
-    "/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml",
-    "/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml",
-]
+CASCADE_PATH = (
+    "/usr/share/opencv4/haarcascades/"
+    "haarcascade_frontalface_default.xml"
+)
 
 
-def fail(message, code=1):
+def fail(message):
     print(message, file=sys.stderr)
-    raise SystemExit(code)
+    sys.exit(2)
 
 
-def load_cascade():
-    for path in CASCADE_PATHS:
-        if os.path.isfile(path):
-            cascade = cv2.CascadeClassifier(path)
-
-            if not cascade.empty():
-                return cascade
-
-    fail("FACE_CASCADE_NOT_AVAILABLE")
-
-
-def rotate_image(image, rotation):
-    if rotation == 0:
-        return image
-
-    if rotation == 90:
-        return cv2.rotate(
+def rotated_images(image):
+    return [
+        image,
+        cv2.rotate(
             image,
             cv2.ROTATE_90_CLOCKWISE
-        )
-
-    if rotation == 270:
-        return cv2.rotate(
+        ),
+        cv2.rotate(
             image,
             cv2.ROTATE_90_COUNTERCLOCKWISE
-        )
-
-    return image
-
-
-def candidate_faces(image, cascade):
-    gray = cv2.cvtColor(
-        image,
-        cv2.COLOR_BGR2GRAY
-    )
-
-    gray = cv2.equalizeHist(gray)
-
-    height, width = gray.shape[:2]
-
-    minimum = max(
-        28,
-        int(
-            min(
-                width,
-                height
-            ) * 0.055
-        )
-    )
-
-    attempts = [
-        (1.07, 5),
-        (1.06, 4),
-        (1.05, 3),
+        ),
     ]
 
-    found = []
 
-    for scale, neighbours in attempts:
+def find_best_face(image, cascade):
+    best = None
+
+    for rotated in rotated_images(image):
+        gray = cv2.cvtColor(
+            rotated,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        gray = cv2.equalizeHist(gray)
+
+        height, width = gray.shape[:2]
+
+        min_side = max(
+            40,
+            min(width, height) // 22
+        )
+
         faces = cascade.detectMultiScale(
             gray,
-            scaleFactor=scale,
-            minNeighbors=neighbours,
+            scaleFactor=1.06,
+            minNeighbors=7,
             minSize=(
-                minimum,
-                minimum
+                min_side,
+                min_side
             ),
             flags=cv2.CASCADE_SCALE_IMAGE,
         )
 
         for x, y, w, h in faces:
-            ratio = (
-                float(w) / float(h)
-                if h
-                else 0
-            )
-
-            if (
-                ratio < 0.68
-                or ratio > 1.45
-            ):
+            if w <= 0 or h <= 0:
                 continue
 
-            area = w * h
+            ratio = w / float(h)
 
-            found.append(
-                (
-                    area,
-                    int(x),
-                    int(y),
-                    int(w),
-                    int(h),
-                )
+            if ratio < 0.72 or ratio > 1.42:
+                continue
+
+            image_area = width * height
+            face_area = w * h
+
+            relative_area = (
+                face_area /
+                float(image_area)
             )
 
-        if found:
-            break
+            if relative_area < 0.001:
+                continue
 
-    return found
+            if relative_area > 0.35:
+                continue
+
+            score = face_area
+
+            if (
+                best is None
+                or score > best["score"]
+            ):
+                best = {
+                    "image": rotated,
+                    "x": int(x),
+                    "y": int(y),
+                    "w": int(w),
+                    "h": int(h),
+                    "score": int(score),
+                }
+
+    return best
 
 
-def crop_portrait(image, face):
-    _, x, y, w, h = face
+def crop_face_only(candidate):
+    image = candidate["image"]
 
-    image_height, image_width = (
-        image.shape[:2]
+    x = candidate["x"]
+    y = candidate["y"]
+    w = candidate["w"]
+    h = candidate["h"]
+
+    image_h, image_w = image.shape[:2]
+
+    center_x = x + (w / 2.0)
+    center_y = y + (h / 2.0)
+
+    # Tight square around the detected face.
+    # Enough space for hair/chin, but intentionally
+    # avoids ID text and document background.
+    side = int(
+        round(
+            max(w, h) * 1.28
+        )
     )
 
-    center_x = x + w / 2
-    center_y = y + h / 2
+    side = max(
+        side,
+        max(w, h)
+    )
 
-    crop_width = w * 2.15
-    crop_height = h * 2.55
+    # Slight upward bias keeps forehead/hair
+    # while preventing too much area below face.
+    center_y -= h * 0.03
 
     left = int(
-        center_x - crop_width / 2
+        round(
+            center_x - side / 2
+        )
     )
 
     top = int(
-        center_y - crop_height * 0.42
+        round(
+            center_y - side / 2
+        )
     )
 
-    right = int(
-        center_x + crop_width / 2
-    )
+    right = left + side
+    bottom = top + side
 
-    bottom = int(
-        top + crop_height
-    )
+    if left < 0:
+        right -= left
+        left = 0
 
-    left = max(
-        0,
-        left
-    )
+    if top < 0:
+        bottom -= top
+        top = 0
 
-    top = max(
-        0,
-        top
-    )
+    if right > image_w:
+        shift = right - image_w
+        left = max(
+            0,
+            left - shift
+        )
+        right = image_w
 
-    right = min(
-        image_width,
-        right
-    )
-
-    bottom = min(
-        image_height,
-        bottom
-    )
+    if bottom > image_h:
+        shift = bottom - image_h
+        top = max(
+            0,
+            top - shift
+        )
+        bottom = image_h
 
     crop = image[
         top:bottom,
@@ -177,80 +181,38 @@ def crop_portrait(image, face):
             "FACE_CROP_EMPTY"
         )
 
-    target = 360
-
-    crop_height_px, crop_width_px = (
-        crop.shape[:2]
-    )
-
-    scale = min(
-        target / crop_width_px,
-        target / crop_height_px
-    )
-
-    new_width = max(
-        1,
-        int(
-            crop_width_px * scale
-        )
-    )
-
-    new_height = max(
-        1,
-        int(
-            crop_height_px * scale
-        )
-    )
-
-    resized = cv2.resize(
+    crop = cv2.resize(
         crop,
-        (
-            new_width,
-            new_height
-        ),
-        interpolation=(
-            cv2.INTER_AREA
-            if scale < 1
-            else cv2.INTER_CUBIC
-        ),
+        (360, 360),
+        interpolation=cv2.INTER_LANCZOS4
     )
 
-    canvas = np.full(
-        (
-            target,
-            target,
-            3
-        ),
-        245,
-        dtype=np.uint8
-    )
-
-    offset_x = (
-        target - new_width
-    ) // 2
-
-    offset_y = (
-        target - new_height
-    ) // 2
-
-    canvas[
-        offset_y:
-            offset_y + new_height,
-        offset_x:
-            offset_x + new_width
-    ] = resized
-
-    return canvas
+    return crop
 
 
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) < 3:
         fail(
-            "USAGE: input output"
+            "USAGE: identity_face_crop.py "
+            "<input> <output>"
         )
 
     source = sys.argv[1]
-    output = sys.argv[2]
+    target = sys.argv[2]
+
+    if not os.path.isfile(source):
+        fail(
+            "SOURCE_NOT_FOUND"
+        )
+
+    cascade = cv2.CascadeClassifier(
+        CASCADE_PATH
+    )
+
+    if cascade.empty():
+        fail(
+            "FACE_CASCADE_UNAVAILABLE"
+        )
 
     image = cv2.imread(
         source,
@@ -262,72 +224,33 @@ def main():
             "IMAGE_READ_FAILED"
         )
 
-    cascade = load_cascade()
+    candidate = find_best_face(
+        image,
+        cascade
+    )
 
-    best = None
-
-    best_image = None
-
-    for rotation in [
-        0,
-        90,
-        270
-    ]:
-        rotated = rotate_image(
-            image,
-            rotation
-        )
-
-        faces = candidate_faces(
-            rotated,
-            cascade
-        )
-
-        if not faces:
-            continue
-
-        faces.sort(
-            key=lambda item: item[0],
-            reverse=True
-        )
-
-        candidate = faces[0]
-
-        if (
-            best is None
-            or candidate[0] > best[0]
-        ):
-            best = candidate
-            best_image = rotated
-
-    if best is None:
-        print(
+    if candidate is None:
+        fail(
             "FACE_NOT_DETECTED"
         )
 
-        raise SystemExit(2)
-
-    portrait = crop_portrait(
-        best_image,
-        best
+    face = crop_face_only(
+        candidate
     )
 
-    directory = os.path.dirname(
-        output
+    os.makedirs(
+        os.path.dirname(
+            os.path.abspath(target)
+        ),
+        exist_ok=True
     )
-
-    if directory:
-        os.makedirs(
-            directory,
-            exist_ok=True
-        )
 
     ok = cv2.imwrite(
-        output,
-        portrait,
+        target,
+        face,
         [
             cv2.IMWRITE_WEBP_QUALITY,
-            68
+            72,
         ]
     )
 
@@ -336,17 +259,16 @@ def main():
             "FACE_WRITE_FAILED"
         )
 
-    print(
-        "FACE_DETECTED"
-    )
+    if (
+        not os.path.isfile(target)
+        or os.path.getsize(target) < 100
+    ):
+        fail(
+            "FACE_OUTPUT_INVALID"
+        )
 
     print(
-        "FACE_BYTES="
-        + str(
-            os.path.getsize(
-                output
-            )
-        )
+        "FACE_ONLY_CROP=PASS"
     )
 
 
