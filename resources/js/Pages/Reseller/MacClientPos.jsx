@@ -426,6 +426,173 @@ function QuickClientWorkspace({
         );
     };
 
+    /*
+     * AUTO_BARCODE_SCAN_START
+     *
+     * USB / Bluetooth barcode scanners normally
+     * behave like a keyboard and finish with
+     * Enter or Tab.
+     */
+    useEffect(() => {
+        let buffer = '';
+        let lastKeyAt = 0;
+
+        const normalizeScan = (value) =>
+            String(value ?? '')
+                .trim()
+                .toLowerCase();
+
+        const handleBarcodeKey = (event) => {
+            if (
+                event.ctrlKey
+                || event.altKey
+                || event.metaKey
+            ) {
+                return;
+            }
+
+            const target = event.target;
+
+            const tag = String(
+                target?.tagName ?? '',
+            ).toUpperCase();
+
+            const editable =
+                target?.isContentEditable
+                || tag === 'INPUT'
+                || tag === 'TEXTAREA'
+                || tag === 'SELECT';
+
+            const quickSearch =
+                target?.dataset
+                    ?.barcodeSearch
+                === 'true';
+
+            /*
+             * Do not capture typing inside
+             * create/edit/recharge/refund forms.
+             */
+            if (
+                editable
+                && !quickSearch
+            ) {
+                buffer = '';
+                lastKeyAt = 0;
+                return;
+            }
+
+            const now = Date.now();
+
+            /*
+             * Scanner keystrokes arrive rapidly.
+             * Slow typing starts a new buffer.
+             */
+            if (
+                lastKeyAt
+                && now - lastKeyAt > 180
+            ) {
+                buffer = '';
+            }
+
+            lastKeyAt = now;
+
+            if (
+                event.key === 'Enter'
+                || event.key === 'Tab'
+            ) {
+                const scanned =
+                    buffer.trim();
+
+                buffer = '';
+                lastKeyAt = 0;
+
+                if (scanned.length < 4) {
+                    return;
+                }
+
+                const needle =
+                    normalizeScan(
+                        scanned,
+                    );
+
+                const client =
+                    clients.find(
+                        (item) => {
+                            const barcode =
+                                normalizeScan(
+                                    item.identity_barcode,
+                                );
+
+                            const identity =
+                                normalizeScan(
+                                    item.identity_number,
+                                );
+
+                            return (
+                                (
+                                    barcode !== ''
+                                    && barcode
+                                        === needle
+                                )
+                                || (
+                                    identity !== ''
+                                    && identity
+                                        === needle
+                                )
+                            );
+                        },
+                    );
+
+                setSearch(scanned);
+
+                if (!client) {
+                    setSelectedId(null);
+                    return;
+                }
+
+                event.preventDefault();
+
+                setSelectedId(
+                    client.id,
+                );
+
+                setSearch(
+                    `${client.name}${
+                        client.client_code
+                            ? ` · ${client.client_code}`
+                            : ''
+                    }`,
+                );
+
+                return;
+            }
+
+            if (
+                event.key.length === 1
+            ) {
+                buffer += event.key;
+            }
+        };
+
+        document.addEventListener(
+            'keydown',
+            handleBarcodeKey,
+            true,
+        );
+
+        return () => {
+            document.removeEventListener(
+                'keydown',
+                handleBarcodeKey,
+                true,
+            );
+        };
+    }, [clients]);
+
+    /*
+     * AUTO_BARCODE_SCAN_END
+     */
+
     return (
         <section className="overflow-hidden rounded-2xl border border-cyan-200 bg-white shadow-sm">
             <div className="border-b border-cyan-100 bg-gradient-to-r from-cyan-50 to-sky-50 px-5 py-4">
@@ -435,7 +602,7 @@ function QuickClientWorkspace({
                     </h2>
 
                     <p className="mt-1 text-sm text-slate-500">
-                        Search and select a MAC client
+                        Search manually or scan client barcode
                     </p>
                 </div>
             </div>
@@ -447,6 +614,7 @@ function QuickClientWorkspace({
                     </label>
 
                     <input
+                        data-barcode-search="true"
                         type="text"
                         autoFocus
                         value={search}
