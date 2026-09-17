@@ -652,8 +652,87 @@ class ClientController extends Controller
             $usage?->download_bytes ?? 0
         );
 
+        /*
+         * Identity documents remain private.
+         * The browser receives authenticated route
+         * URLs, never filesystem paths.
+         */
+        $identityImageUrl =
+            static function (
+                Client $client,
+                string $column,
+                string $kind
+            ): ?string {
+                $path =
+                    $client->getAttribute(
+                        $column
+                    );
+
+                if (
+                    !is_string(
+                        $path
+                    )
+                    || $path === ''
+                    || !\Illuminate\Support\Facades\Storage
+                        ::disk('local')
+                        ->exists(
+                            $path
+                        )
+                ) {
+                    return null;
+                }
+
+                return route(
+                    'clients.identity-image',
+                    [
+                        'client' =>
+                            $client->id,
+
+                        'kind' =>
+                            $kind,
+                    ]
+                );
+            };
+
+        $qidFrontUrl =
+            $identityImageUrl(
+                $client,
+                'qatar_id_front_image_path',
+                'qid-front'
+            );
+
+        $qidBackUrl =
+            $identityImageUrl(
+                $client,
+                'qatar_id_back_image_path',
+                'qid-back'
+            );
+
+        $passportUrl =
+            $identityImageUrl(
+                $client,
+                'passport_image_path',
+                'passport'
+            );
+
         return Inertia::render('Clients/Show', [
             'client' => $client,
+
+            'identityImages' => [
+                'profile_url' =>
+                    $qidFrontUrl
+                    ?? $passportUrl
+                    ?? $qidBackUrl,
+
+                'qatar_id_front_url' =>
+                    $qidFrontUrl,
+
+                'qatar_id_back_url' =>
+                    $qidBackUrl,
+
+                'passport_url' =>
+                    $passportUrl,
+            ],
 
             'billingSummary' => [
                 'invoice_count' =>

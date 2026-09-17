@@ -10,9 +10,43 @@ export default function Show({
     client,
     billingSummary = {},
     usageSummary = {},
+    identityImages = {},
 }) {
     const invoices = client.invoices ?? [];
     const payments = client.payments ?? [];
+
+    const profileImage =
+        identityImages.profile_url ?? null;
+
+    const identityDocuments = [
+        {
+            key: 'qid-front',
+            label: 'Qatar ID — Front',
+            url:
+                identityImages
+                    .qatar_id_front_url
+                ?? null,
+        },
+        {
+            key: 'qid-back',
+            label: 'Qatar ID — Back',
+            url:
+                identityImages
+                    .qatar_id_back_url
+                ?? null,
+        },
+        {
+            key: 'passport',
+            label: 'Passport',
+            url:
+                identityImages
+                    .passport_url
+                ?? null,
+        },
+    ].filter(
+        (item) => Boolean(item.url),
+    );
+
 
     const suspendClient = () => {
         if (confirm('Suspend this client?')) {
@@ -58,6 +92,104 @@ export default function Show({
             />
 
             <div className="space-y-6">
+
+                    {(profileImage
+                        || identityDocuments.length > 0) && (
+                        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-800">
+                                        Client Identity
+                                    </h2>
+
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        Private compressed identity documents
+                                    </p>
+                                </div>
+
+                                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                                    PRIVATE
+                                </span>
+                            </div>
+
+                            <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
+                                <div>
+                                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                                        Profile Preview
+                                    </p>
+
+                                    {profileImage ? (
+                                        <a
+                                            href={profileImage}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="block overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
+                                        >
+                                            <img
+                                                src={profileImage}
+                                                alt={`${client.name} identity`}
+                                                className="h-44 w-full object-contain p-2"
+                                                loading="lazy"
+                                            />
+                                        </a>
+                                    ) : (
+                                        <div className="flex h-44 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-center text-sm text-slate-400">
+                                            No identity image
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                                        Identity Documents
+                                    </p>
+
+                                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                                        {identityDocuments.map(
+                                            (document) => (
+                                                <a
+                                                    key={
+                                                        document.key
+                                                    }
+                                                    href={
+                                                        document.url
+                                                    }
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="group overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 transition hover:border-cyan-400 hover:shadow-md"
+                                                >
+                                                    <div className="flex h-44 items-center justify-center p-2">
+                                                        <img
+                                                            src={
+                                                                document.url
+                                                            }
+                                                            alt={
+                                                                document.label
+                                                            }
+                                                            className="max-h-full max-w-full object-contain"
+                                                            loading="lazy"
+                                                        />
+                                                    </div>
+
+                                                    <div className="border-t border-slate-200 bg-white px-4 py-3">
+                                                        <p className="text-sm font-bold text-slate-800">
+                                                            {
+                                                                document.label
+                                                            }
+                                                        </p>
+
+                                                        <p className="mt-0.5 text-xs text-slate-400">
+                                                            Click to view full image
+                                                        </p>
+                                                    </div>
+                                                </a>
+                                            ),
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    )}
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <div className="flex flex-wrap items-center gap-3">

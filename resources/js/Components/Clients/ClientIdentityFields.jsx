@@ -272,7 +272,8 @@ export default function ClientIdentityFields({
         useCallback(
             (
                 detected,
-                meta
+                meta,
+                imageToken = null
             ) => {
                 const merged = {
                     ...data,
@@ -378,6 +379,68 @@ export default function ClientIdentityFields({
                     }
                 }
 
+                /*
+                 * Keep only opaque UUID tokens in
+                 * the form. Actual files stay in
+                 * private server storage.
+                 */
+                if (
+                    imageToken
+                    && meta?.type === 'qatar_id'
+                ) {
+                    /*
+                     * A Qatar ID replaces any staged
+                     * standalone passport image.
+                     */
+                    merged.passport_scan_token =
+                        '';
+
+                    if (
+                        meta?.side === 'front'
+                    ) {
+                        merged.qatar_id_front_scan_token =
+                            imageToken;
+                    } else if (
+                        meta?.side === 'back'
+                    ) {
+                        merged.qatar_id_back_scan_token =
+                            imageToken;
+                    } else if (
+                        meta?.side === 'both'
+                    ) {
+                        /*
+                         * Normally front/back are scanned
+                         * separately. If a single image is
+                         * classified as both, retain it as
+                         * the next missing side.
+                         */
+                        if (
+                            merged.qatar_id_front_scan_token
+                        ) {
+                            merged.qatar_id_back_scan_token =
+                                imageToken;
+                        } else {
+                            merged.qatar_id_front_scan_token =
+                                imageToken;
+                        }
+                    }
+                }
+
+                if (
+                    imageToken
+                    && meta?.type
+                        === 'ordinary_passport'
+                ) {
+                    merged.passport_scan_token =
+                        imageToken;
+
+                    merged.qatar_id_front_scan_token =
+                        '';
+
+                    merged.qatar_id_back_scan_token =
+                        '';
+                }
+
                 setData(
                     merged
                 );
@@ -463,7 +526,10 @@ export default function ClientIdentityFields({
 
                     mergeScanResult(
                         detected,
-                        meta
+                        meta,
+                        response.data
+                            ?.image_token
+                            ?? null
                     );
 
                     setDocumentType(

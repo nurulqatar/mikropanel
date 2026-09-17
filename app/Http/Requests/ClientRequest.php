@@ -162,6 +162,25 @@ class ClientRequest extends FormRequest
                 'max:4000',
             ],
 
+            /*
+             * Private staged identity images.
+             * UUID only; browser never submits a path.
+             */
+            'qatar_id_front_scan_token' => [
+                'nullable',
+                'uuid',
+            ],
+
+            'qatar_id_back_scan_token' => [
+                'nullable',
+                'uuid',
+            ],
+
+            'passport_scan_token' => [
+                'nullable',
+                'uuid',
+            ],
+
             'nationality' => [
                 'nullable',
                 'string',
