@@ -1789,12 +1789,24 @@ export default function ClientIdentityFields({
                     </div>
                 )}
 
-                {(imagePreviews.face
-                    || imagePreviews.qidFront
-                    || imagePreviews.passport) && (
-                    <div className="rounded-xl border border-slate-200 bg-white p-4">
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                            <div className="shrink-0">
+                <div className="rounded-2xl border-2 border-cyan-200 bg-white p-5 shadow-sm">
+                    <div className="mb-5">
+                        <h4 className="text-lg font-black text-slate-900">
+                            Client Photo & Document Preview
+                        </h4>
+
+                        <p className="mt-1 text-sm text-slate-500">
+                            Scan Qatar ID front/back or passport. Face photo and full document will appear here before saving.
+                        </p>
+                    </div>
+
+                    <div className="grid gap-5 lg:grid-cols-[180px_1fr]">
+                        <div>
+                            <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">
+                                Client Face Photo
+                            </p>
+
+                            <div className="flex justify-center lg:justify-start">
                                 {imagePreviews.face ? (
                                     <a
                                         href={imagePreviews.face}
@@ -1805,90 +1817,88 @@ export default function ClientIdentityFields({
                                         <img
                                             src={imagePreviews.face}
                                             alt="Client Face"
-                                            className="h-32 w-32 rounded-full border-4 border-white object-cover shadow-md ring-1 ring-slate-200"
+                                            className="h-36 w-36 rounded-full border-4 border-white object-cover shadow-md ring-2 ring-cyan-100"
                                         />
                                     </a>
                                 ) : (
-                                    <div className="flex h-32 w-32 items-center justify-center rounded-full border-2 border-dashed border-amber-300 bg-amber-50 p-4 text-center text-xs font-semibold text-amber-700">
-                                        Face not detected
+                                    <div className="flex h-36 w-36 items-center justify-center rounded-full border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs font-bold text-slate-400">
+                                        Face Preview
                                     </div>
                                 )}
                             </div>
 
-                            <div>
-                                <h4 className="text-base font-black text-slate-900">
-                                    Client Face Photo
-                                </h4>
-
-                                {imagePreviews.face ? (
-                                    <p className="mt-1 text-sm text-emerald-600">
-                                        Face extracted from the identity document.
-                                    </p>
-                                ) : (
-                                    <p className="mt-1 text-sm text-amber-600">
-                                        Face could not be extracted. Try a clearer Qatar ID front or passport scan.
-                                    </p>
-                                )}
-
-                                <p className="mt-1 text-xs text-slate-400">
-                                    A small compressed WebP portrait will be saved with the client.
+                            {imagePreviews.face ? (
+                                <p className="mt-3 text-xs font-semibold text-emerald-600">
+                                    Face detected successfully
                                 </p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {previewDocuments.length > 0 && (
-                    <div className="rounded-xl border border-cyan-200 bg-cyan-50/40 p-4">
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                            <div>
-                                <h4 className="text-sm font-black text-slate-900">
-                                    Scanned Image Preview
-                                </h4>
-
-                                <p className="mt-0.5 text-xs text-slate-500">
-                                    These are the compressed images that will be saved with this client.
+                            ) : (
+                                <p className="mt-3 text-xs text-slate-400">
+                                    Qatar ID front or passport থেকে face নেওয়া হবে
                                 </p>
-                            </div>
-
-                            <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black uppercase text-emerald-700">
-                                Ready
-                            </span>
+                            )}
                         </div>
 
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                            {previewDocuments.map(
-                                (document) => (
-                                    <a
-                                        key={document.key}
-                                        href={document.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-cyan-400"
-                                    >
-                                        <div className="flex h-40 items-center justify-center bg-slate-50 p-2">
-                                            <img
-                                                src={document.url}
-                                                alt={document.label}
-                                                className="max-h-full max-w-full object-contain"
-                                            />
-                                        </div>
+                        <div>
+                            <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">
+                                Full Document Preview
+                            </p>
 
-                                        <div className="border-t border-slate-200 px-3 py-2">
-                                            <p className="text-xs font-bold text-slate-800">
-                                                {document.label}
-                                            </p>
+                            {previewDocuments.length > 0 ? (
+                                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                                    {previewDocuments.map(
+                                        (document) => (
+                                            <a
+                                                key={document.key}
+                                                href={document.url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-cyan-400 hover:shadow-md"
+                                            >
+                                                <div className="flex h-44 items-center justify-center bg-slate-50 p-2">
+                                                    <img
+                                                        src={document.url}
+                                                        alt={document.label}
+                                                        className="max-h-full max-w-full object-contain"
+                                                    />
+                                                </div>
 
-                                            <p className="mt-0.5 text-[10px] text-slate-400">
-                                                Click for larger preview
-                                            </p>
-                                        </div>
-                                    </a>
-                                ),
+                                                <div className="border-t border-slate-200 px-3 py-2">
+                                                    <p className="text-xs font-black text-slate-800">
+                                                        {document.label}
+                                                    </p>
+
+                                                    <p className="mt-0.5 text-[10px] text-slate-400">
+                                                        Click to enlarge
+                                                    </p>
+                                                </div>
+                                            </a>
+                                        ),
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="flex min-h-44 items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-5 text-center">
+                                    <div>
+                                        <p className="text-sm font-bold text-slate-500">
+                                            No document scanned yet
+                                        </p>
+
+                                        <p className="mt-1 text-xs text-slate-400">
+                                            Qatar ID হলে Front + Back, Passport হলে full passport page এখানে দেখাবে
+                                        </p>
+                                    </div>
+                                </div>
                             )}
                         </div>
                     </div>
-                )}
+
+                    {(imagePreviews.qidFront
+                        || imagePreviews.qidBack
+                        || imagePreviews.passport) && (
+                        <div className="mt-4 rounded-lg bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-700">
+                            Preview ready — verify the image before saving the client.
+                        </div>
+                    )}
+                </div>
 
                 {identityError && (
                     <div className="text-xs font-bold text-red-600">

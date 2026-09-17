@@ -702,7 +702,8 @@ class ClientController extends Controller
 
                         'kind' =>
                             $kind,
-                    ]
+                    ],
+                    false
                 );
             };
 

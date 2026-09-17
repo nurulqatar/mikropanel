@@ -101,7 +101,8 @@ class ClientIdentityScanController extends Controller
                     [
                         'token' =>
                             $imageToken,
-                    ]
+                    ],
+                    false
                 );
 
 
@@ -141,7 +142,8 @@ class ClientIdentityScanController extends Controller
                         [
                             'token' =>
                                 $imageToken,
-                        ]
+                        ],
+                        false
                     )
                     : null;
         } catch (\Throwable $exception) {
