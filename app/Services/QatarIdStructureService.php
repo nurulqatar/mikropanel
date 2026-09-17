@@ -70,12 +70,20 @@ class QatarIdStructureService
                 $text
             );
 
-            $this->fillDateField(
-                $fields,
-                'date_of_birth',
-                'front',
-                $text
-            );
+            $structuredDob =
+                $this->structuredDateOfBirth(
+                    $text
+                );
+
+            if (
+                $structuredDob
+                !== null
+            ) {
+                $fields[
+                    'date_of_birth'
+                ] =
+                    $structuredDob;
+            }
 
             $this->fillDateField(
                 $fields,
@@ -743,6 +751,286 @@ class QatarIdStructureService
         }
 
         return false;
+    }
+
+    private function structuredDateOfBirth(
+        string $text
+    ): ?string {
+        $text =
+            $this->normalizeDigits(
+                $text
+            );
+
+        $lines =
+            preg_split(
+                '/\R/u',
+                $text
+            ) ?: [];
+
+        /*
+         * Highest confidence:
+         * a date on the same OCR line as the
+         * Arabic "date of birth" label.
+         *
+         * This survives common English OCR damage
+         * such as D.O.B -> D.0.B / 0.0.8.
+         */
+        $arabicCandidates = [];
+
+        foreach (
+            $lines
+            as $line
+        ) {
+            if (
+                mb_stripos(
+                    $line,
+                    'تاريخ الميلاد',
+                    0,
+                    'UTF-8'
+                ) === false
+            ) {
+                continue;
+            }
+
+            foreach (
+                $this->datesFromText(
+                    $line
+                )
+                as $date
+            ) {
+                $arabicCandidates[$date] =
+                    true;
+            }
+        }
+
+        $arabicDates =
+            array_keys(
+                $arabicCandidates
+            );
+
+        if (
+            count(
+                $arabicDates
+            ) === 1
+        ) {
+            return $arabicDates[0];
+        }
+
+        /*
+         * Next confidence:
+         * normal configured DOB labels.
+         */
+        $labelCandidates = [];
+
+        $labels =
+            $this->labels(
+                'front',
+                'date_of_birth'
+            );
+
+        foreach (
+            $lines
+            as $index => $line
+        ) {
+            $matched = false;
+
+            foreach (
+                $labels
+                as $label
+            ) {
+                if (
+                    mb_stripos(
+                        $line,
+                        $label,
+                        0,
+                        'UTF-8'
+                    ) !== false
+                ) {
+                    $matched =
+                        true;
+
+                    break;
+                }
+            }
+
+            if (!$matched) {
+                continue;
+            }
+
+            $searchLines = [
+                $line,
+            ];
+
+            if (
+                isset(
+                    $lines[
+                        $index + 1
+                    ]
+                )
+            ) {
+                $searchLines[] =
+                    $lines[
+                        $index + 1
+                    ];
+            }
+
+            foreach (
+                $searchLines
+                as $searchLine
+            ) {
+                foreach (
+                    $this->datesFromText(
+                        $searchLine
+                    )
+                    as $date
+                ) {
+                    $labelCandidates[
+                        $date
+                    ] = true;
+                }
+            }
+        }
+
+        $labelDates =
+            array_keys(
+                $labelCandidates
+            );
+
+        if (
+            count(
+                $labelDates
+            ) === 1
+        ) {
+            return $labelDates[0];
+        }
+
+        /*
+         * OCR-confusion fallback.
+         *
+         * Examples:
+         * D.O.B
+         * D.0.B
+         * D.O.8
+         * 0.0.8
+         */
+        $ocrLabelCandidates = [];
+
+        foreach (
+            $lines
+            as $index => $line
+        ) {
+            if (
+                !preg_match(
+                    '/(?:^|[^A-Z0-9])'
+                    . '[D0O]'
+                    . '[.\s]*'
+                    . '[O0]'
+                    . '[.\s]*'
+                    . '[B8]'
+                    . '\s*[:：]?/iu',
+                    $line
+                )
+            ) {
+                continue;
+            }
+
+            $searchLines = [
+                $line,
+            ];
+
+            if (
+                isset(
+                    $lines[
+                        $index + 1
+                    ]
+                )
+            ) {
+                $searchLines[] =
+                    $lines[
+                        $index + 1
+                    ];
+            }
+
+            foreach (
+                $searchLines
+                as $searchLine
+            ) {
+                foreach (
+                    $this->datesFromText(
+                        $searchLine
+                    )
+                    as $date
+                ) {
+                    $ocrLabelCandidates[
+                        $date
+                    ] = true;
+                }
+            }
+        }
+
+        $ocrLabelDates =
+            array_keys(
+                $ocrLabelCandidates
+            );
+
+        if (
+            count(
+                $ocrLabelDates
+            ) === 1
+        ) {
+            return $ocrLabelDates[0];
+        }
+
+        /*
+         * Conflicting OCR variants remain blank
+         * unless the Arabic field label resolves
+         * the conflict above.
+         */
+        return null;
+    }
+
+    private function datesFromText(
+        string $text
+    ): array {
+        $text =
+            $this->normalizeDigits(
+                $text
+            );
+
+        preg_match_all(
+            '/(?<!\d)(?:'
+            . '\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{4}'
+            . '|'
+            . '\d{4}[\/.\-]\d{1,2}[\/.\-]\d{1,2}'
+            . ')(?!\d)/u',
+            $text,
+            $matches
+        );
+
+        $dates = [];
+
+        foreach (
+            $matches[0] ?? []
+            as $raw
+        ) {
+            $date =
+                $this->date(
+                    $raw
+                );
+
+            if (
+                $date !== null
+                && $date
+                    <= date('Y-m-d')
+            ) {
+                $dates[$date] =
+                    true;
+            }
+        }
+
+        return array_keys(
+            $dates
+        );
     }
 
     private function fallbackDateOfBirth(
