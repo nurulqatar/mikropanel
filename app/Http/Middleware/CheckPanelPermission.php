@@ -132,10 +132,28 @@ class CheckPanelPermission
          * privileged modules.
          */
         if (
-            $routeName
-            === 'clients.identity-scan'
+            in_array(
+                $routeName,
+                [
+                    'clients.identity-scan',
+                    'clients.identity-scan-preview',
+                    'clients.identity-face-preview',
+                ],
+                true
+            )
         ) {
             return [
+                'clients.create',
+                'clients.edit',
+            ];
+        }
+
+        if (
+            $routeName
+            === 'clients.identity-image'
+        ) {
+            return [
+                'clients.view',
                 'clients.create',
                 'clients.edit',
             ];
