@@ -536,7 +536,6 @@ class QatarIdStructureService
                         $line,
                         0,
                         $position,
-                        null,
                         'UTF-8'
                     );
 
