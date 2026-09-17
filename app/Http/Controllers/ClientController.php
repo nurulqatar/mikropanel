@@ -107,6 +107,18 @@ class ClientController extends Controller
         $data = $request->validated();
 
         /*
+         * Scan UUIDs are workflow tokens, not client
+         * database attributes. The Client model reads
+         * them directly from the current request after
+         * the client save succeeds.
+         */
+        unset(
+            $data['qatar_id_front_scan_token'],
+            $data['qatar_id_back_scan_token'],
+            $data['passport_scan_token']
+        );
+
+        /*
          * New connection billing is separate
          * from ClientRequest because the same
          * ClientRequest is also used by Edit.
@@ -808,6 +820,18 @@ class ClientController extends Controller
         ClientProvisionService $provision
     ): RedirectResponse {
         $data = $request->validated();
+
+        /*
+         * Scan UUIDs are workflow tokens, not client
+         * database attributes. The Client model reads
+         * them directly from the current request after
+         * the client save succeeds.
+         */
+        unset(
+            $data['qatar_id_front_scan_token'],
+            $data['qatar_id_back_scan_token'],
+            $data['passport_scan_token']
+        );
 
         unset(
             $data['router_id'],

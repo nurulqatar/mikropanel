@@ -85,10 +85,22 @@ class ClientIdentityScanController extends Controller
          * candidate image.
          */
         try {
-            $result['image_token'] =
+            $imageToken =
                 $images->stage(
                     $validated[
                         'document'
+                    ]
+                );
+
+            $result['image_token'] =
+                $imageToken;
+
+            $result['image_preview_url'] =
+                route(
+                    'clients.identity-scan-preview',
+                    [
+                        'token' =>
+                            $imageToken,
                     ]
                 );
         } catch (\Throwable $exception) {
@@ -101,6 +113,9 @@ class ClientIdentityScanController extends Controller
             );
 
             $result['image_token'] =
+                null;
+
+            $result['image_preview_url'] =
                 null;
         }
 

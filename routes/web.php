@@ -642,6 +642,21 @@ Route::get(
     ])
     ->name('clients.identity-image');
 
+
+Route::get(
+    '/clients/identity-scan-preview/{token}',
+    [
+        \App\Http\Controllers\ClientIdentityImageController::class,
+        'preview',
+    ]
+)
+    ->middleware([
+        'auth',
+        'active.panel.user',
+    ])
+    ->whereUuid('token')
+    ->name('clients.identity-scan-preview');
+
 require __DIR__.'/auth.php';
 
 

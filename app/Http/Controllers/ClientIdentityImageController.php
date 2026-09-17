@@ -83,4 +83,65 @@ class ClientIdentityImageController extends Controller
                 ]
             );
     }
+
+    public function preview(
+        Request $request,
+        string $token
+    ): StreamedResponse {
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user
+            && (
+                $user->isAdmin()
+                || $user->isSuperAdmin()
+                || $user->hasAnyPermission([
+                    'clients.view',
+                    'clients.create',
+                    'clients.edit',
+                ])
+            ),
+            403
+        );
+
+        abort_unless(
+            preg_match(
+                '/^[0-9a-f]{8}-'
+                . '[0-9a-f]{4}-'
+                . '[1-5][0-9a-f]{3}-'
+                . '[89ab][0-9a-f]{3}-'
+                . '[0-9a-f]{12}$/i',
+                $token
+            ) === 1,
+            404
+        );
+
+        $path =
+            'identity-scans/tmp/'
+            . $token
+            . '.webp';
+
+        abort_unless(
+            Storage::disk('local')
+                ->exists(
+                    $path
+                ),
+            404
+        );
+
+        return Storage::disk('local')
+            ->response(
+                $path,
+                'identity-preview.webp',
+                [
+                    'Content-Type' =>
+                        'image/webp',
+
+                    'Cache-Control' =>
+                        'no-store, private',
+                ]
+            );
+    }
+
 }

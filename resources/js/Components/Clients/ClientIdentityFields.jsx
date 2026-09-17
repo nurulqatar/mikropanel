@@ -169,6 +169,13 @@ export default function ClientIdentityFields({
     const [qidBackDone, setQidBackDone] =
         useState(false);
 
+    const [imagePreviews, setImagePreviews] =
+        useState({
+            qidFront: null,
+            qidBack: null,
+            passport: null,
+        });
+
     const [mobile] =
         useState(
             () => detectMobile()
@@ -273,7 +280,8 @@ export default function ClientIdentityFields({
             (
                 detected,
                 meta,
-                imageToken = null
+                imageToken = null,
+                previewUrl = null
             ) => {
                 const merged = {
                     ...data,
@@ -441,6 +449,59 @@ export default function ClientIdentityFields({
                         '';
                 }
 
+                if (
+                    previewUrl
+                    && meta?.type === 'qatar_id'
+                ) {
+                    setImagePreviews(
+                        (previous) => {
+                            const next = {
+                                ...previous,
+                                passport: null,
+                            };
+
+                            if (
+                                meta?.side === 'front'
+                            ) {
+                                next.qidFront =
+                                    previewUrl;
+                            } else if (
+                                meta?.side === 'back'
+                            ) {
+                                next.qidBack =
+                                    previewUrl;
+                            } else if (
+                                meta?.side === 'both'
+                            ) {
+                                if (
+                                    previous.qidFront
+                                ) {
+                                    next.qidBack =
+                                        previewUrl;
+                                } else {
+                                    next.qidFront =
+                                        previewUrl;
+                                }
+                            }
+
+                            return next;
+                        }
+                    );
+                }
+
+                if (
+                    previewUrl
+                    && meta?.type
+                        === 'ordinary_passport'
+                ) {
+                    setImagePreviews({
+                        qidFront: null,
+                        qidBack: null,
+                        passport:
+                            previewUrl,
+                    });
+                }
+
                 setData(
                     merged
                 );
@@ -529,6 +590,9 @@ export default function ClientIdentityFields({
                         meta,
                         response.data
                             ?.image_token
+                            ?? null,
+                        response.data
+                            ?.image_preview_url
                             ?? null
                     );
 
@@ -1406,6 +1470,27 @@ export default function ClientIdentityFields({
         ]
     );
 
+    const previewDocuments = [
+        {
+            key: 'qid-front',
+            label: 'Qatar ID — Front',
+            url: imagePreviews.qidFront,
+        },
+        {
+            key: 'qid-back',
+            label: 'Qatar ID — Back',
+            url: imagePreviews.qidBack,
+        },
+        {
+            key: 'passport',
+            label: 'Passport',
+            url: imagePreviews.passport,
+        },
+    ].filter(
+        (document) =>
+            Boolean(document.url),
+    );
+
     const identityError =
         allDocumentFields
             .map(
@@ -1683,6 +1768,58 @@ export default function ClientIdentityFields({
                         >
                             BACK {qidBackDone ? '✓' : 'WAITING'}
                         </span>
+                    </div>
+                )}
+
+                {previewDocuments.length > 0 && (
+                    <div className="rounded-xl border border-cyan-200 bg-cyan-50/40 p-4">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                            <div>
+                                <h4 className="text-sm font-black text-slate-900">
+                                    Scanned Image Preview
+                                </h4>
+
+                                <p className="mt-0.5 text-xs text-slate-500">
+                                    These are the compressed images that will be saved with this client.
+                                </p>
+                            </div>
+
+                            <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black uppercase text-emerald-700">
+                                Ready
+                            </span>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {previewDocuments.map(
+                                (document) => (
+                                    <a
+                                        key={document.key}
+                                        href={document.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-cyan-400"
+                                    >
+                                        <div className="flex h-40 items-center justify-center bg-slate-50 p-2">
+                                            <img
+                                                src={document.url}
+                                                alt={document.label}
+                                                className="max-h-full max-w-full object-contain"
+                                            />
+                                        </div>
+
+                                        <div className="border-t border-slate-200 px-3 py-2">
+                                            <p className="text-xs font-bold text-slate-800">
+                                                {document.label}
+                                            </p>
+
+                                            <p className="mt-0.5 text-[10px] text-slate-400">
+                                                Click for larger preview
+                                            </p>
+                                        </div>
+                                    </a>
+                                ),
+                            )}
+                        </div>
                     </div>
                 )}
 
