@@ -1159,19 +1159,7 @@ class ClientIdentityOcrService
         }
 
         $looksLikeQatarId =
-            preg_match(
-                '/(?:'
-                . 'STATE\s+OF\s+QATAR'
-                . '|RESIDENCY\s+PERMIT'
-                . '|RESIDENCE\s+PERMIT'
-                . '|QATAR\s+ID'
-                . '|QID'
-                . '|ID\.?\s*(?:NO|NUMBER)'
-                . ')/iu',
-                $combined
-            )
-            || preg_match(
-                '/(?<!\d)\d{11}(?!\d)/',
+            $this->looksLikeQatarIdOcrText(
                 $combined
             );
 
@@ -1409,6 +1397,102 @@ class ClientIdentityOcrService
         return $this->joinOcrTexts(
             $texts
         );
+    }
+
+    private function looksLikeQatarIdOcrText(
+        string $text
+    ): bool {
+        /*
+         * Front-side Qatar ID signals.
+         */
+        if (
+            preg_match(
+                '/(?:'
+                . 'STATE\s+OF\s+QATAR'
+                . '|RESIDENCY\s+PERMIT'
+                . '|RESIDENCE\s+PERMIT'
+                . '|QATAR\s+ID'
+                . '|QID'
+                . '|ID\.?\s*(?:NO|NUMBER)'
+                . ')/iu',
+                $text
+            )
+            || preg_match(
+                '/(?<!\d)\d{11}(?!\d)/',
+                $text
+            )
+        ) {
+            return true;
+        }
+
+        /*
+         * Qatar ID BACK SIDE.
+         *
+         * The real card OCR may not contain the
+         * 11-digit QID or "State Of Qatar", but it
+         * reliably exposes combinations such as:
+         *
+         * Passport Number
+         * Passport Expiry
+         * Serial No
+         * Residency Type
+         * Employer
+         *
+         * Requiring residency/employer plus another
+         * back-side field prevents a normal passport
+         * bio page from being classified as QID.
+         */
+        $hasPassportNumber =
+            (bool) preg_match(
+                '/PASSPORT\s*'
+                . '(?:NO|NUMBER)'
+                . '\b/iu',
+                $text
+            );
+
+        $hasPassportExpiry =
+            (bool) preg_match(
+                '/PASSPORT\s+'
+                . '(?:EXPIRY|EXPIRATION)/iu',
+                $text
+            );
+
+        $hasSerial =
+            (bool) preg_match(
+                '/SERIAL\s*'
+                . '(?:NO|NUMBER)'
+                . '\b/iu',
+                $text
+            );
+
+        $hasResidencyType =
+            (bool) preg_match(
+                '/RESIDENCY\s+TYPE/iu',
+                $text
+            );
+
+        $hasEmployer =
+            (bool) preg_match(
+                '/(?:EMPLOYER|SPONSOR)/iu',
+                $text
+            );
+
+        $hasQatarBackSpecific =
+            $hasResidencyType
+            || $hasEmployer;
+
+        $hasBackIdentityCore =
+            $hasPassportNumber
+            || $hasPassportExpiry
+            || $hasSerial;
+
+        /*
+         * Require a Qatar-residency-specific marker
+         * AND at least one passport/serial marker.
+         */
+        return
+            $hasQatarBackSpecific
+            && $hasBackIdentityCore;
     }
 
     private function tesseractText(
