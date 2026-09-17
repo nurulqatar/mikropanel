@@ -187,7 +187,7 @@ class PassportStructureService
         return $fields;
     }
 
-    private function isExcludedDocument(
+    public function isExcludedDocument(
         string $text
     ): bool {
         return preg_match(

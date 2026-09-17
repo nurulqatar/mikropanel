@@ -79,16 +79,52 @@ class ClientIdentityScanController extends Controller
                 $rawText
             );
 
-        $result['document'] =
-            $classifier->classify([
-                'fields' =>
-                    $result[
-                        'fields'
-                    ],
+        /*
+         * Ordinary/personal passports only.
+         *
+         * Diplomatic, service, official, special,
+         * emergency, refugee and other travel
+         * documents must never be presented as an
+         * ordinary customer passport.
+         */
+        if (
+            $passport->isExcludedDocument(
+                $rawText
+            )
+        ) {
+            /*
+             * Do not leak passport values parsed by
+             * the generic OCR layer into the form.
+             */
+            $result['fields'] = [];
 
-                'raw_text' =>
-                    $rawText,
-            ]);
+            /*
+             * Reuse the classifier's own unknown
+             * document response shape so frontend
+             * compatibility remains unchanged.
+             */
+            $result['document'] =
+                $classifier->classify([
+                    'fields' => [],
+                    'raw_text' => '',
+                ]);
+
+            $result['document'][
+                'reason'
+            ] =
+                'Only ordinary/personal passports are supported.';
+        } else {
+            $result['document'] =
+                $classifier->classify([
+                    'fields' =>
+                        $result[
+                            'fields'
+                        ],
+
+                    'raw_text' =>
+                        $rawText,
+                ]);
+        }
 
         /*
          * OCR uses the original upload. Only after
