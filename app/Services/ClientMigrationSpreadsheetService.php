@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
@@ -1643,11 +1644,16 @@ class ClientMigrationSpreadsheetService
                 'app/tmp'
             );
 
-        if (!is_dir($directory)) {
-            mkdir(
-                $directory,
-                0755,
-                true
+        File::ensureDirectoryExists(
+            $directory,
+            0770,
+            true
+        );
+
+        if (!is_writable($directory)) {
+            throw new RuntimeException(
+                'Excel temporary directory is not writable: '
+                . $directory
             );
         }
 

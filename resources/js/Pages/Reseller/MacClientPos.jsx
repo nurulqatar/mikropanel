@@ -1266,23 +1266,23 @@ function CreateClientModal({
             >
                         <div className="mb-5 space-y-4">
                             <ClientIdentityFields
-                                data={data}
-                                setData={setData}
-                                errors={errors}
+                                data={form.data}
+                                setData={form.setData}
+                                errors={form.errors}
                             />
 
                             <ClientCustomFieldsForm
                                 values={
-                                    data.custom_fields
+                                    form.data.custom_fields
                                     || {}
                                 }
                                 onChange={(values) =>
-                                    setData(
+                                    form.setData(
                                         'custom_fields',
                                         values,
                                     )
                                 }
-                                errors={errors}
+                                errors={form.errors}
                             />
                         </div>
 
@@ -2022,24 +2022,24 @@ function EditClientModal({
             >
                         <div className="mb-5 space-y-4">
                             <ClientIdentityFields
-                                data={data}
-                                setData={setData}
-                                errors={errors}
+                                data={form.data}
+                                setData={form.setData}
+                                errors={form.errors}
                             />
 
                             <ClientCustomFieldsForm
                                 clientId={client.id}
                                 values={
-                                    data.custom_fields
+                                    form.data.custom_fields
                                     || {}
                                 }
                                 onChange={(values) =>
-                                    setData(
+                                    form.setData(
                                         'custom_fields',
                                         values,
                                     )
                                 }
-                                errors={errors}
+                                errors={form.errors}
                             />
                         </div>
 
