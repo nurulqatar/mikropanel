@@ -82,16 +82,30 @@ function detectMobile() {
         navigator.userAgent
         ?? '';
 
+    const iPadDesktopMode =
+        navigator.platform === 'MacIntel'
+        && navigator.maxTouchPoints > 1;
+
     return (
         /Android|iPhone|iPad|iPod|Mobile/i.test(
             ua
         )
-        || (
-            typeof window !== 'undefined'
-            && window.matchMedia?.(
-                '(pointer: coarse)'
-            )?.matches
-        )
+        || iPadDesktopMode
+    );
+}
+
+function scannerAgentFetch(
+    path,
+    options = {},
+) {
+    return fetch(
+        `http://127.0.0.1:17873${path}`,
+        {
+            cache: 'no-store',
+            targetAddressSpace:
+                'loopback',
+            ...options,
+        },
     );
 }
 
@@ -124,6 +138,12 @@ export default function ClientIdentityFields({
     const waitForChangeRef =
         useRef(false);
 
+    const scannerPollBusyRef =
+        useRef(false);
+
+    const scanDocumentRef =
+        useRef(null);
+
     const [scanning, setScanning] =
         useState(false);
 
@@ -155,6 +175,23 @@ export default function ClientIdentityFields({
         useState(
             () => detectMobile()
         );
+
+    const [scannerAgent, setScannerAgent] =
+        useState({
+            online: false,
+            scannerConnected: false,
+            scannerName: null,
+            autoSupported: false,
+            feedReady: false,
+            queueCount: 0,
+            lastError: '',
+            connectionError: '',
+        });
+
+    const scannerInstallCommand =
+        typeof window === 'undefined'
+            ? ''
+            : `powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=Join-Path $env:TEMP 'MikroPanelScannerAgent.ps1'; iwr '${window.location.origin}/scanner/MikroPanelScannerAgent.ps1' -OutFile $p; & $p -Install -PairOrigin '${window.location.origin}'"`;
 
     const updateField = (
         field,
@@ -380,7 +417,9 @@ export default function ClientIdentityFields({
                 setMessage(
                     source === 'camera'
                         ? 'Document detected. Reading...'
-                        : 'Reading document...'
+                        : source === 'scanner'
+                            ? 'Scanner image received. Reading document...'
+                            : 'Reading document...'
                 );
 
                 try {
@@ -558,6 +597,40 @@ export default function ClientIdentityFields({
                 stopCamera,
             ]
         );
+
+    useEffect(
+        () => {
+            scanDocumentRef.current =
+                scanDocument;
+        },
+        [
+            scanDocument,
+        ]
+    );
+
+    const requestScannerScan =
+        async () => {
+            try {
+                const response =
+                    await scannerAgentFetch(
+                        '/scan-now'
+                    );
+
+                if (!response.ok) {
+                    throw new Error(
+                        `SCANNER_AGENT_${response.status}`
+                    );
+                }
+
+                setMessage(
+                    'Scanner command sent. Waiting for the document...'
+                );
+            } catch (error) {
+                setMessage(
+                    'Could not communicate with the Windows Scanner Agent.'
+                );
+            }
+        };
 
     const captureCamera =
         useCallback(
@@ -752,6 +825,192 @@ export default function ClientIdentityFields({
             mobile,
             startCamera,
             stopCamera,
+        ]
+    );
+
+    /*
+     * =========================================
+     * WINDOWS PC/LAPTOP SCANNER AGENT
+     * =========================================
+     *
+     * Only localhost is contacted. The agent
+     * monitors the connected Windows WIA scanner.
+     */
+    useEffect(
+        () => {
+            if (mobile) {
+                return undefined;
+            }
+
+            let cancelled =
+                false;
+
+            const pollAgent =
+                async () => {
+                    if (
+                        cancelled
+                        || scannerPollBusyRef.current
+                    ) {
+                        return;
+                    }
+
+                    scannerPollBusyRef.current =
+                        true;
+
+                    try {
+                        const pairResponse =
+                            await scannerAgentFetch(
+                                '/pair'
+                            );
+
+                        if (!pairResponse.ok) {
+                            throw new Error(
+                                `PAIR_${pairResponse.status}`
+                            );
+                        }
+
+                        const statusResponse =
+                            await scannerAgentFetch(
+                                '/status'
+                            );
+
+                        if (!statusResponse.ok) {
+                            throw new Error(
+                                `STATUS_${statusResponse.status}`
+                            );
+                        }
+
+                        const status =
+                            await statusResponse.json();
+
+                        if (cancelled) {
+                            return;
+                        }
+
+                        setScannerAgent({
+                            online: true,
+
+                            scannerConnected:
+                                Boolean(
+                                    status.scannerConnected
+                                ),
+
+                            scannerName:
+                                status.scannerName
+                                ?? null,
+
+                            autoSupported:
+                                Boolean(
+                                    status.autoSupported
+                                ),
+
+                            feedReady:
+                                Boolean(
+                                    status.feedReady
+                                ),
+
+                            queueCount:
+                                Number(
+                                    status.queueCount
+                                    ?? 0
+                                ),
+
+                            lastError:
+                                status.lastError
+                                ?? '',
+
+                            connectionError:
+                                '',
+                        });
+
+                        if (
+                            Number(
+                                status.queueCount
+                                ?? 0
+                            ) > 0
+                            && !scanningRef.current
+                            && scanDocumentRef.current
+                        ) {
+                            const scanResponse =
+                                await scannerAgentFetch(
+                                    '/next-scan'
+                                );
+
+                            if (
+                                scanResponse.status
+                                === 200
+                            ) {
+                                const blob =
+                                    await scanResponse.blob();
+
+                                if (blob.size > 0) {
+                                    const file =
+                                        new File(
+                                            [blob],
+                                            `scanner-${Date.now()}.jpg`,
+                                            {
+                                                type:
+                                                    blob.type
+                                                    || 'image/jpeg',
+                                            }
+                                        );
+
+                                    await scanDocumentRef
+                                        .current(
+                                            file,
+                                            'scanner'
+                                        );
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        if (!cancelled) {
+                            setScannerAgent(
+                                (previous) => ({
+                                    ...previous,
+
+                                    online:
+                                        false,
+
+                                    scannerConnected:
+                                        false,
+
+                                    feedReady:
+                                        false,
+
+                                    connectionError:
+                                        String(
+                                            error?.message
+                                            ?? 'OFFLINE'
+                                        ),
+                                })
+                            );
+                        }
+                    } finally {
+                        scannerPollBusyRef.current =
+                            false;
+                    }
+                };
+
+            pollAgent();
+
+            const timer =
+                window.setInterval(
+                    pollAgent,
+                    1200
+                );
+
+            return () => {
+                cancelled =
+                    true;
+
+                window.clearInterval(
+                    timer
+                );
+            };
+        },
+        [
+            mobile,
         ]
     );
 
@@ -1100,6 +1359,120 @@ export default function ClientIdentityFields({
                                     </div>
                                 </>
                             )}
+                        </div>
+                    </div>
+                )}
+
+                {!mobile && (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h4 className="text-sm font-black text-slate-900">
+                                        Windows Scanner
+                                    </h4>
+
+                                    <span
+                                        className={
+                                            scannerAgent.online
+                                                ? 'rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black text-emerald-700'
+                                                : 'rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500'
+                                        }
+                                    >
+                                        {scannerAgent.online
+                                            ? 'AGENT ONLINE'
+                                            : 'AGENT OFFLINE'}
+                                    </span>
+                                </div>
+
+                                {scannerAgent.online
+                                    && scannerAgent.scannerConnected
+                                    ? (
+                                        <div className="mt-2 text-xs leading-5 text-slate-600">
+                                            <div className="font-bold text-slate-800">
+                                                {scannerAgent.scannerName
+                                                    ?? 'WIA Scanner'}
+                                            </div>
+
+                                            {scannerAgent.autoSupported
+                                                ? (
+                                                    <div>
+                                                        {scannerAgent.feedReady
+                                                            ? 'Document detected in feeder — automatic scan is starting.'
+                                                            : 'Ready. Place a document in the scanner feeder; no Scan button is required.'}
+                                                    </div>
+                                                )
+                                                : (
+                                                    <div>
+                                                        Scanner connected. This scanner driver does not expose automatic paper detection, so use the scanner control below.
+                                                    </div>
+                                                )}
+
+                                            {scannerAgent.lastError && (
+                                                <div className="mt-1 font-semibold text-red-600">
+                                                    {scannerAgent.lastError}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                    : scannerAgent.online
+                                        ? (
+                                            <p className="mt-2 text-xs text-amber-700">
+                                                Scanner Agent is running, but no Windows WIA scanner is detected.
+                                            </p>
+                                        )
+                                        : (
+                                            <p className="mt-2 text-xs leading-5 text-slate-500">
+                                                Install the Scanner Agent once on this Windows PC. It will then start automatically with Windows.
+                                            </p>
+                                        )}
+                            </div>
+
+                            {scannerAgent.online
+                                && scannerAgent.scannerConnected
+                                && !scannerAgent.autoSupported
+                                ? (
+                                    <button
+                                        type="button"
+                                        disabled={scanning}
+                                        onClick={
+                                            requestScannerScan
+                                        }
+                                        className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50"
+                                    >
+                                        SCAN FROM CONNECTED SCANNER
+                                    </button>
+                                )
+                                : !scannerAgent.online
+                                    ? (
+                                        <div className="flex shrink-0 flex-wrap gap-2">
+                                            <a
+                                                href="/scanner/MikroPanelScannerAgent.ps1"
+                                                download
+                                                className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs font-black text-indigo-700"
+                                            >
+                                                DOWNLOAD AGENT
+                                            </a>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    navigator.clipboard
+                                                        ?.writeText(
+                                                            scannerInstallCommand
+                                                        );
+
+                                                    setMessage(
+                                                        'Windows Scanner Agent install command copied.'
+                                                    );
+                                                }}
+                                                className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white"
+                                            >
+                                                COPY INSTALL COMMAND
+                                            </button>
+                                        </div>
+                                    )
+                                    : null}
                         </div>
                     </div>
                 )}
@@ -1522,7 +1895,12 @@ export default function ClientIdentityFields({
                         <div className="mt-1 text-xs text-slate-500">
                             {mobile
                                 ? 'Place a Qatar ID or ordinary passport inside the camera frame.'
-                                : 'Upload PDF, JPG, JPEG or PNG. PC scanner integration is the next installation step.'}
+                                : scannerAgent.online
+                                    && scannerAgent.scannerConnected
+                                    ? scannerAgent.autoSupported
+                                        ? 'Place the Qatar ID or passport in the connected scanner feeder. Scanning starts automatically.'
+                                        : 'Connected scanner is ready. Use the scanner control above for this scanner driver.'
+                                    : 'Connect the Windows Scanner Agent or upload PDF, JPG, JPEG or PNG.'}
                         </div>
                     </div>
                 )}
