@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class ClientRefund extends Model
 {
     protected $fillable = [
+        'zone_id',
         'reseller_id',
         'batch_uuid',
         'client_id',
@@ -69,4 +70,14 @@ class ClientRefund extends Model
             'refunded_by'
         );
     }
+
+    public function zone()
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
+        );
+    }
+
+
 }

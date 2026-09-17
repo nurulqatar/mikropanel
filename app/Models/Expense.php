@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Expense extends Model
 {
     protected $fillable = [
+        'zone_id',
         'expense_date',
         'category',
         'title',
@@ -29,4 +30,14 @@ class Expense extends Model
             'created_by'
         );
     }
+
+    public function zone()
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
+        );
+    }
+
+
 }

@@ -201,6 +201,44 @@ class ClientProvisionService
             'ipRange',
         ]);
 
+        /*
+         * ZONE_ROUTER_BOUNDARY_V5
+         *
+         * MAC client state can only be written
+         * to a MikroTik in the same zone.
+         */
+        if (
+            !$client->zone_id
+            || !$router->zone_id
+        ) {
+            Log::error(
+                'Zone-bound MikroTik sync rejected because zone information is missing.',
+                [
+                    'client_id' =>
+                        $client->id,
+
+                    'client_zone_id' =>
+                        $client->zone_id,
+
+                    'router_id' =>
+                        $router->id,
+
+                    'router_zone_id' =>
+                        $router->zone_id,
+                ]
+            );
+
+            return false;
+        }
+
+        if (
+            (int) $client->zone_id
+            !== (int) $router->zone_id
+        ) {
+            return true;
+        }
+
+
         if ($client->trashed()) {
             $binding =
                 ClientRouterBinding::query()
@@ -246,13 +284,24 @@ class ClientProvisionService
     private function syncAcrossEnabledRouters(
         Client $client
     ): array {
-        $routers = Router::query()
-            ->where(
-                'enabled',
-                true
-            )
-            ->orderBy('id')
-            ->get();
+        /*
+         * ZONE_FANOUT_QUERY_V5
+         *
+         * Same MAC/IP/state goes to every enabled
+         * MikroTik inside this client's zone.
+         */
+        $routers =
+            Router::query()
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->where(
+                    'zone_id',
+                    $client->zone_id
+                )
+                ->orderBy('id')
+                ->get();
 
         $result = [
             'synced' => 0,
@@ -274,7 +323,7 @@ class ClientProvisionService
 
         if ($routers->isEmpty()) {
             Log::warning(
-                'Global client sync found no enabled routers.',
+                'Zone client sync found no enabled routers.',
                 [
                     'client_id' =>
                         $client->id,

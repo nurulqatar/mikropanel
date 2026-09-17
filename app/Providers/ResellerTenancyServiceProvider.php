@@ -17,6 +17,7 @@ use App\Models\HotspotServer;
 use App\Models\HotspotSession;
 use App\Models\HotspotVoucher;
 use App\Models\Invoice;
+use App\Models\NetworkZone;
 use App\Models\IpRange;
 use App\Models\Package;
 use App\Models\Payment;
@@ -258,6 +259,7 @@ class ResellerTenancyServiceProvider extends ServiceProvider
     {
         $models = [
             Client::class,
+            NetworkZone::class,
             ClientRefund::class,
             ResellerNotification::class,
             Router::class,

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class IpRange extends Model
 {
     protected $fillable = [
+        'zone_id',
         'router_id',
         'name',
         'interface',
@@ -33,4 +34,14 @@ class IpRange extends Model
     {
         return $this->hasMany(Client::class);
     }
+
+    public function zone()
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
+        );
+    }
+
+
 }

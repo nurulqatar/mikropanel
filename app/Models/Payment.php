@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class Payment extends Model
 {
     protected $fillable = [
+        'zone_id',
         'invoice_id',
         'client_id',
         'amount',
@@ -44,6 +45,16 @@ class Payment extends Model
     {
         return $this->hasMany(
             ClientRefund::class
+        );
+    }
+
+
+
+    public function zone()
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
         );
     }
 

@@ -13,6 +13,7 @@ class User extends Authenticatable
 
     protected $fillable = [
         'reseller_id',
+        'zone_id',
         'name',
         'email',
         'email_verified_at',
@@ -37,6 +38,7 @@ class User extends Authenticatable
             'is_active' => 'boolean',
             'is_super_admin' => 'boolean',
             'reseller_id' => 'integer',
+            'zone_id' => 'integer',
         ];
     }
 
@@ -97,6 +99,12 @@ class User extends Authenticatable
             );
     }
 
+    public function isManager(): bool
+    {
+        return $this->reseller_id !== null
+            && $this->role === 'manager';
+    }
+
     public function isResellerUser(): bool
     {
         return $this->reseller_id !== null;
@@ -114,5 +122,15 @@ class User extends Authenticatable
             Reseller::class
         );
     }
+
+
+    public function zone()
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
+        );
+    }
+
 
 }

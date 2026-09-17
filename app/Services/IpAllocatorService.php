@@ -11,6 +11,25 @@ class IpAllocatorService
     public function allocate(
         IpRange $range
     ): ?string {
+        /*
+         * ZONE_LOCAL_IP_ALLOCATION_V5
+         *
+         * Different remote zones may reuse the
+         * same private subnet. Inside one zone,
+         * every client IP remains unique.
+         */
+        if (!$range->zone_id) {
+            Log::error(
+                'Cannot allocate IP from an IP Pool without zone.',
+                [
+                    'ip_range_id' =>
+                        $range->id,
+                ]
+            );
+
+            return null;
+        }
+
         $start = ip2long(
             $range->start_ip
         );
@@ -80,12 +99,17 @@ class IpAllocatorService
 
             $address = long2ip($ip);
 
-            $exists = Client::query()
-                ->where(
-                    'ip_address',
-                    $address
-                )
-                ->exists();
+            $exists =
+                Client::query()
+                    ->where(
+                        'zone_id',
+                        $range->zone_id
+                    )
+                    ->where(
+                        'ip_address',
+                        $address
+                    )
+                    ->exists();
 
             if (!$exists) {
                 return $address;

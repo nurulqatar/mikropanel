@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ClientMonthlyUsage extends Model
 {
     protected $fillable = [
+        'zone_id',
         'client_id',
         'usage_month',
         'upload_bytes',
@@ -30,4 +31,14 @@ class ClientMonthlyUsage extends Model
     {
         return $this->belongsTo(Client::class);
     }
+
+    public function zone()
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
+        );
+    }
+
+
 }

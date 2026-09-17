@@ -10,6 +10,7 @@ class Invoice extends Model
     use HasFactory;
 
     protected $fillable = [
+        'zone_id',
         'client_id',
         'invoice_no',
         'billing_month',
@@ -73,6 +74,16 @@ class Invoice extends Model
     {
         return $this->hasMany(
             Payment::class
+        );
+    }
+
+
+
+    public function zone()
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
         );
     }
 

@@ -11,6 +11,7 @@ use App\Models\Payment;
 use App\Models\Setting;
 use App\Models\ClientMonthlyUsage;
 use App\Models\IpRange;
+use App\Models\NetworkZone;
 use App\Models\Package;
 use App\Models\Router;
 use App\Services\ClientProvisionService;
@@ -288,6 +289,72 @@ class ClientController extends Controller
                 ->withInput();
         }
 
+        /*
+         * CLIENT_ZONE_FROM_POOL_V5
+         *
+         * Panel IP Pool defines the
+         * client's remote MAC zone.
+         */
+        $zone =
+            NetworkZone::query()
+                ->where(
+                    'id',
+                    $range->zone_id
+                )
+                ->where(
+                    'service_type',
+                    'mac'
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->first();
+
+        if (!$zone) {
+            return back()
+                ->withErrors([
+                    'ip_range_id' =>
+                        'Selected IP Pool does not belong to an enabled MAC Client zone.',
+                ])
+                ->withInput();
+        }
+
+        if (
+            !empty(
+                $data['parent_client_id']
+            )
+        ) {
+            $primaryZoneId =
+                Client::query()
+                    ->whereKey(
+                        (int)
+                        $data[
+                            'parent_client_id'
+                        ]
+                    )
+                    ->value(
+                        'zone_id'
+                    );
+
+            if (
+                !$primaryZoneId
+                || (int) $primaryZoneId
+                    !== (int) $zone->id
+            ) {
+                return back()
+                    ->withErrors([
+                        'ip_range_id' =>
+                            'Additional devices must stay in the primary client zone.',
+                    ])
+                    ->withInput();
+            }
+        }
+
+        $data['zone_id'] =
+            $zone->id;
+
+
         $ip = $allocator->allocate(
             $range
         );
@@ -353,19 +420,24 @@ class ClientController extends Controller
          *
          * Operator no longer selects it.
          */
-        $primaryRouter = Router::query()
-            ->where(
-                'enabled',
-                true
-            )
-            ->orderBy('id')
-            ->first();
+        $primaryRouter =
+            Router::query()
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->where(
+                    'zone_id',
+                    $zone->id
+                )
+                ->orderBy('id')
+                ->first();
 
         if (!$primaryRouter) {
             return back()
                 ->withErrors([
                     'ip_range_id' =>
-                        'At least one enabled MikroTik router is required.',
+                        'At least one enabled MikroTik router is required in the selected zone.',
                 ])
                 ->withInput();
         }

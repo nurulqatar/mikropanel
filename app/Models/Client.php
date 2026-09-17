@@ -11,6 +11,7 @@ class Client extends Model
     use SoftDeletes;
 
     protected $fillable = [
+        'zone_id',
         'client_code',
         'parent_client_id',
         'device_label',
@@ -484,5 +485,15 @@ class Client extends Model
         ->withPivot('value')
         ->withTimestamps();
     }
+
+
+    public function zone()
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
+        );
+    }
+
 
 }
