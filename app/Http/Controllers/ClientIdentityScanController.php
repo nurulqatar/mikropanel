@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\ClientIdentityOcrService;
+use App\Services\IdentityDocumentClassifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -10,7 +11,8 @@ class ClientIdentityScanController extends Controller
 {
     public function __invoke(
         Request $request,
-        ClientIdentityOcrService $ocr
+        ClientIdentityOcrService $ocr,
+        IdentityDocumentClassifier $classifier
     ): JsonResponse {
         $user =
             $request->user();
@@ -38,13 +40,21 @@ class ClientIdentityScanController extends Controller
                 ],
             ]);
 
+        $result =
+            $ocr->scan(
+                $validated[
+                    'document'
+                ]
+            );
+
+        $result['document'] =
+            $classifier->classify(
+                $result
+            );
+
         return response()
             ->json(
-                $ocr->scan(
-                    $validated[
-                        'document'
-                    ]
-                )
+                $result
             )
             ->header(
                 'Cache-Control',
