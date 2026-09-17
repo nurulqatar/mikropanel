@@ -1029,7 +1029,8 @@ class ClientIdentityOcrService
 
         $variants =
             $this->prepareOcrVariants(
-                $image
+                $image,
+                false
             );
 
         $enhanced =
@@ -1184,6 +1185,45 @@ class ClientIdentityOcrService
          * when the first pass indicates a Qatar ID.
          */
         if ($looksLikeQatarId) {
+            /*
+             * Qatar ID back now requires only:
+             * - passport number
+             * - passport expiry
+             * - serial number
+             *
+             * If the fast English pass already read
+             * all three, do not run another Tesseract
+             * process at all.
+             */
+            $quickFields =
+                $this->parse(
+                    $combined
+                );
+
+            if (
+                !empty(
+                    $quickFields[
+                        'passport_number'
+                    ]
+                )
+                && !empty(
+                    $quickFields[
+                        'passport_expiry_date'
+                    ]
+                )
+                && !empty(
+                    $quickFields[
+                        'document_serial_number'
+                    ]
+                )
+            ) {
+                return $combined;
+            }
+
+            /*
+             * Front side still benefits from Arabic
+             * labels for DOB / occupation accuracy.
+             */
             $qatarText =
                 $this->tesseractText(
                     $enhanced,
@@ -1203,6 +1243,87 @@ class ClientIdentityOcrService
             return $this->joinOcrTexts(
                 $texts
             );
+        }
+
+        /*
+         * We now know this is NOT a Qatar ID.
+         * Only at this point prepare passport MRZ
+         * crops and run the MRZ OCR.
+         */
+        $passportVariants =
+            $this->prepareOcrVariants(
+                $image,
+                true
+            );
+
+        if ($passportVariants !== []) {
+            $variants =
+                array_merge(
+                    $variants,
+                    $passportVariants
+                );
+
+            $enhanced =
+                $variants[
+                    'enhanced'
+                ]
+                ?? $enhanced;
+        }
+
+        if (
+            isset(
+                $variants[
+                    'mrz_gray'
+                ]
+            )
+        ) {
+            $mrzText =
+                $this->tesseractText(
+                    $variants[
+                        'mrz_gray'
+                    ],
+                    'eng',
+                    6,
+                    'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
+                );
+
+            if (
+                trim(
+                    $mrzText
+                ) !== ''
+            ) {
+                $texts[] =
+                    $mrzText;
+            }
+
+            $combined =
+                $this->joinOcrTexts(
+                    $texts
+                );
+
+            if (
+                $this->findBestTd3Mrz(
+                    $combined
+                ) !== null
+            ) {
+                return $combined;
+            }
+
+            /*
+             * Damaged MRZ can still contain enough
+             * machine-readable markers to justify
+             * the thresholded recovery pass below.
+             */
+            if (
+                preg_match(
+                    '/(?:P<|<{2,})/',
+                    strtoupper(
+                        $mrzText
+                    )
+                )
+            ) {
+                $looksLikePassport = true;
+            }
         }
 
         /*
@@ -1532,7 +1653,8 @@ class ClientIdentityOcrService
     }
 
     private function prepareOcrVariants(
-        string $image
+        string $image,
+        bool $includeMrz = true
     ): array {
         if (
             !is_executable(
@@ -1614,6 +1736,15 @@ class ClientIdentityOcrService
             'enhanced' =>
                 $enhanced,
         ];
+
+        /*
+         * Qatar ID fast path:
+         * do not spend time creating passport MRZ
+         * crops until we know this is not a QID.
+         */
+        if (!$includeMrz) {
+            return $variants;
+        }
 
         $enhancedSize =
             $this->imageDimensions(
