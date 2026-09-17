@@ -84,6 +84,40 @@ class QatarIdStructureService
                 $text
             );
 
+            /*
+             * Qatar ID front normally contains both
+             * DOB and ID expiry. Real camera OCR can
+             * read the date value while damaging the
+             * DOB label. In that case, resolve DOB
+             * from the remaining front-side dates.
+             */
+            if (
+                empty(
+                    $fields[
+                        'date_of_birth'
+                    ]
+                )
+            ) {
+                $fallbackDob =
+                    $this->fallbackDateOfBirth(
+                        $text,
+                        $fields[
+                            'qatar_id_expiry_date'
+                        ]
+                        ?? null
+                    );
+
+                if (
+                    $fallbackDob
+                    !== null
+                ) {
+                    $fields[
+                        'date_of_birth'
+                    ] =
+                        $fallbackDob;
+                }
+            }
+
             $gender =
                 $this->value(
                     $text,
@@ -709,6 +743,124 @@ class QatarIdStructureService
         }
 
         return false;
+    }
+
+    private function fallbackDateOfBirth(
+        string $text,
+        ?string $knownExpiry
+    ): ?string {
+        $text =
+            $this->normalizeDigits(
+                $text
+            );
+
+        $candidates = [];
+
+        preg_match_all(
+            '/(?<!\\d)(?:'
+            . '\\d{1,2}[\\/.\\-]\\d{1,2}[\\/.\\-]\\d{4}'
+            . '|'
+            . '\\d{4}[\\/.\\-]\\d{1,2}[\\/.\\-]\\d{1,2}'
+            . ')(?!\\d)/u',
+            $text,
+            $matches
+        );
+
+        foreach (
+            $matches[0] ?? []
+            as $raw
+        ) {
+            $date =
+                $this->date(
+                    $raw
+                );
+
+            if (
+                $date === null
+                || $date
+                    === $knownExpiry
+            ) {
+                continue;
+            }
+
+            /*
+             * DOB must not be in the future.
+             */
+            if (
+                $date
+                > date('Y-m-d')
+            ) {
+                continue;
+            }
+
+            $candidates[$date] =
+                true;
+        }
+
+        $dates =
+            array_keys(
+                $candidates
+            );
+
+        /*
+         * Best case: after excluding QID expiry,
+         * exactly one valid past date remains.
+         */
+        if (
+            count($dates)
+            === 1
+        ) {
+            return $dates[0];
+        }
+
+        /*
+         * If OCR produced duplicates/noise but
+         * multiple valid dates remain, choose only
+         * when one date is clearly the oldest.
+         *
+         * This is appropriate for the QID front
+         * structure and avoids inventing a value
+         * when confidence is low.
+         */
+        if (
+            count($dates)
+            > 1
+        ) {
+            sort(
+                $dates,
+                SORT_STRING
+            );
+
+            $oldest =
+                $dates[0];
+
+            $second =
+                $dates[1];
+
+            $oldestYear =
+                (int) substr(
+                    $oldest,
+                    0,
+                    4
+                );
+
+            $secondYear =
+                (int) substr(
+                    $second,
+                    0,
+                    4
+                );
+
+            if (
+                $secondYear
+                - $oldestYear
+                >= 5
+            ) {
+                return $oldest;
+            }
+        }
+
+        return null;
     }
 
     private function date(
