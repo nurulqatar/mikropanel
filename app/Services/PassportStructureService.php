@@ -935,22 +935,60 @@ class PassportStructureService
         foreach (
             $lines as $index => $line
         ) {
-            $matchedLabel =
+            $label =
                 $this->matchedPrintedLabel(
                     $line,
                     $labels
                 );
 
-            if ($matchedLabel === null) {
+            if ($label === null) {
                 continue;
             }
 
             /*
-             * Passport layouts normally print the
-             * caption first and the actual value
-             * underneath it.
+             * SAME LINE FIRST:
              *
-             * Therefore NEXT LINE has priority.
+             * Given Names: MD NURUL
+             * Surname: ISLAM
+             */
+            $position =
+                mb_stripos(
+                    $line,
+                    $label
+                );
+
+            if ($position !== false) {
+                $after =
+                    mb_substr(
+                        $line,
+                        $position
+                        + mb_strlen(
+                            $label
+                        )
+                    );
+
+                $after =
+                    trim(
+                        $after,
+                        " \t:;/|-.—_"
+                    );
+
+                $value =
+                    $this
+                        ->cleanPrintedPersonName(
+                            $after
+                        );
+
+                if ($value !== null) {
+                    return $value;
+                }
+            }
+
+            /*
+             * NEXT LINE:
+             *
+             * Given Names
+             * MD NURUL
              */
             for (
                 $step = 1;
@@ -975,59 +1013,23 @@ class PassportStructureService
                 }
 
                 if (
-                    $this->looksLikePassportFieldLabel(
-                        $candidate
-                    )
+                    $this
+                        ->looksLikePassportFieldLabel(
+                            $candidate
+                        )
                 ) {
                     break;
                 }
 
                 $value =
-                    $this->cleanPrintedPersonName(
-                        $candidate
-                    );
+                    $this
+                        ->cleanPrintedPersonName(
+                            $candidate
+                        );
 
                 if ($value !== null) {
                     return $value;
                 }
-            }
-
-            /*
-             * Some passports put label and value
-             * on the same line.
-             */
-            $position =
-                mb_stripos(
-                    $line,
-                    $matchedLabel
-                );
-
-            if ($position === false) {
-                continue;
-            }
-
-            $after =
-                mb_substr(
-                    $line,
-                    $position
-                    + mb_strlen(
-                        $matchedLabel
-                    )
-                );
-
-            $after =
-                trim(
-                    $after,
-                    " \t:;/|-.—_"
-                );
-
-            $value =
-                $this->cleanPrintedPersonName(
-                    $after
-                );
-
-            if ($value !== null) {
-                return $value;
             }
         }
 
@@ -1452,14 +1454,80 @@ class PassportStructureService
         string $line,
         array $labels
     ): ?string {
+        usort(
+            $labels,
+            fn (
+                string $a,
+                string $b
+            ) =>
+                mb_strlen($b)
+                <=>
+                mb_strlen($a)
+        );
+
         foreach ($labels as $label) {
-            if (
-                mb_stripos(
-                    $line,
-                    $label
-                ) !== false
-            ) {
-                return $label;
+            $offset = 0;
+
+            while (true) {
+                $position =
+                    mb_stripos(
+                        $line,
+                        $label,
+                        $offset
+                    );
+
+                if ($position === false) {
+                    break;
+                }
+
+                $before =
+                    $position > 0
+                        ? mb_substr(
+                            $line,
+                            $position - 1,
+                            1
+                        )
+                        : '';
+
+                $afterPosition =
+                    $position
+                    + mb_strlen(
+                        $label
+                    );
+
+                $after =
+                    $afterPosition
+                        < mb_strlen($line)
+                        ? mb_substr(
+                            $line,
+                            $afterPosition,
+                            1
+                        )
+                        : '';
+
+                $beforeIsWord =
+                    $before !== ''
+                    && preg_match(
+                        '/[\p{L}\p{N}]/u',
+                        $before
+                    );
+
+                $afterIsWord =
+                    $after !== ''
+                    && preg_match(
+                        '/[\p{L}\p{N}]/u',
+                        $after
+                    );
+
+                if (
+                    !$beforeIsWord
+                    && !$afterIsWord
+                ) {
+                    return $label;
+                }
+
+                $offset =
+                    $position + 1;
             }
         }
 
@@ -1836,27 +1904,28 @@ class PassportStructureService
         string $text,
         array $labels
     ): ?string {
-        $directLabels = array_values(
-            array_unique(
-                array_merge(
-                    [
-                        'Place of Birth',
-                        'Birth Place',
+        $directLabels =
+            array_values(
+                array_unique(
+                    array_merge(
+                        [
+                            'Place of Birth',
+                            'Birth Place',
 
-                        'Lieu de naissance',
+                            'Lieu de naissance',
 
-                        'Lugar de nacimiento',
+                            'Lugar de nacimiento',
 
-                        'Geburtsort',
+                            'Geburtsort',
 
-                        'Luogo di nascita',
+                            'Luogo di nascita',
 
-                        'Local de nascimento',
-                    ],
-                    $labels
+                            'Local de nascimento',
+                        ],
+                        $labels
+                    )
                 )
-            )
-        );
+            );
 
         $candidates =
             $this->directPrintedCandidates(
@@ -1865,27 +1934,34 @@ class PassportStructureService
                 4
             );
 
-        foreach ($candidates as $candidate) {
+        foreach (
+            $candidates
+            as $candidate
+        ) {
             $candidate =
                 $this->cleanVizLine(
                     $candidate
                 );
 
             /*
-             * Some passports print Sex immediately
-             * before Place of Birth value.
+             * Remove Sex ONLY when M/F/X is a
+             * standalone prefix token.
              */
             $candidate =
                 preg_replace(
-                    '/^[MFX]\s*[\W_]*/iu',
+                    '/^[MFX]'
+                    . '(?=[^\p{L}\p{N}]|$)'
+                    . '(?:[^\p{L}\p{N}]+\s*)?'
+                    . '/iu',
                     '',
                     $candidate
                 )
                 ?? $candidate;
 
             /*
-             * Preserve ALL place words.
-             * Remove only trailing serial/internal ID.
+             * Remove trailing numeric personal /
+             * internal serial value while preserving
+             * all place-name words.
              */
             $candidate =
                 preg_replace(
@@ -1905,9 +1981,10 @@ class PassportStructureService
 
             if (
                 $candidate === ''
-                || $this->looksLikePassportFieldLabel(
-                    $candidate
-                )
+                || $this
+                    ->looksLikePassportFieldLabel(
+                        $candidate
+                    )
                 || $this->findPrintedDate(
                     $candidate
                 ) !== null
@@ -1929,10 +2006,6 @@ class PassportStructureService
             );
         }
 
-        /*
-         * No direct printed label value found.
-         * Do not invent/fallback from another field.
-         */
         return null;
     }
 
