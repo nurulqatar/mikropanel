@@ -174,6 +174,29 @@ class PassportStructureService
                 $text
             );
 
+        /*
+         * Bangladesh e-passport printed fields use a
+         * stable layout, but OCR frequently introduces
+         * small errors around:
+         *
+         * - Place of Birth
+         * - Date of Issue
+         * - Issuing Authority
+         *
+         * Apply a country-specific fallback only when
+         * the validated TD3 MRZ identifies Bangladesh.
+         */
+        if (
+            $issuer === 'BGD'
+            || $nationality === 'BGD'
+        ) {
+            $fields =
+                $this->augmentBangladeshPassportFields(
+                    $fields,
+                    $text
+                );
+        }
+
         return $fields;
     }
 
@@ -1017,6 +1040,485 @@ class PassportStructureService
             );
     }
 
+    private function augmentBangladeshPassportFields(
+        array $fields,
+        string $text
+    ): array {
+        /*
+         * ==========================================
+         * PLACE OF BIRTH
+         * ==========================================
+         *
+         * Typical OCR examples:
+         *
+         *   TANGAIL
+         *   FANGAIL
+         *   STANGAIL
+         *
+         * The latter two are common one-character
+         * recognition errors.
+         */
+        $place =
+            $fields[
+                'place_of_birth'
+            ]
+            ?? null;
+
+        $place =
+            $this->normalizeBangladeshPlace(
+                $place
+            );
+
+        if ($place === null) {
+            $place =
+                $this->extractBangladeshPlace(
+                    $text
+                );
+        }
+
+        if ($place !== null) {
+            $fields[
+                'place_of_birth'
+            ] = $place;
+        }
+
+        /*
+         * ==========================================
+         * DATE OF ISSUE
+         * ==========================================
+         */
+        if (
+            empty(
+                $fields[
+                    'passport_issue_date'
+                ]
+            )
+        ) {
+            $issueDate =
+                $this->extractBangladeshIssueDate(
+                    $text
+                );
+
+            if ($issueDate !== null) {
+                $fields[
+                    'passport_issue_date'
+                ] = $issueDate;
+            }
+        }
+
+        /*
+         * ==========================================
+         * ISSUING AUTHORITY
+         * ==========================================
+         *
+         * Bangladesh OCR often reads:
+         *
+         *   DIP/DHAKA
+         * as
+         *   DIPIDHAKA
+         *   DIPL DHAKA
+         *   DIP1DHAKA
+         */
+        $authority =
+            $fields[
+                'issuing_authority'
+            ]
+            ?? null;
+
+        $authority =
+            $this->normalizeBangladeshAuthority(
+                $authority
+            );
+
+        if ($authority === null) {
+            $authority =
+                $this->extractBangladeshAuthority(
+                    $text
+                );
+        }
+
+        if ($authority !== null) {
+            $fields[
+                'issuing_authority'
+            ] = $authority;
+        }
+
+        return $fields;
+    }
+
+    private function extractBangladeshIssueDate(
+        string $text
+    ): ?string {
+        $lines =
+            preg_split(
+                '/\R/u',
+                $text
+            )
+            ?: [];
+
+        foreach (
+            $lines as $index => $line
+        ) {
+            if (
+                !preg_match(
+                    '/DATE\s+OF\s+ISSUE/iu',
+                    $line
+                )
+            ) {
+                continue;
+            }
+
+            $window =
+                implode(
+                    ' ',
+                    array_slice(
+                        $lines,
+                        $index,
+                        4
+                    )
+                );
+
+            if (
+                preg_match(
+                    '/\b'
+                    . '(\d{1,2})'
+                    . '\s+'
+                    . '(JAN|FEB|MAR|APR|MAY|JUN|'
+                    . 'JUL|AUG|SEP|OCT|NOV|DEC)'
+                    . '\s+'
+                    . '(\d{4})'
+                    . '\b/iu',
+                    $window,
+                    $match
+                )
+            ) {
+                return $this->printedDate(
+                    $match[0]
+                );
+            }
+        }
+
+        return null;
+    }
+
+    private function extractBangladeshAuthority(
+        string $text
+    ): ?string {
+        $lines =
+            preg_split(
+                '/\R/u',
+                $text
+            )
+            ?: [];
+
+        foreach (
+            $lines as $index => $line
+        ) {
+            if (
+                !preg_match(
+                    '/ISSUING\s+AUTHORITY/iu',
+                    $line
+                )
+            ) {
+                continue;
+            }
+
+            $window =
+                implode(
+                    ' ',
+                    array_slice(
+                        $lines,
+                        $index,
+                        4
+                    )
+                );
+
+            $normalized =
+                $this->normalizeBangladeshAuthority(
+                    $window
+                );
+
+            if ($normalized !== null) {
+                return $normalized;
+            }
+        }
+
+        /*
+         * Final full-page fallback.
+         */
+        return $this->normalizeBangladeshAuthority(
+            $text
+        );
+    }
+
+    private function normalizeBangladeshAuthority(
+        ?string $value
+    ): ?string {
+        if ($value === null) {
+            return null;
+        }
+
+        $upper =
+            mb_strtoupper(
+                $value
+            );
+
+        /*
+         * Real OCR examples include:
+         *
+         * DIP/DHAKA
+         * DIPIDHAKA
+         * DIP1DHAKA
+         * DIP DHAKA
+         */
+        if (
+            preg_match(
+                '/\bDIP'
+                . '[\s\/\\\\|I1L\-]*'
+                . 'DHAKA\b/u',
+                $upper
+            )
+        ) {
+            return 'DIP/DHAKA';
+        }
+
+        $clean =
+            preg_replace(
+                '/[^A-Z0-9\/\-\s]/',
+                ' ',
+                $upper
+            )
+            ?? '';
+
+        $clean =
+            preg_replace(
+                '/\s+/',
+                ' ',
+                trim($clean)
+            )
+            ?? '';
+
+        if (
+            $clean === ''
+            || mb_strlen(
+                $clean
+            ) < 3
+        ) {
+            return null;
+        }
+
+        /*
+         * Do not return an OCR label as a value.
+         */
+        if (
+            preg_match(
+                '/^(?:'
+                . 'ISSUING\s+AUTHORITY'
+                . '|AUTHORITY'
+                . ')$/iu',
+                $clean
+            )
+        ) {
+            return null;
+        }
+
+        return mb_substr(
+            $clean,
+            0,
+            100
+        );
+    }
+
+    private function extractBangladeshPlace(
+        string $text
+    ): ?string {
+        $lines =
+            preg_split(
+                '/\R/u',
+                $text
+            )
+            ?: [];
+
+        foreach (
+            $lines as $index => $line
+        ) {
+            if (
+                !preg_match(
+                    '/PLACE\s+OF\s+BIRTH/iu',
+                    $line
+                )
+            ) {
+                continue;
+            }
+
+            for (
+                $step = 0;
+                $step <= 3;
+                $step++
+            ) {
+                $target =
+                    $lines[
+                        $index
+                        + $step
+                    ]
+                    ?? '';
+
+                $place =
+                    $this->normalizeBangladeshPlace(
+                        $target
+                    );
+
+                if ($place !== null) {
+                    return $place;
+                }
+            }
+        }
+
+        /*
+         * Last fallback:
+         * search the complete OCR output for a token
+         * close to a Bangladesh district name.
+         */
+        return $this->normalizeBangladeshPlace(
+            $text
+        );
+    }
+
+    private function normalizeBangladeshPlace(
+        ?string $value
+    ): ?string {
+        if ($value === null) {
+            return null;
+        }
+
+        $upper =
+            mb_strtoupper(
+                $value
+            );
+
+        $tokens =
+            preg_split(
+                '/[^A-Z]+/',
+                $upper,
+                -1,
+                PREG_SPLIT_NO_EMPTY
+            )
+            ?: [];
+
+        $districts = [
+            'BAGERHAT',
+            'BANDARBAN',
+            'BARGUNA',
+            'BARISHAL',
+            'BHOLA',
+            'BOGURA',
+            'BRAHMANBARIA',
+            'CHANDPUR',
+            'CHAPAINAWABGANJ',
+            'CHATTOGRAM',
+            'CHUADANGA',
+            'COXBAZAR',
+            'CUMILLA',
+            'DHAKA',
+            'DINAJPUR',
+            'FARIDPUR',
+            'FENI',
+            'GAIBANDHA',
+            'GAZIPUR',
+            'GOPALGANJ',
+            'HABIGANJ',
+            'JAMALPUR',
+            'JASHORE',
+            'JHALOKATI',
+            'JHENAIDAH',
+            'JOYPURHAT',
+            'KHAGRACHHARI',
+            'KHULNA',
+            'KISHOREGANJ',
+            'KURIGRAM',
+            'KUSHTIA',
+            'LAKSHMIPUR',
+            'LALMONIRHAT',
+            'MADARIPUR',
+            'MAGURA',
+            'MANIKGANJ',
+            'MEHERPUR',
+            'MOULVIBAZAR',
+            'MUNSHIGANJ',
+            'MYMENSINGH',
+            'NAOGAON',
+            'NARAIL',
+            'NARAYANGANJ',
+            'NARSINGDI',
+            'NATORE',
+            'NETROKONA',
+            'NILPHAMARI',
+            'NOAKHALI',
+            'PABNA',
+            'PANCHAGARH',
+            'PATUAKHALI',
+            'PIROJPUR',
+            'RAJBARI',
+            'RAJSHAHI',
+            'RANGAMATI',
+            'RANGPUR',
+            'SATKHIRA',
+            'SHARIATPUR',
+            'SHERPUR',
+            'SIRAJGANJ',
+            'SUNAMGANJ',
+            'SYLHET',
+            'TANGAIL',
+            'THAKURGAON',
+        ];
+
+        $best = null;
+
+        foreach ($tokens as $token) {
+            if (
+                strlen($token)
+                < 4
+            ) {
+                continue;
+            }
+
+            foreach ($districts as $district) {
+                if ($token === $district) {
+                    return $district;
+                }
+
+                $distance =
+                    levenshtein(
+                        $token,
+                        $district
+                    );
+
+                if (
+                    $distance <= 2
+                    && (
+                        $best === null
+                        || $distance
+                            < $best[
+                                'distance'
+                            ]
+                    )
+                ) {
+                    $best = [
+                        'value' =>
+                            $district,
+                        'distance' =>
+                            $distance,
+                    ];
+                }
+            }
+        }
+
+        return $best[
+            'value'
+        ]
+        ?? null;
+    }
+
     private function augmentPrintedFields(
         array $fields,
         string $text
@@ -1028,15 +1530,12 @@ class PassportStructureService
          *
          * Otherwise keep the validated MRZ name.
          */
-        $printedName =
-            $this->printedPassportName(
-                $text
-            );
-
-        if ($printedName !== null) {
-            $fields['name'] =
-                $printedName;
-        }
+        /*
+         * Holder name comes from the validated TD3 MRZ.
+         *
+         * Printed passport OCR is much noisier and must
+         * never overwrite a valid MRZ holder name.
+         */
 
         $placeOfBirth =
             $this->textNearLabels(
