@@ -793,8 +793,8 @@ class PassportStructureService
                     ' ',
                     array_filter(
                         [
-                            $surname,
                             $given,
+                            $surname,
                         ],
                         fn ($part) =>
                             $part !== ''
@@ -1021,38 +1021,52 @@ class PassportStructureService
         array $fields,
         string $text
     ): array {
+        /*
+         * Prefer the visible printed holder name
+         * when both surname and given names can be
+         * read cleanly.
+         *
+         * Otherwise keep the validated MRZ name.
+         */
+        $printedName =
+            $this->printedPassportName(
+                $text
+            );
+
+        if ($printedName !== null) {
+            $fields['name'] =
+                $printedName;
+        }
+
         $placeOfBirth =
-            $this->labelValue(
+            $this->textNearLabels(
                 $text,
                 [
                     'Place of Birth',
                     'Birth Place',
+                    'Place of birth',
                     'Lieu de naissance',
-                ]
+                ],
+                'place'
             );
 
-        if (
-            $placeOfBirth !== null
-        ) {
-            $fields['place_of_birth'] =
-                $placeOfBirth;
+        if ($placeOfBirth !== null) {
+            $fields[
+                'place_of_birth'
+            ] = $placeOfBirth;
         }
 
-        $issueDateRaw =
-            $this->labelValue(
+        $issueDate =
+            $this->dateNearLabels(
                 $text,
                 [
                     'Date of Issue',
                     'Issue Date',
                     'Date of Issuance',
+                    'Date Issued',
                     'Passport Issue',
                     'Date de délivrance',
                 ]
-            );
-
-        $issueDate =
-            $this->printedDate(
-                $issueDateRaw
             );
 
         if ($issueDate !== null) {
@@ -1062,13 +1076,17 @@ class PassportStructureService
         }
 
         $authority =
-            $this->labelValue(
+            $this->textNearLabels(
                 $text,
                 [
                     'Issuing Authority',
+                    'Passport Authority',
+                    'Issuing Office',
+                    'Issued By',
                     'Authority',
                     'Autorité',
-                ]
+                ],
+                'authority'
             );
 
         if ($authority !== null) {
@@ -1077,49 +1095,707 @@ class PassportStructureService
             ] = $authority;
         }
 
-        $printedCountry =
-            $this->labelValue(
-                $text,
-                [
-                    'Issuing Country',
-                    'Country of Issue',
-                    'Country Code',
-                    'Pays émetteur',
-                ]
-            );
-
-        if (
-            $printedCountry !== null
-            && mb_strlen(
-                $printedCountry
-            ) > 3
-        ) {
-            $fields[
-                'issuing_country'
-            ] = $printedCountry;
-        }
-
-        $printedNationality =
-            $this->labelValue(
-                $text,
-                [
-                    'Nationality',
-                    'Nationalité',
-                ]
-            );
-
-        if (
-            $printedNationality !== null
-            && mb_strlen(
-                $printedNationality
-            ) > 3
-        ) {
-            $fields[
-                'nationality'
-            ] = $printedNationality;
-        }
+        /*
+         * Nationality and issuing country stay
+         * authoritative from validated TD3 MRZ.
+         * Printed OCR must not replace them.
+         */
 
         return $fields;
+    }
+
+    private function printedPassportName(
+        string $text
+    ): ?string {
+        $surname =
+            $this->textNearLabels(
+                $text,
+                [
+                    'Surname',
+                    'Family Name',
+                    'Last Name',
+                    'Nom',
+                ],
+                'name'
+            );
+
+        $givenNames =
+            $this->textNearLabels(
+                $text,
+                [
+                    'Given Names',
+                    'Given Name',
+                    'First Names',
+                    'First Name',
+                    'Forenames',
+                    'Prénoms',
+                    'Prenoms',
+                ],
+                'name'
+            );
+
+        if (
+            $surname !== null
+            && $givenNames !== null
+        ) {
+            $name =
+                trim(
+                    $givenNames
+                    . ' '
+                    . $surname
+                );
+
+            if (
+                $this->validPersonName(
+                    $name
+                )
+            ) {
+                return $name;
+            }
+        }
+
+        $fullName =
+            $this->textNearLabels(
+                $text,
+                [
+                    'Full Name',
+                    'Name of Holder',
+                    'Holder Name',
+                ],
+                'name'
+            );
+
+        if (
+            $fullName !== null
+            && $this->validPersonName(
+                $fullName
+            )
+        ) {
+            return $fullName;
+        }
+
+        return null;
+    }
+
+    private function textNearLabels(
+        string $text,
+        array $labels,
+        string $kind = 'generic'
+    ): ?string {
+        $lines =
+            preg_split(
+                '/\R/u',
+                $text
+            )
+            ?: [];
+
+        $candidates = [];
+
+        foreach (
+            $lines as $index => $rawLine
+        ) {
+            $line =
+                $this->normalizePrintedLine(
+                    $rawLine
+                );
+
+            if ($line === '') {
+                continue;
+            }
+
+            foreach ($labels as $label) {
+                /*
+                 * A nearby authority VALUE may itself
+                 * start with "Passport Authority":
+                 *
+                 *   PASSPORT AUTHORITY STOCKHOLM
+                 *
+                 * Do not reinterpret that as another
+                 * label unless punctuation follows the
+                 * words "Passport Authority".
+                 */
+                if (
+                    $kind === 'authority'
+                    && mb_strtolower(
+                        trim($label)
+                    ) === 'passport authority'
+                    && preg_match(
+                        '/^PASSPORT\\s+AUTHORITY\\s+.+$/iu',
+                        $line
+                    )
+                    && !preg_match(
+                        '/^PASSPORT\\s+AUTHORITY\\s*[:;|\\/-]/iu',
+                        $line
+                    )
+                ) {
+                    continue;
+                }
+
+                $pattern =
+                    '/(?<![\p{L}\p{N}])'
+                    . preg_quote(
+                        $label,
+                        '/'
+                    )
+                    . '(?![\p{L}\p{N}])/iu';
+
+                if (
+                    !preg_match(
+                        $pattern,
+                        $line,
+                        $match,
+                        PREG_OFFSET_CAPTURE
+                    )
+                ) {
+                    continue;
+                }
+
+                $matched =
+                    $match[0][0];
+
+                $offset =
+                    $match[0][1];
+
+                /*
+                 * Do not interpret a value such as:
+                 *
+                 *   PASSPORT AUTHORITY STOCKHOLM
+                 *
+                 * as another generic "Authority"
+                 * label. In that case the whole line
+                 * is the authority value belonging to
+                 * the preceding Issuing Authority label.
+                 */
+                if (
+                    $kind === 'authority'
+                    && mb_strtolower(
+                        trim($label)
+                    ) === 'authority'
+                    && trim(
+                        substr(
+                            $line,
+                            0,
+                            $offset
+                        )
+                    ) !== ''
+                ) {
+                    continue;
+                }
+
+                $after =
+                    substr(
+                        $line,
+                        $offset
+                        + strlen(
+                            $matched
+                        )
+                    );
+
+                $after =
+                    preg_replace(
+                        '/^[\s:;|\/\-]+/u',
+                        '',
+                        $after
+                    )
+                    ?? '';
+
+                $sameLine =
+                    $this->cleanStructuredValue(
+                        $after,
+                        $kind
+                    );
+
+                if ($sameLine !== null) {
+                    $candidates[] = [
+                        'value' =>
+                            $sameLine,
+                        'score' =>
+                            120,
+                    ];
+                }
+
+                /*
+                 * Passport layouts often put the
+                 * English label on one line and
+                 * its value on the next line.
+                 */
+                for (
+                    $step = 1;
+                    $step <= 4;
+                    $step++
+                ) {
+                    $nextIndex =
+                        $index
+                        + $step;
+
+                    if (
+                        !isset(
+                            $lines[
+                                $nextIndex
+                            ]
+                        )
+                    ) {
+                        break;
+                    }
+
+                    $next =
+                        $this->normalizePrintedLine(
+                            $lines[
+                                $nextIndex
+                            ]
+                        );
+
+                    if ($next === '') {
+                        continue;
+                    }
+
+                    if (
+                        $kind === 'authority'
+                        && preg_match(
+                            '/^PASSPORT\\s+AUTHORITY\\s+.+$/iu',
+                            $next
+                        )
+                        && !preg_match(
+                            '/^PASSPORT\\s+AUTHORITY\\s*[:;|\\/-]/iu',
+                            $next
+                        )
+                    ) {
+                        $candidate =
+                            $this->cleanStructuredValue(
+                                $next,
+                                $kind
+                            );
+
+                        if ($candidate !== null) {
+                            $candidates[] = [
+                                'value' =>
+                                    $candidate,
+                                'score' =>
+                                    125
+                                    - ($step * 2),
+                            ];
+                        }
+
+                        break;
+                    }
+
+                    if (
+                        $this->looksLikePassportLabel(
+                            $next
+                        )
+                    ) {
+                        break;
+                    }
+
+                    $candidate =
+                        $this->cleanStructuredValue(
+                            $next,
+                            $kind
+                        );
+
+                    if ($candidate === null) {
+                        continue;
+                    }
+
+                    $candidates[] = [
+                        'value' =>
+                            $candidate,
+                        'score' =>
+                            110
+                            - ($step * 5),
+                    ];
+
+                    /*
+                     * First clean nearby value is
+                     * normally the value paired with
+                     * the current label.
+                     */
+                    break;
+                }
+            }
+        }
+
+        if ($candidates === []) {
+            return null;
+        }
+
+        /*
+         * Prefer candidates found consistently across
+         * both passport OCR passes.
+         */
+        foreach (
+            $candidates as $i => $candidate
+        ) {
+            $normalized =
+                $this->comparisonValue(
+                    $candidate[
+                        'value'
+                    ]
+                );
+
+            foreach (
+                $candidates as $j => $other
+            ) {
+                if ($i === $j) {
+                    continue;
+                }
+
+                $otherNormalized =
+                    $this->comparisonValue(
+                        $other[
+                            'value'
+                        ]
+                    );
+
+                if (
+                    $normalized !== ''
+                    && $normalized
+                        === $otherNormalized
+                ) {
+                    $candidates[$i][
+                        'score'
+                    ] += 30;
+                }
+            }
+
+            if (
+                $kind === 'name'
+                || $kind === 'place'
+            ) {
+                if (
+                    preg_match(
+                        '/^[\p{L}\p{M}\s\'\-,.]+$/u',
+                        $candidate[
+                            'value'
+                        ]
+                    )
+                ) {
+                    $candidates[$i][
+                        'score'
+                    ] += 10;
+                }
+            }
+        }
+
+        usort(
+            $candidates,
+            function (
+                array $a,
+                array $b
+            ): int {
+                if (
+                    $a['score']
+                    === $b['score']
+                ) {
+                    return mb_strlen(
+                        $b['value']
+                    )
+                    <=>
+                    mb_strlen(
+                        $a['value']
+                    );
+                }
+
+                return $b['score']
+                    <=>
+                    $a['score'];
+            }
+        );
+
+        return $candidates[0][
+            'value'
+        ];
+    }
+
+    private function dateNearLabels(
+        string $text,
+        array $labels
+    ): ?string {
+        $lines =
+            preg_split(
+                '/\R/u',
+                $text
+            )
+            ?: [];
+
+        foreach (
+            $lines as $index => $rawLine
+        ) {
+            $line =
+                $this->normalizePrintedLine(
+                    $rawLine
+                );
+
+            foreach ($labels as $label) {
+                $pattern =
+                    '/(?<![\p{L}\p{N}])'
+                    . preg_quote(
+                        $label,
+                        '/'
+                    )
+                    . '(?![\p{L}\p{N}])/iu';
+
+                if (
+                    !preg_match(
+                        $pattern,
+                        $line
+                    )
+                ) {
+                    continue;
+                }
+
+                $window = [
+                    $line,
+                ];
+
+                for (
+                    $step = 1;
+                    $step <= 4;
+                    $step++
+                ) {
+                    if (
+                        isset(
+                            $lines[
+                                $index
+                                + $step
+                            ]
+                        )
+                    ) {
+                        $window[] =
+                            $this->normalizePrintedLine(
+                                $lines[
+                                    $index
+                                    + $step
+                                ]
+                            );
+                    }
+                }
+
+                foreach ($window as $candidate) {
+                    $date =
+                        $this->printedDate(
+                            $candidate
+                        );
+
+                    if ($date !== null) {
+                        return $date;
+                    }
+                }
+
+                $date =
+                    $this->printedDate(
+                        implode(
+                            ' ',
+                            $window
+                        )
+                    );
+
+                if ($date !== null) {
+                    return $date;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizePrintedLine(
+        string $value
+    ): string {
+        return trim(
+            preg_replace(
+                '/\s+/u',
+                ' ',
+                $value
+            )
+            ?? ''
+        );
+    }
+
+    private function cleanStructuredValue(
+        string $value,
+        string $kind
+    ): ?string {
+        $value =
+            $this->normalizePrintedLine(
+                $value
+            );
+
+        $value =
+            trim(
+                $value,
+                " \t\n\r\0\x0B:;|/"
+            );
+
+        if (
+            $value === ''
+            || mb_strlen(
+                $value
+            ) < 2
+            || mb_strlen(
+                $value
+            ) > 100
+        ) {
+            return null;
+        }
+
+        if (
+            substr_count(
+                $value,
+                '<'
+            ) >= 2
+        ) {
+            return null;
+        }
+
+        /*
+         * In many passports the actual authority value
+         * begins with words such as "Passport Authority".
+         * It is a value when additional office/location
+         * text follows it.
+         */
+        if (
+            $kind === 'authority'
+            && preg_match(
+                '/^PASSPORT\\s+AUTHORITY(?:\\s+.+)?$/iu',
+                $value
+            )
+        ) {
+            return $value;
+        }
+
+        if (
+            $this->looksLikePassportLabel(
+                $value
+            )
+        ) {
+            return null;
+        }
+
+        if ($kind === 'name') {
+            $value =
+                preg_replace(
+                    '/[^\p{L}\p{M}\s\'\-]/u',
+                    ' ',
+                    $value
+                )
+                ?? '';
+
+            $value =
+                $this->normalizePrintedLine(
+                    $value
+                );
+
+            return $this->validPersonName(
+                $value
+            )
+                ? $value
+                : null;
+        }
+
+        if ($kind === 'place') {
+            $value =
+                preg_replace(
+                    '/[^\p{L}\p{M}\s\'\-,.]/u',
+                    ' ',
+                    $value
+                )
+                ?? '';
+
+            $value =
+                $this->normalizePrintedLine(
+                    $value
+                );
+
+            if (
+                mb_strlen(
+                    $value
+                ) < 2
+            ) {
+                return null;
+            }
+        }
+
+        return $value;
+    }
+
+    private function validPersonName(
+        string $value
+    ): bool {
+        if (
+            mb_strlen(
+                $value
+            ) < 3
+            || mb_strlen(
+                $value
+            ) > 100
+        ) {
+            return false;
+        }
+
+        if (
+            preg_match(
+                '/\d/u',
+                $value
+            )
+        ) {
+            return false;
+        }
+
+        return preg_match(
+            '/\p{L}/u',
+            $value
+        ) === 1;
+    }
+
+    private function looksLikePassportLabel(
+        string $value
+    ): bool {
+        return preg_match(
+            '/^(?:'
+            . 'SURNAME'
+            . '|FAMILY\s+NAME'
+            . '|LAST\s+NAME'
+            . '|GIVEN\s+NAMES?'
+            . '|FIRST\s+NAMES?'
+            . '|FORENAMES?'
+            . '|FULL\s+NAME'
+            . '|NAME\s+OF\s+HOLDER'
+            . '|NATIONALITY'
+            . '|DATE\s+OF\s+BIRTH'
+            . '|PLACE\s+OF\s+BIRTH'
+            . '|BIRTH\s+PLACE'
+            . '|SEX'
+            . '|GENDER'
+            . '|DATE\s+OF\s+ISSUE'
+            . '|ISSUE\s+DATE'
+            . '|DATE\s+OF\s+EXPIRY'
+            . '|EXPIRY\s+DATE'
+            . '|PASSPORT'
+            . '|DOCUMENT'
+            . '|ISSUING\s+AUTHORITY'
+            . '|PASSPORT\s+AUTHORITY'
+            . '|AUTHORITY'
+            . '|ISSUING\s+COUNTRY'
+            . '|COUNTRY\s+OF\s+ISSUE'
+            . ')\b/iu',
+            trim(
+                $value
+            )
+        ) === 1;
+    }
+
+    private function comparisonValue(
+        string $value
+    ): string {
+        return mb_strtoupper(
+            preg_replace(
+                '/[^\p{L}\p{N}]+/u',
+                '',
+                $value
+            )
+            ?? ''
+        );
     }
 
     private function labelValue(

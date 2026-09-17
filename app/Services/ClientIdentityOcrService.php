@@ -1092,7 +1092,37 @@ class ClientIdentityOcrService
                     $mrzText
                 ) !== null
             ) {
-                $printed =
+                /*
+                 * Valid passport MRZ found.
+                 *
+                 * PSM 6 is intentionally run before
+                 * sparse PSM 11 because it preserves
+                 * printed label/value relationships
+                 * much better on passport bio pages.
+                 *
+                 * This improves:
+                 * - printed holder name
+                 * - place of birth
+                 * - issue date
+                 * - issuing authority
+                 */
+                $printedStructured =
+                    $this->tesseractText(
+                        $enhanced,
+                        'eng',
+                        6
+                    );
+
+                if (
+                    trim(
+                        $printedStructured
+                    ) !== ''
+                ) {
+                    $texts[] =
+                        $printedStructured;
+                }
+
+                $printedSparse =
                     $this->tesseractText(
                         $enhanced,
                         'eng',
@@ -1101,11 +1131,16 @@ class ClientIdentityOcrService
 
                 if (
                     trim(
-                        $printed
+                        $printedSparse
                     ) !== ''
+                    && trim(
+                        $printedSparse
+                    ) !== trim(
+                        $printedStructured
+                    )
                 ) {
                     $texts[] =
-                        $printed;
+                        $printedSparse;
                 }
 
                 return $this->joinOcrTexts(
