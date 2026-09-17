@@ -311,6 +311,31 @@ export default function ClientIdentityFields({
                     );
                 }
 
+                /*
+                 * Passport direct-label fields must never
+                 * keep values from an older scan.
+                 *
+                 * They are cleared first, then populated
+                 * only when this scan actually reads the
+                 * corresponding printed passport field.
+                 */
+                if (
+                    meta?.type
+                    === 'ordinary_passport'
+                ) {
+                    [
+                        'name',
+                        'passport_issue_date',
+                        'place_of_birth',
+                        'issuing_country',
+                    ].forEach(
+                        (field) => {
+                            merged[field] =
+                                '';
+                        }
+                    );
+                }
+
                 Object.entries(
                     detected
                     ?? {}
