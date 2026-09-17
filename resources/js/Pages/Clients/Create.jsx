@@ -38,8 +38,6 @@ export default function Create({
         residency_type: '',
         employer: '',
         place_of_birth: '',
-        passport_issue_date: '',
-        issuing_country: '',
         qatar_id_front_scan_token: '',
         qatar_id_back_scan_token: '',
         passport_scan_token: '',

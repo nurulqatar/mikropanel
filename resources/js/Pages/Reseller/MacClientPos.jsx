@@ -1225,8 +1225,6 @@ function CreateClientModal({
         residency_type: '',
         employer: '',
         place_of_birth: '',
-        passport_issue_date: '',
-        issuing_country: '',
         ip_range_id: '',
         package_id: '',
         name: '',
@@ -1992,8 +1990,6 @@ function EditClientModal({
         residency_type: client.residency_type ?? '',
         employer: client.employer ?? '',
         place_of_birth: client.place_of_birth ?? '',
-        passport_issue_date: client.passport_issue_date ?? '',
-        issuing_country: client.issuing_country ?? '',
         ip_range_id:
             String(
                 client.ip_range_id

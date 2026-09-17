@@ -97,13 +97,6 @@ class MacClientPosController extends Controller
                                 $client->employer,
                             'place_of_birth' =>
                                 $client->place_of_birth,
-                            'passport_issue_date' =>
-                                $client
-                                    ->passport_issue_date
-                                    ?->format('Y-m-d'),
-                            'issuing_country' =>
-                                $client->issuing_country,
-
                             'identity_type' =>
                                 $client->identity_type,
 

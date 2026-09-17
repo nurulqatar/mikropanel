@@ -29,10 +29,8 @@ const qatarBackFields = [
 
 const passportFields = [
     'passport_number',
-    'passport_issue_date',
     'passport_expiry_date',
     'place_of_birth',
-    'issuing_country',
 ];
 
 const allDocumentFields = [
@@ -325,9 +323,7 @@ export default function ClientIdentityFields({
                 ) {
                     [
                         'name',
-                        'passport_issue_date',
                         'place_of_birth',
-                        'issuing_country',
                     ].forEach(
                         (field) => {
                             merged[field] =
@@ -2171,22 +2167,6 @@ export default function ClientIdentityFields({
                                 />
                             </Field>
 
-                            <Field
-                                label="Passport Issue Date"
-                                error={errors.passport_issue_date}
-                            >
-                                <input
-                                    type="date"
-                                    className={inputClass}
-                                    value={data.passport_issue_date ?? ''}
-                                    onChange={(event) =>
-                                        updateField(
-                                            'passport_issue_date',
-                                            event.target.value
-                                        )
-                                    }
-                                />
-                            </Field>
 
                             <Field
                                 label="Passport Expiry"
@@ -2221,21 +2201,6 @@ export default function ClientIdentityFields({
                                 />
                             </Field>
 
-                            <Field
-                                label="Issuing Country"
-                                error={errors.issuing_country}
-                            >
-                                <input
-                                    className={inputClass}
-                                    value={data.issuing_country ?? ''}
-                                    onChange={(event) =>
-                                        updateField(
-                                            'issuing_country',
-                                            event.target.value
-                                        )
-                                    }
-                                />
-                            </Field>
 
                         </div>
                     </div>

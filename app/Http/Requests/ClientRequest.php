@@ -123,18 +123,6 @@ class ClientRequest extends FormRequest
                 'max:255',
             ],
 
-            'passport_issue_date' => [
-                'nullable',
-                'date',
-            ],
-
-            'issuing_country' => [
-                'nullable',
-                'string',
-                'max:255',
-            ],
-
-
             'identity_type' => [
                 'nullable',
                 'string',

@@ -153,10 +153,10 @@ class ClientIdentityScanController extends Controller
                 'gender',
                 'document_expiry_date',
                 'passport_number',
-                'passport_issue_date',
+
                 'passport_expiry_date',
                 'place_of_birth',
-                'issuing_country',
+
             ];
 
             $result['fields'] =

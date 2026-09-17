@@ -54,10 +54,6 @@ export default function Edit({
             client.employer ?? '',
         place_of_birth:
             client.place_of_birth ?? '',
-        passport_issue_date:
-            client.passport_issue_date ?? '',
-        issuing_country:
-            client.issuing_country ?? '',
         qatar_id_front_scan_token: '',
         qatar_id_back_scan_token: '',
         passport_scan_token: '',
