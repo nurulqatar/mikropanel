@@ -234,6 +234,12 @@ class ResellerTenancyServiceProvider extends ServiceProvider
             }
         }
 
+        /*
+         * ROUTER_UNLIMITED_COUNT_ACCESS_GATE_V1
+         *
+         * Router count is unlimited for a reseller.
+         * Account/subscription access rules still apply.
+         */
         if ($model instanceof Router) {
             if (
                 !$usage
@@ -242,14 +248,10 @@ class ResellerTenancyServiceProvider extends ServiceProvider
                     )
                 || $reseller->status
                     !== 'active'
-                || $usage
-                    ->remainingRouterSlots(
-                        $reseller
-                    ) <= 0
             ) {
                 throw ValidationException::withMessages([
                     'router' =>
-                        'Router limit reached or reseller subscription is unavailable.',
+                        'Router creation is unavailable because the reseller account or subscription is inactive.',
                 ]);
             }
         }

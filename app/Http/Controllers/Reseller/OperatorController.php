@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Reseller;
 use App\Models\User;
 use App\Services\Reseller\ResellerPermissionService;
-use App\Services\Reseller\ResellerUsageService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -17,8 +16,7 @@ class OperatorController extends Controller
 {
     public function index(
         Request $request,
-        ResellerPermissionService $permissions,
-        ResellerUsageService $usage
+        ResellerPermissionService $permissions
     ): Response {
         $reseller =
             $this->ownerReseller(
@@ -56,39 +54,19 @@ class OperatorController extends Controller
                     $permissions
                         ->options(),
 
-                'limit' =>
-                    $usage
-                        ->operatorLimit(
-                            $reseller
-                        ),
-
-                'remaining' =>
-                    $usage
-                        ->remainingOperatorSlots(
-                            $reseller
-                        ),
             ]
         );
     }
 
     public function store(
         Request $request,
-        ResellerPermissionService $permissions,
-        ResellerUsageService $usage
+        ResellerPermissionService $permissions
     ): RedirectResponse {
         $reseller =
             $this->ownerReseller(
                 $request
             );
 
-        abort_if(
-            $usage
-                ->remainingOperatorSlots(
-                    $reseller
-                ) <= 0,
-            422,
-            'Operator limit reached.'
-        );
 
         $allowed =
             $permissions

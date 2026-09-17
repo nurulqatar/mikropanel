@@ -225,19 +225,6 @@ class ResellerController extends Controller
                     'max:1000000',
                 ],
 
-                'operator_limit_override' => [
-                    'nullable',
-                    'integer',
-                    'min:1',
-                    'max:10000',
-                ],
-
-                'router_limit_override' => [
-                    'nullable',
-                    'integer',
-                    'min:1',
-                    'max:10000',
-                ],
 
                 'expiry_mode' => [
                     'required',
@@ -304,15 +291,6 @@ class ResellerController extends Controller
                                     'client_limit_override'
                                 ] ?? null,
 
-                            'operator_limit_override' =>
-                                $data[
-                                    'operator_limit_override'
-                                ] ?? null,
-
-                            'router_limit_override' =>
-                                $data[
-                                    'router_limit_override'
-                                ] ?? null,
 
                             'expiry_mode' =>
                                 $data[
@@ -552,19 +530,6 @@ class ResellerController extends Controller
                     'max:1000000',
                 ],
 
-                'operator_limit_override' => [
-                    'nullable',
-                    'integer',
-                    'min:1',
-                    'max:10000',
-                ],
-
-                'router_limit_override' => [
-                    'nullable',
-                    'integer',
-                    'min:1',
-                    'max:10000',
-                ],
 
                 'expiry_mode' => [
                     'required',
@@ -614,15 +579,6 @@ class ResellerController extends Controller
                             'client_limit_override'
                         ] ?? null,
 
-                    'operator_limit_override' =>
-                        $data[
-                            'operator_limit_override'
-                        ] ?? null,
-
-                    'router_limit_override' =>
-                        $data[
-                            'router_limit_override'
-                        ] ?? null,
 
                     'expiry_mode' =>
                         $data[

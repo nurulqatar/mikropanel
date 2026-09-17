@@ -116,7 +116,8 @@ class ResellerPlanController extends Controller
     private function validated(
         Request $request
     ): array {
-        return $request->validate([
+        $data = $request->validate([
+
             'name' => [
                 'required',
                 'string',
@@ -130,19 +131,6 @@ class ResellerPlanController extends Controller
                 'max:1000000',
             ],
 
-            'operator_limit' => [
-                'required',
-                'integer',
-                'min:1',
-                'max:10000',
-            ],
-
-            'router_limit' => [
-                'required',
-                'integer',
-                'min:1',
-                'max:10000',
-            ],
 
             'price' => [
                 'required',
@@ -167,7 +155,20 @@ class ResellerPlanController extends Controller
                 'string',
                 'max:2000',
             ],
+
         ]);
+
+        /*
+         * CLIENT_ONLY_RESELLER_PLAN_QUOTA_V1
+         *
+         * These legacy columns remain populated for
+         * schema/subscription-history compatibility.
+         * They are not operational quotas anymore.
+         */
+        $data['operator_limit'] = 0;
+        $data['router_limit'] = 0;
+
+        return $data;
     }
 
     private function uniqueCode(

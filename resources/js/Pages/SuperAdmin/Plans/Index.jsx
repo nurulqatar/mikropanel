@@ -9,9 +9,7 @@ import { useState } from 'react';
 const defaults = {
     name: '',
     client_limit: 50,
-    operator_limit: 5,
-    router_limit: 1,
-    price: 0,
+price: 0,
     validity_days: 30,
     active: true,
     notes: '',
@@ -46,10 +44,7 @@ export default function Index({
             name: plan.name,
             client_limit:
                 plan.client_limit,
-            operator_limit:
-                plan.operator_limit,
-            router_limit:
-                plan.router_limit,
+
             price:
                 plan.price,
             validity_days:
@@ -156,45 +151,7 @@ export default function Index({
                             />
                         </Field>
 
-                        <Field label="Operator Limit">
-                            <input
-                                type="number"
-                                min="1"
-                                value={
-                                    form.data
-                                        .operator_limit
-                                }
-                                onChange={(e) =>
-                                    form.setData(
-                                        'operator_limit',
-                                        e.target.value,
-                                    )
-                                }
-                                className={
-                                    inputClass
-                                }
-                            />
-                        </Field>
 
-                        <Field label="Router Limit">
-                            <input
-                                type="number"
-                                min="1"
-                                value={
-                                    form.data
-                                        .router_limit
-                                }
-                                onChange={(e) =>
-                                    form.setData(
-                                        'router_limit',
-                                        e.target.value,
-                                    )
-                                }
-                                className={
-                                    inputClass
-                                }
-                            />
-                        </Field>
 
                         <Field label="Price QAR">
                             <input
@@ -314,13 +271,13 @@ export default function Index({
 
                                         <Td>
                                             {
-                                                plan.operator_limit
+                                                'Unlimited'
                                             }
                                         </Td>
 
                                         <Td>
                                             {
-                                                plan.router_limit
+                                                'Unlimited'
                                             }
                                         </Td>
 

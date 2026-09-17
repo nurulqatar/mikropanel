@@ -9,8 +9,6 @@ import {
 export default function Index({
     operators = [],
     permissionOptions = {},
-    limit = 0,
-    remaining = 0,
 }) {
     const form = useForm({
         name: '',
@@ -60,12 +58,11 @@ export default function Index({
                     </h1>
 
                     <p className="text-slate-500">
-                        Limit {limit} · Remaining{' '}
-                        {remaining}
+                        No operator limit
                     </p>
                 </div>
 
-                {remaining > 0 && (
+                {(
                     <form
                         onSubmit={(event) => {
                             event.preventDefault();

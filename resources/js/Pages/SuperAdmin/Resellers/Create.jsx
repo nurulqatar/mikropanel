@@ -22,8 +22,7 @@ export default function Create({
         reseller_plan_id: '',
         validity_days: '',
         client_limit_override: '',
-        operator_limit_override: '',
-        router_limit_override: '',
+
         expiry_mode: 'panel_lock',
     });
 
@@ -247,47 +246,7 @@ export default function Create({
                             />
                         </Field>
 
-                        <Field label="Custom Operator Limit">
-                            <input
-                                type="number"
-                                min="1"
-                                placeholder="Optional"
-                                value={
-                                    form.data
-                                        .operator_limit_override
-                                }
-                                onChange={(e) =>
-                                    form.setData(
-                                        'operator_limit_override',
-                                        e.target.value,
-                                    )
-                                }
-                                className={
-                                    inputClass
-                                }
-                            />
-                        </Field>
 
-                        <Field label="Custom Router Limit">
-                            <input
-                                type="number"
-                                min="1"
-                                placeholder="Optional"
-                                value={
-                                    form.data
-                                        .router_limit_override
-                                }
-                                onChange={(e) =>
-                                    form.setData(
-                                        'router_limit_override',
-                                        e.target.value,
-                                    )
-                                }
-                                className={
-                                    inputClass
-                                }
-                            />
-                        </Field>
 
                         <Field label="Expiry Policy">
                             <select
