@@ -31,6 +31,13 @@ class RouterClientSyncService
         ];
 
         Client::query()
+                /*
+                 * ROUTER_ZONE_CLIENT_FILTER_V3
+                 */
+                ->where(
+                    'zone_id',
+                    $router->zone_id
+                )
             ->orderBy('id')
             ->chunkById(
                 50,
@@ -102,6 +109,13 @@ class RouterClientSyncService
         ];
 
         Client::query()
+                /*
+                 * ROUTER_ZONE_CLIENT_FILTER_V3
+                 */
+                ->where(
+                    'zone_id',
+                    $router->zone_id
+                )
             ->orderBy('id')
             ->chunkById(
                 100,

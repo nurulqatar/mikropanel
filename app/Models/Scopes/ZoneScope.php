@@ -36,14 +36,8 @@ class ZoneScope implements Scope
          * their own company.
          */
         if (
-            in_array(
-                $user->role,
-                [
-                    'reseller',
-                    'manager',
-                ],
-                true
-            )
+            $user->role === 'reseller'
+            || $user->isManager()
         ) {
             return;
         }

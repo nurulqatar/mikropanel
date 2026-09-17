@@ -35,9 +35,13 @@ class OperatorController extends Controller
                             $reseller->id
                         )
                         ->where(
-                            'role',
-                            'operator'
-                        )
+                    'role',
+                    'operator'
+                )
+                ->where(
+                    'staff_role',
+                    'operator'
+                )
                         ->orderBy('name')
                         ->get([
                             'id',
@@ -368,9 +372,13 @@ class OperatorController extends Controller
                 $reseller->id
             )
             ->where(
-                'role',
-                'operator'
-            )
+                    'role',
+                    'operator'
+                )
+                ->where(
+                    'staff_role',
+                    'operator'
+                )
             ->firstOrFail();
     }
 }

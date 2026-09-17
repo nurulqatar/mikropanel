@@ -91,6 +91,8 @@ function ResellerSidebar({
         management:
             route().current('reseller.notifications.*')
             || route().current('reseller.operators.*')
+            || route().current('reseller.zones.*')
+            || route().current('reseller.managers.*')
             || route().current('settings.*'),
     });
 
@@ -242,6 +244,35 @@ function ResellerSidebar({
     }
 
     if (
+        (
+            isOwner
+            || user?.staff_role === 'manager'
+        )
+        && routeExists(
+            'reseller.zones.index',
+        )
+    ) {
+        managementItems.push({
+            label: 'Network Zones',
+            route: 'reseller.zones.index',
+            active: 'reseller.zones.*',
+        });
+    }
+
+    if (
+        isOwner
+        && routeExists(
+            'reseller.managers.index',
+        )
+    ) {
+        managementItems.push({
+            label: 'Managers',
+            route: 'reseller.managers.index',
+            active: 'reseller.managers.*',
+        });
+    }
+
+    if (
         routeExists(
             'reseller.notifications.index',
         )
@@ -388,6 +419,12 @@ function ResellerSidebar({
                             )
                             || route().current(
                                 'reseller.operators.*',
+                            )
+                            || route().current(
+                                'reseller.zones.*',
+                            )
+                            || route().current(
+                                'reseller.managers.*',
                             )
                             || route().current(
                                 'settings.*',

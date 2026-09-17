@@ -11,6 +11,7 @@ use App\Models\Invoice;
 use App\Models\IpRange;
 use App\Models\Payment;
 use App\Models\Router;
+use App\Models\User;
 use App\Models\Scopes\ZoneScope;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
@@ -66,7 +67,152 @@ class ZoneTenancyServiceProvider extends ServiceProvider
                 }
             );
         }
-    }
+
+
+        /*
+         * ZONE_STAFF_ASSIGNMENT_V2
+         */
+        User::creating(
+            function (
+                User $staff
+            ): void {
+                if (
+                    !$staff->reseller_id
+                    || $staff->role
+                        !== 'operator'
+                ) {
+                    return;
+                }
+
+                if (
+                    $staff->staff_role
+                    === 'manager'
+                ) {
+                    $staff->zone_id =
+                        null;
+
+                    return;
+                }
+
+                $staff->staff_role =
+                    'operator';
+
+                $zoneId =
+                    $staff->zone_id
+                    ?: $this
+                        ->sessionZoneId();
+
+                if (!$zoneId) {
+                    $zones =
+                        DB::table(
+                            'network_zones'
+                        )
+                            ->where(
+                                'reseller_id',
+                                $staff->reseller_id
+                            )
+                            ->where(
+                                'service_type',
+                                'mac'
+                            )
+                            ->where(
+                                'enabled',
+                                true
+                            )
+                            ->pluck('id');
+
+                    if (
+                        $zones->count()
+                        === 1
+                    ) {
+                        $zoneId =
+                            $zones->first();
+                    }
+                }
+
+                if (!$zoneId) {
+                    throw ValidationException::withMessages([
+                        'zone_id' =>
+                            'Select an active MAC zone before creating an operator.',
+                    ]);
+                }
+
+                $valid =
+                    DB::table(
+                        'network_zones'
+                    )
+                        ->where(
+                            'id',
+                            $zoneId
+                        )
+                        ->where(
+                            'reseller_id',
+                            $staff->reseller_id
+                        )
+                        ->where(
+                            'service_type',
+                            'mac'
+                        )
+                        ->where(
+                            'enabled',
+                            true
+                        )
+                        ->exists();
+
+                if (!$valid) {
+                    throw ValidationException::withMessages([
+                        'zone_id' =>
+                            'Selected operator MAC zone is invalid.',
+                    ]);
+                }
+
+                $staff->zone_id =
+                    (int)
+                    $zoneId;
+            }
+        );
+
+        /*
+         * Managers stay all-zone and may never
+         * acquire accounting mutation permissions
+         * through the normal Operator editor.
+         */
+        User::saving(
+            function (
+                User $staff
+            ): void {
+                if (
+                    !$staff->reseller_id
+                    || $staff->staff_role
+                        !== 'manager'
+                ) {
+                    return;
+                }
+
+                $staff->role =
+                    'operator';
+
+                $staff->zone_id =
+                    null;
+
+                $staff->permissions = [
+                    'dashboard.view',
+                    'clients.view',
+                    'routers.view',
+                    'packages.view',
+                    'ip_pools.view',
+                    'invoices.view',
+                    'invoices.export',
+                    'payments.view',
+                    'expenses.view',
+                    'accounting.view',
+                    'accounting.export',
+                    'hotspot.view',
+                    'hotspot.export',
+                ];
+            }
+        );
+}
 
     private function assignZone(
         Model $model
@@ -155,14 +301,8 @@ class ZoneTenancyServiceProvider extends ServiceProvider
         if (
             $user
             && $user->reseller_id
-            && !in_array(
-                $user->role,
-                [
-                    'reseller',
-                    'manager',
-                ],
-                true
-            )
+            && $user->role !== 'reseller'
+            && !$user->isManager()
         ) {
             if (!$user->zone_id) {
                 throw
@@ -194,12 +334,57 @@ class ZoneTenancyServiceProvider extends ServiceProvider
          * Existing system remains usable while
          * only one compatible default zone exists.
          */
+        /*
+         * ACTIVE_ZONE_CONTEXT_V2
+         *
+         * Owner / manager chooses the current
+         * remote site from Network Zones.
+         */
+        if (
+            $zoneId === null
+            && $user
+            && $user->reseller_id
+            && (
+                $user->role === 'reseller'
+                || $user->isManager()
+            )
+        ) {
+            $selected =
+                $this
+                    ->sessionZoneId();
+
+            if ($selected) {
+                $zoneId =
+                    $selected;
+            }
+        }
+
         if ($zoneId === null) {
             $zoneId =
                 $this->defaultZone(
                     $model,
                     $user?->reseller_id
                 );
+        }
+
+        /*
+         * REQUIRE_RESELLER_ZONE_V2
+         */
+        if (
+            $zoneId === null
+            && $user
+            && $user->reseller_id
+            && (
+                $model instanceof Router
+                || $model instanceof IpRange
+                || $model instanceof HotspotServer
+                || $model instanceof Expense
+            )
+        ) {
+            throw ValidationException::withMessages([
+                'zone_id' =>
+                    'Select an active Network Zone before creating this record.',
+            ]);
         }
 
         if ($zoneId === null) {
@@ -231,14 +416,8 @@ class ZoneTenancyServiceProvider extends ServiceProvider
         if (
             !$user
             || !$user->reseller_id
-            || in_array(
-                $user->role,
-                [
-                    'reseller',
-                    'manager',
-                ],
-                true
-            )
+            || $user->role === 'reseller'
+            || $user->isManager()
         ) {
             return;
         }
@@ -512,6 +691,37 @@ class ZoneTenancyServiceProvider extends ServiceProvider
                         'Cross-reseller zone selection is not allowed.',
                 ]);
         }
+    }
+
+    private function sessionZoneId(): ?int
+    {
+        if (
+            !app()->bound(
+                'request'
+            )
+        ) {
+            return null;
+        }
+
+        $request =
+            request();
+
+        if (
+            !$request->hasSession()
+        ) {
+            return null;
+        }
+
+        $value =
+            $request
+                ->session()
+                ->get(
+                    'network_zone_id'
+                );
+
+        return $value
+            ? (int) $value
+            : null;
     }
 
     private function models(): array

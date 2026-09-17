@@ -3,6 +3,8 @@
 use App\Http\Controllers\Reseller\DashboardController;
 use App\Http\Controllers\Reseller\OperatorController;
 use App\Http\Controllers\Reseller\NotificationController;
+use App\Http\Controllers\Reseller\NetworkZoneController;
+use App\Http\Controllers\Reseller\ManagerController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware([
@@ -106,5 +108,115 @@ Route::middleware([
             ]
         )->name(
             'operators.destroy'
+        );
+    });
+
+/*
+ * Production Network Zone / Manager controls.
+ */
+Route::middleware([
+    'auth',
+])
+    ->prefix('reseller')
+    ->name('reseller.')
+    ->group(function (): void {
+        Route::get(
+            'zones',
+            [
+                NetworkZoneController::class,
+                'index',
+            ]
+        )->name(
+            'zones.index'
+        );
+
+        Route::post(
+            'zones',
+            [
+                NetworkZoneController::class,
+                'store',
+            ]
+        )->name(
+            'zones.store'
+        );
+
+        Route::put(
+            'zones/{zone}',
+            [
+                NetworkZoneController::class,
+                'update',
+            ]
+        )->name(
+            'zones.update'
+        );
+
+        Route::post(
+            'zones/{zone}/select',
+            [
+                NetworkZoneController::class,
+                'select',
+            ]
+        )->name(
+            'zones.select'
+        );
+
+        Route::patch(
+            'zones/operators/{operator}',
+            [
+                NetworkZoneController::class,
+                'assignOperator',
+            ]
+        )->name(
+            'zones.operator'
+        );
+
+        Route::delete(
+            'zones/{zone}',
+            [
+                NetworkZoneController::class,
+                'destroy',
+            ]
+        )->name(
+            'zones.destroy'
+        );
+
+        Route::get(
+            'managers',
+            [
+                ManagerController::class,
+                'index',
+            ]
+        )->name(
+            'managers.index'
+        );
+
+        Route::post(
+            'managers',
+            [
+                ManagerController::class,
+                'store',
+            ]
+        )->name(
+            'managers.store'
+        );
+
+        Route::post(
+            'managers/{manager}/toggle',
+            [
+                ManagerController::class,
+                'toggle',
+            ]
+        )->name(
+            'managers.toggle'
+        );
+
+        Route::delete(
+            'managers/{manager}',
+            [
+                ManagerController::class,
+                'destroy',
+            ]
+        )->name(
+            'managers.destroy'
         );
     });
