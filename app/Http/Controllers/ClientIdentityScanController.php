@@ -6,6 +6,7 @@ use App\Services\ClientIdentityImageService;
 use App\Services\ClientIdentityOcrService;
 use App\Services\IdentityDocumentClassifier;
 use App\Services\QatarIdStructureService;
+use App\Services\PassportStructureService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -15,6 +16,7 @@ class ClientIdentityScanController extends Controller
         Request $request,
         ClientIdentityOcrService $ocr,
         QatarIdStructureService $qatarId,
+        PassportStructureService $passport,
         IdentityDocumentClassifier $classifier,
         ClientIdentityImageService $images
     ): JsonResponse {
@@ -61,6 +63,15 @@ class ClientIdentityScanController extends Controller
 
         $result['fields'] =
             $qatarId->augment(
+                $result[
+                    'fields'
+                ]
+                ?? [],
+                $rawText
+            );
+
+        $result['fields'] =
+            $passport->augment(
                 $result[
                     'fields'
                 ]
