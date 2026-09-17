@@ -7,6 +7,7 @@ use App\Models\ClientRefund;
 use App\Models\Expense;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\NetworkZone;
 use App\Models\Setting;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
@@ -34,6 +35,13 @@ class AccountingController extends Controller
     public function index(
         Request $request
     ): Response {
+        /*
+         * ACCOUNTING_ZONE_CONTEXT_V1
+         */
+        $this->prepareAccountingContext(
+            $request
+        );
+
         $range = $this->resolveRange($request);
 
         return Inertia::render(
@@ -45,6 +53,13 @@ class AccountingController extends Controller
     public function print(
         Request $request
     ): View {
+        /*
+         * ACCOUNTING_ZONE_CONTEXT_V1
+         */
+        $this->prepareAccountingContext(
+            $request
+        );
+
         $range = $this->resolveRange($request);
         $report = $this->resolveReport($request);
         $this->authorizeClientReport($report);
@@ -63,6 +78,13 @@ class AccountingController extends Controller
     public function download(
         Request $request
     ) {
+        /*
+         * ACCOUNTING_ZONE_CONTEXT_V1
+         */
+        $this->prepareAccountingContext(
+            $request
+        );
+
         $range = $this->resolveRange($request);
         $report = $this->resolveReport($request);
         $this->authorizeClientReport($report);
@@ -282,6 +304,8 @@ class AccountingController extends Controller
             $this->receivableRows();
 
         return [
+            ...$this->accountingContextProps(),
+
             'company' => [
                 'name' =>
                     Setting::getValue(
@@ -1529,9 +1553,250 @@ class AccountingController extends Controller
         }
     }
 
+    private function prepareAccountingContext(
+        Request $request
+    ): void {
+        $request
+            ->attributes
+            ->remove(
+                'accounting_zone_id'
+            );
+
+        $user =
+            $request->user();
+
+        if (
+            !$user
+            || !$user->reseller_id
+        ) {
+            return;
+        }
+
+        /*
+         * Normal operator uses the assigned zone
+         * through the existing ZoneScope.
+         */
+        if ($user->isOperator()) {
+            return;
+        }
+
+        if (
+            !$user->isResellerOwner()
+            && !$user->isManager()
+        ) {
+            return;
+        }
+
+        $raw =
+            $request->input(
+                'zone_id'
+            );
+
+        /*
+         * Empty zone means all reseller zones.
+         */
+        if (
+            $raw === null
+            || $raw === ''
+            || $raw === 'all'
+        ) {
+            return;
+        }
+
+        $validated =
+            $request->validate([
+                'zone_id' => [
+                    'required',
+                    'integer',
+                ],
+            ]);
+
+        $zone =
+            NetworkZone::query()
+                ->where(
+                    'id',
+                    $validated['zone_id']
+                )
+                ->where(
+                    'reseller_id',
+                    $user->reseller_id
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->first();
+
+        if (!$zone) {
+            throw ValidationException::withMessages([
+                'zone_id' =>
+                    'Selected Network Zone is invalid.',
+            ]);
+        }
+
+        $request
+            ->attributes
+            ->set(
+                'accounting_zone_id',
+                (int)
+                $zone->id
+            );
+    }
+
+    private function accountingContextProps(): array
+    {
+        $user =
+            request()->user();
+
+        $locked =
+            (bool) (
+                $user
+                && $user->reseller_id
+                && $user->isOperator()
+            );
+
+        $canChoose =
+            (bool) (
+                $user
+                && $user->reseller_id
+                && (
+                    $user->isResellerOwner()
+                    || $user->isManager()
+                )
+            );
+
+        $selected =
+            request()
+                ->attributes
+                ->get(
+                    'accounting_zone_id'
+                );
+
+        $zones = [];
+
+        if ($canChoose) {
+            $zones =
+                NetworkZone::query()
+                    ->where(
+                        'reseller_id',
+                        $user->reseller_id
+                    )
+                    ->where(
+                        'enabled',
+                        true
+                    )
+                    ->orderBy(
+                        'service_type'
+                    )
+                    ->orderBy(
+                        'name'
+                    )
+                    ->get([
+                        'id',
+                        'name',
+                        'service_type',
+                    ])
+                    ->map(
+                        function (
+                            NetworkZone $zone
+                        ): array {
+                            return [
+                                'id' =>
+                                    $zone->id,
+
+                                'name' =>
+                                    $zone->name,
+
+                                'service_type' =>
+                                    $zone->service_type,
+                            ];
+                        }
+                    )
+                    ->values()
+                    ->all();
+        }
+
+        $scopeLabel =
+            'All Zones';
+
+        if ($locked) {
+            $scopeLabel =
+                'Assigned Zone';
+        } elseif ($selected) {
+            foreach ($zones as $zone) {
+                if (
+                    (int)
+                    $zone['id']
+                    === (int)
+                    $selected
+                ) {
+                    $scopeLabel =
+                        $zone['name'];
+
+                    break;
+                }
+            }
+        }
+
+        return [
+            'accountingZones' =>
+                $zones,
+
+            'selectedZoneId' =>
+                $selected,
+
+            'accountingLockedToToday' =>
+                $locked,
+
+            'accountingScopeLabel' =>
+                $scopeLabel,
+        ];
+    }
+
     private function resolveRange(
         Request $request
     ): array {
+        /*
+         * OPERATOR_ACCOUNTING_TODAY_V1
+         *
+         * Normal reseller operators can only
+         * see today's accounting for the zone
+         * assigned to their account.
+         */
+        if (
+            request()->user()
+            && request()->user()->reseller_id
+            && request()->user()->isOperator()
+        ) {
+            $today =
+                Carbon::today(
+                    'Asia/Qatar'
+                );
+
+            return [
+                'preset' =>
+                    'today',
+
+                'start' =>
+                    $today
+                        ->copy()
+                        ->startOfDay(),
+
+                'end' =>
+                    $today
+                        ->copy()
+                        ->endOfDay(),
+
+                'label' =>
+                    'Today · '
+                    . $today
+                        ->format(
+                            'd M Y'
+                        ),
+            ];
+        }
+
+
         $data = $request->validate([
             'preset' => [
                 'nullable',

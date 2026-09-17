@@ -49,6 +49,25 @@ class CheckPanelPermission
         $routeName =
             $request->route()?->getName();
 
+        /*
+         * MANAGER_FINANCE_HARD_BLOCK_V1
+         *
+         * Managers are allowed to read/export
+         * finance but cannot mutate money records.
+         */
+        if (
+            $user->isManager()
+            && $this
+                ->managerFinanceMutationRoute(
+                    $routeName
+                )
+        ) {
+            abort(
+                403,
+                'Managers have read-only finance access.'
+            );
+        }
+
         $required =
             $this->permissionRequirementForRoute(
                 $routeName
@@ -113,6 +132,76 @@ class CheckPanelPermission
         }
 
         return $next($request);
+    }
+
+    private function managerFinanceMutationRoute(
+        ?string $routeName
+    ): bool {
+        if (!$routeName) {
+            return false;
+        }
+
+        if (
+            str_starts_with(
+                $routeName,
+                'invoices.'
+            )
+        ) {
+            if (
+                $routeName
+                === 'invoices.index'
+            ) {
+                return false;
+            }
+
+            if (
+                str_contains(
+                    $routeName,
+                    'print'
+                )
+                || str_contains(
+                    $routeName,
+                    'download'
+                )
+                || str_contains(
+                    $routeName,
+                    'export'
+                )
+            ) {
+                return false;
+            }
+
+            return true;
+        }
+
+        if (
+            str_starts_with(
+                $routeName,
+                'payments.'
+            )
+        ) {
+            return $routeName
+                !== 'payments.index';
+        }
+
+        if (
+            str_starts_with(
+                $routeName,
+                'expenses.'
+            )
+        ) {
+            return !in_array(
+                $routeName,
+                [
+                    'expenses.index',
+                    'expenses.show',
+                ],
+                true
+            );
+        }
+
+        return $routeName
+            === 'hotspot.invoices.pay';
     }
 
     /**

@@ -5,6 +5,7 @@ use App\Http\Controllers\Reseller\OperatorController;
 use App\Http\Controllers\Reseller\NotificationController;
 use App\Http\Controllers\Reseller\NetworkZoneController;
 use App\Http\Controllers\Reseller\ManagerController;
+use App\Http\Controllers\Reseller\CompanySettingsController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware([
@@ -218,5 +219,35 @@ Route::middleware([
             ]
         )->name(
             'managers.destroy'
+        );
+    });
+
+/*
+ * Reseller owner company profile.
+ */
+Route::middleware([
+    'auth',
+])
+    ->prefix('reseller')
+    ->name('reseller.')
+    ->group(function (): void {
+        Route::get(
+            'company-settings',
+            [
+                CompanySettingsController::class,
+                'index',
+            ]
+        )->name(
+            'company-settings.index'
+        );
+
+        Route::put(
+            'company-settings',
+            [
+                CompanySettingsController::class,
+                'update',
+            ]
+        )->name(
+            'company-settings.update'
         );
     });

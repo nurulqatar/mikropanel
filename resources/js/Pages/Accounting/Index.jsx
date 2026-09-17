@@ -8,6 +8,10 @@ import {
 
 export default function Index({
     filters = {},
+    accountingZones = [],
+    selectedZoneId = null,
+    accountingLockedToToday = false,
+    accountingScopeLabel = 'All Zones',
     summary = {},
     monthlyTrend = [],
     paymentMethods = [],
@@ -28,6 +32,9 @@ export default function Index({
         processing,
         errors,
     } = useForm({
+        zone_id:
+            selectedZoneId ?? '',
+
         preset:
             filters.preset ?? 'this_month',
 
@@ -54,6 +61,8 @@ export default function Index({
     ) => {
         return route(routeName, {
             report,
+            zone_id:
+                data.zone_id || undefined,
             preset: data.preset,
             start_date: data.start_date,
             end_date: data.end_date,
@@ -157,17 +166,77 @@ export default function Index({
                     </div>
                 </section>
 
+                {/* OPERATOR_ACCOUNTING_TODAY_UI_V1 */}
+                {accountingLockedToToday && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 font-semibold text-amber-800">
+                        Operator Accounting is locked
+                        to today in your assigned
+                        Network Zone.
+                    </div>
+                )}
+
                 <form
                     onSubmit={submitFilter}
                     className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
                 >
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        {accountingZones.length > 0 && (
+                            <Field
+                                label="Network Zone"
+                                error={errors.zone_id}
+                            >
+                                <select
+                                    value={
+                                        data.zone_id
+                                    }
+                                    onChange={(event) =>
+                                        setData(
+                                            'zone_id',
+                                            event
+                                                .target
+                                                .value,
+                                        )
+                                    }
+                                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
+                                >
+                                    <option value="">
+                                        All Zones
+                                    </option>
+
+                                    {accountingZones.map(
+                                        (zone) => (
+                                            <option
+                                                key={
+                                                    zone.id
+                                                }
+                                                value={
+                                                    zone.id
+                                                }
+                                            >
+                                                {
+                                                    zone.name
+                                                }{' '}
+                                                (
+                                                {
+                                                    zone.service_type
+                                                }
+                                                )
+                                            </option>
+                                        ),
+                                    )}
+                                </select>
+                            </Field>
+                        )}
+
                         <Field
                             label="Report Period"
                             error={errors.preset}
                         >
                             <select
                                 value={data.preset}
+                                disabled={
+                                    accountingLockedToToday
+                                }
                                 onChange={(event) =>
                                     setData(
                                         'preset',
@@ -212,7 +281,8 @@ export default function Index({
                                     )
                                 }
                                 disabled={
-                                    data.preset !== 'custom'
+                                    accountingLockedToToday
+                                    || data.preset !== 'custom'
                                 }
                                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 disabled:bg-slate-100"
                             />
@@ -232,7 +302,8 @@ export default function Index({
                                     )
                                 }
                                 disabled={
-                                    data.preset !== 'custom'
+                                    accountingLockedToToday
+                                    || data.preset !== 'custom'
                                 }
                                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 disabled:bg-slate-100"
                             />
@@ -245,6 +316,8 @@ export default function Index({
 
                             <div className="flex h-[50px] items-center justify-between gap-3 rounded-xl bg-slate-100 px-4">
                                 <span className="text-sm font-bold text-slate-700">
+                                    {accountingScopeLabel}
+                                    {' · '}
                                     {filters.label}
                                 </span>
 

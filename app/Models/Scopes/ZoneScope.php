@@ -39,6 +39,56 @@ class ZoneScope implements Scope
             $user->role === 'reseller'
             || $user->isManager()
         ) {
+            /*
+             * ACCOUNTING_MANAGER_ZONE_FILTER_V1
+             *
+             * Owner / manager normally sees all zones.
+             * Accounting can explicitly select one.
+             */
+            $accountingZoneId =
+                null;
+
+            if (
+                app()->bound(
+                    'request'
+                )
+            ) {
+                $request =
+                    request();
+
+                $routeName =
+                    (string) (
+                        $request
+                            ->route()
+                            ?->getName()
+                        ?? ''
+                    );
+
+                if (
+                    str_starts_with(
+                        $routeName,
+                        'accounting.'
+                    )
+                ) {
+                    $accountingZoneId =
+                        $request
+                            ->attributes
+                            ->get(
+                                'accounting_zone_id'
+                            );
+                }
+            }
+
+            if ($accountingZoneId) {
+                $builder->where(
+                    $model->qualifyColumn(
+                        'zone_id'
+                    ),
+                    (int)
+                    $accountingZoneId
+                );
+            }
+
             return;
         }
 

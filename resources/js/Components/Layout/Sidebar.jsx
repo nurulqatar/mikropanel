@@ -93,6 +93,8 @@ function ResellerSidebar({
             || route().current('reseller.operators.*')
             || route().current('reseller.zones.*')
             || route().current('reseller.managers.*')
+            || route().current('reseller.company-settings.*')
+            || route().current('reseller.mac-clients.form-fields.*')
             || route().current('settings.*'),
     });
 
@@ -273,6 +275,32 @@ function ResellerSidebar({
     }
 
     if (
+        isOwner
+        && routeExists(
+            'reseller.company-settings.index',
+        )
+    ) {
+        managementItems.push({
+            label: 'Company Settings',
+            route: 'reseller.company-settings.index',
+            active: 'reseller.company-settings.*',
+        });
+    }
+
+    if (
+        isOwner
+        && routeExists(
+            'reseller.mac-clients.form-fields.index',
+        )
+    ) {
+        managementItems.push({
+            label: 'Client Form Fields',
+            route: 'reseller.mac-clients.form-fields.index',
+            active: 'reseller.mac-clients.form-fields.*',
+        });
+    }
+
+    if (
         routeExists(
             'reseller.notifications.index',
         )
@@ -425,6 +453,12 @@ function ResellerSidebar({
                             )
                             || route().current(
                                 'reseller.managers.*',
+                            )
+                            || route().current(
+                                'reseller.company-settings.*',
+                            )
+                            || route().current(
+                                'reseller.mac-clients.form-fields.*',
                             )
                             || route().current(
                                 'settings.*',
