@@ -23,6 +23,31 @@ class SyncHotspotServers extends Command
 
         HotspotServer::query()
             ->where('enabled', true)
+            /*
+             * HOTSPOT_OFFLINE_COOLDOWN_V1
+             *
+             * Connected routers stay near-real-time.
+             * Offline routers retry every five minutes
+             * instead of creating a timeout every minute.
+             */
+            ->where(
+                function ($query): void {
+                    $query
+                        ->where(
+                            'connected',
+                            true
+                        )
+                        ->orWhereNull(
+                            'last_synced_at'
+                        )
+                        ->orWhere(
+                            'last_synced_at',
+                            '<=',
+                            now()
+                                ->subMinutes(5)
+                        );
+                }
+            )
             ->orderBy('id')
             ->each(
                 function (
