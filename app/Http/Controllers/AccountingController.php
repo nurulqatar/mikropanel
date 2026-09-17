@@ -1763,10 +1763,13 @@ class AccountingController extends Controller
          * see today's accounting for the zone
          * assigned to their account.
          */
+        $user =
+            $request->user();
+
         if (
-            request()->user()
-            && request()->user()->reseller_id
-            && request()->user()->isOperator()
+            $user
+            && $user->reseller_id
+            && $user->isOperator()
         ) {
             $today =
                 Carbon::today(
