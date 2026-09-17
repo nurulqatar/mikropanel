@@ -918,3 +918,22 @@ require __DIR__.'/reseller.php';
     '/reseller/mac-pos',
     \App\Http\Controllers\Reseller\MacClientPosController::class
 )->name('reseller.mac-pos');
+
+
+/*
+|--------------------------------------------------------------------------
+| Universal Windows Scanner Agent
+|--------------------------------------------------------------------------
+|
+| Authenticated browser sessions receive a short-lived signed token.
+| The local Windows Agent validates the signature before allowing a
+| panel origin to pair/re-pair.
+|
+*/
+
+Route::get(
+    '/scanner/agent-token',
+    \App\Http\Controllers\ScannerAgentTokenController::class,
+)
+    ->middleware('auth')
+    ->name('scanner.agent-token');
