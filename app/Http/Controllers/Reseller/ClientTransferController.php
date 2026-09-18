@@ -309,6 +309,94 @@ class ClientTransferController extends Controller
                 )
                 ->values();
 
+        /*
+         * TRANSFER_PAGE_STATS_V1
+         *
+         * Pending counters are relative to the
+         * operator/manager active zone.
+         *
+         * Owner gets company-wide pending/history.
+         */
+        $transferStats = [
+            'total' =>
+                $requestRows->count(),
+
+            'pending' =>
+                $requestRows
+                    ->where(
+                        'status',
+                        'pending'
+                    )
+                    ->count(),
+
+            'incoming' =>
+                $user->role === 'reseller'
+                    ? 0
+                    : $requestRows
+                        ->filter(
+                            fn (array $row): bool =>
+                                $row['status']
+                                    === 'pending'
+                                && (int)
+                                    $row[
+                                        'target_zone_id'
+                                    ]
+                                    === (int)
+                                    $contextZoneId
+                        )
+                        ->count(),
+
+            'outgoing' =>
+                $user->role === 'reseller'
+                    ? 0
+                    : $requestRows
+                        ->filter(
+                            fn (array $row): bool =>
+                                $row['status']
+                                    === 'pending'
+                                && (int)
+                                    $row[
+                                        'source_zone_id'
+                                    ]
+                                    === (int)
+                                    $contextZoneId
+                        )
+                        ->count(),
+
+            'history' =>
+                $requestRows
+                    ->filter(
+                        fn (array $row): bool =>
+                            $row['status']
+                                !== 'pending'
+                    )
+                    ->count(),
+
+            'approved' =>
+                $requestRows
+                    ->where(
+                        'status',
+                        'approved'
+                    )
+                    ->count(),
+
+            'rejected' =>
+                $requestRows
+                    ->where(
+                        'status',
+                        'rejected'
+                    )
+                    ->count(),
+
+            'cancelled' =>
+                $requestRows
+                    ->where(
+                        'status',
+                        'cancelled'
+                    )
+                    ->count(),
+        ];
+
         $clientQuery =
             Client::withoutGlobalScopes()
                 ->whereNull(
@@ -470,6 +558,9 @@ class ClientTransferController extends Controller
             [
                 'transfers' =>
                     $requestRows,
+
+                'transferStats' =>
+                    $transferStats,
 
                 'clients' =>
                     $availableClients,

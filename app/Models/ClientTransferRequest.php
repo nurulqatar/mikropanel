@@ -56,6 +56,204 @@ class ClientTransferRequest extends Model
         'cancelled_at' => 'datetime',
     ];
 
+    /*
+     * TRANSFER_NOTIFICATION_EVENTS_V1
+     *
+     * Transfer lifecycle events are written into
+     * the existing reseller notification center.
+     *
+     * Notifications are transaction-aware because
+     * model events run inside the same DB transaction.
+     */
+    protected static function booted(): void
+    {
+        static::created(
+            function (
+                ClientTransferRequest $transfer
+            ): void {
+                $transfer
+                    ->writeTransferNotification(
+                        'requested'
+                    );
+            }
+        );
+
+        static::updated(
+            function (
+                ClientTransferRequest $transfer
+            ): void {
+                if (
+                    $transfer->wasChanged(
+                        'status'
+                    )
+                    && in_array(
+                        $transfer->status,
+                        [
+                            'approved',
+                            'rejected',
+                            'cancelled',
+                        ],
+                        true
+                    )
+                ) {
+                    $transfer
+                        ->writeTransferNotification(
+                            $transfer->status
+                        );
+                }
+            }
+        );
+    }
+
+    private function writeTransferNotification(
+        string $event
+    ): void {
+        if (
+            !$this->id
+            || !$this->reseller_id
+        ) {
+            return;
+        }
+
+        $client =
+            Client::withoutGlobalScopes()
+                ->find(
+                    $this->client_id
+                );
+
+        $sourceZone =
+            NetworkZone::withoutGlobalScopes()
+                ->find(
+                    $this->source_zone_id
+                );
+
+        $targetZone =
+            NetworkZone::withoutGlobalScopes()
+                ->find(
+                    $this->target_zone_id
+                );
+
+        $clientLabel =
+            $client
+                ? trim(
+                    (
+                        $client->client_code
+                        ? $client->client_code
+                            . ' · '
+                        : ''
+                    )
+                    . $client->name
+                )
+                : 'Client #'
+                    . $this->client_id;
+
+        $sourceName =
+            $sourceZone?->name
+            ?? 'Source Zone';
+
+        $targetName =
+            $targetZone?->name
+            ?? 'Destination Zone';
+
+        [
+            $level,
+            $title,
+            $message,
+        ] = match ($event) {
+            'requested' => [
+                'info',
+                'Incoming Client Transfer',
+                $clientLabel
+                    . ' transfer requested from '
+                    . $sourceName
+                    . ' to '
+                    . $targetName
+                    . '.',
+            ],
+
+            'approved' => [
+                'success',
+                'Client Transfer Approved',
+                $clientLabel
+                    . ' was transferred from '
+                    . $sourceName
+                    . ' to '
+                    . $targetName
+                    . '.',
+            ],
+
+            'rejected' => [
+                'warning',
+                'Client Transfer Rejected',
+                $clientLabel
+                    . ' transfer to '
+                    . $targetName
+                    . ' was rejected.',
+            ],
+
+            'cancelled' => [
+                'info',
+                'Client Transfer Cancelled',
+                $clientLabel
+                    . ' transfer request was cancelled.',
+            ],
+
+            default => [
+                'info',
+                'Client Transfer Update',
+                $clientLabel
+                    . ' transfer status changed.',
+            ],
+        };
+
+        ResellerNotification::withoutGlobalScopes()
+            ->firstOrCreate(
+                [
+                    'dedupe_key' =>
+                        'client-transfer:'
+                        . $this->id
+                        . ':'
+                        . $event,
+                ],
+                [
+                    'reseller_id' =>
+                        $this->reseller_id,
+
+                    'type' =>
+                        'client_transfer',
+
+                    'level' =>
+                        $level,
+
+                    'title' =>
+                        $title,
+
+                    'message' =>
+                        $message,
+
+                    'data' => [
+                        'transfer_id' =>
+                            $this->id,
+
+                        'client_id' =>
+                            $this->client_id,
+
+                        'source_zone_id' =>
+                            $this->source_zone_id,
+
+                        'target_zone_id' =>
+                            $this->target_zone_id,
+
+                        'status' =>
+                            $this->status,
+
+                        'route' =>
+                            'reseller.transfers.index',
+                    ],
+                ]
+            );
+    }
+
     public function client(): BelongsTo
     {
         return $this->belongsTo(
