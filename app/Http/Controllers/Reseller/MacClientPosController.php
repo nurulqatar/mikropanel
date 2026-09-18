@@ -7,9 +7,11 @@ use App\Models\Client;
 use App\Models\ClientRefund;
 use App\Models\Invoice;
 use App\Models\IpRange;
+use App\Models\NetworkZone;
 use App\Models\Package;
 use App\Models\Payment;
 use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -18,7 +20,7 @@ class MacClientPosController extends Controller
 {
     public function __invoke(
         Request $request
-    ): Response {
+    ): Response|RedirectResponse {
         $user = $request->user();
 
         abort_unless(
@@ -29,6 +31,62 @@ class MacClientPosController extends Controller
                 ),
             403
         );
+
+        /*
+         * MANAGER_MAC_POS_ZONE_GUARD_V1
+         *
+         * Managers are intentionally not permanently bound
+         * to one zone. They must explicitly select an active
+         * MAC Network Zone before entering MAC Client POS.
+         */
+        if ($user->isManager()) {
+            $selectedZoneId =
+                (int)
+                $request
+                    ->session()
+                    ->get(
+                        'network_zone_id',
+                        0
+                    );
+
+            $selectedZone =
+                $selectedZoneId > 0
+                    ? NetworkZone::query()
+                        ->whereKey(
+                            $selectedZoneId
+                        )
+                        ->where(
+                            'reseller_id',
+                            $user->reseller_id
+                        )
+                        ->where(
+                            'service_type',
+                            'mac'
+                        )
+                        ->where(
+                            'enabled',
+                            true
+                        )
+                        ->first()
+                    : null;
+
+            if (!$selectedZone) {
+                $request
+                    ->session()
+                    ->forget(
+                        'network_zone_id'
+                    );
+
+                return redirect()
+                    ->route(
+                        'reseller.zones.index'
+                    )
+                    ->withErrors([
+                        'zone_id' =>
+                            'Select an active MAC Network Zone before opening MAC Client POS.',
+                    ]);
+            }
+        }
 
         $clients =
             Client::query()
