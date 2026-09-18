@@ -127,7 +127,23 @@ function SidebarContent({ url, closeMenu }) {
                         </Link>
                     );
                 })}
-            </nav>
+
+                    <a
+                        href={route(
+                            'superadmin.registrations.index',
+                        )}
+                        className={`block rounded-xl px-4 py-3 text-sm font-bold transition ${
+                            route().current(
+                                'superadmin.registrations.*',
+                            )
+                                ? 'bg-violet-600 text-white shadow'
+                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                        }`}
+                    >
+                        Registration Requests
+                    </a>
+
+</nav>
 
             <div className="border-t border-slate-800 p-4">
                 <div className="rounded-xl bg-slate-800/70 px-3 py-3">

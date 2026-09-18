@@ -21,14 +21,7 @@ use App\Http\Controllers\SettingController;
 use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\NotificationController;
 
-Route::get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-    ]);
-});
+/* Public homepage loaded from routes/public_reseller.php */
 
 use App\Http\Controllers\DashboardController;
 
@@ -948,3 +941,5 @@ Route::get(
     ->name('scanner.agent-token');
 
 require __DIR__.'/manager_cash.php';
+
+require __DIR__.'/public_reseller.php';
