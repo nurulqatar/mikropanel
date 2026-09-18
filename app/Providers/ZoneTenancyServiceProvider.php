@@ -316,7 +316,37 @@ class ZoneTenancyServiceProvider extends ServiceProvider
                 : (int) $zoneId;
 
         /*
-         * Finance follows client zone.
+         * TRANSFER_FINANCE_INVOICE_ZONE_V1
+         *
+         * Invoice zone is an accounting snapshot.
+         *
+         * After a client moves to another Network
+         * Zone, payments/refunds for an OLD invoice
+         * must still remain in the invoice's original
+         * zone instead of following the client's new
+         * operational zone.
+         */
+        if (
+            $zoneId === null
+            && (
+                $model instanceof Payment
+                || $model instanceof ClientRefund
+            )
+            && $model->invoice_id
+        ) {
+            $zoneId =
+                $this->invoiceZone(
+                    (int)
+                    $model->invoice_id
+                );
+        }
+
+        /*
+         * New invoice / usage follows the client's
+         * CURRENT operational zone.
+         *
+         * Payment/refund falls back to client zone
+         * only when no invoice snapshot is available.
          */
         if (
             $zoneId === null
@@ -540,6 +570,26 @@ class ZoneTenancyServiceProvider extends ServiceProvider
                         'Cross-zone modification is not allowed.',
                 ]);
         }
+    }
+
+    private function invoiceZone(
+        int $id
+    ): ?int {
+        $value =
+            DB::table(
+                'invoices'
+            )
+                ->where(
+                    'id',
+                    $id
+                )
+                ->value(
+                    'zone_id'
+                );
+
+        return $value === null
+            ? null
+            : (int) $value;
     }
 
     private function clientZone(

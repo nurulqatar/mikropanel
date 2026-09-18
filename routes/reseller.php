@@ -269,3 +269,71 @@ Route::middleware([
     ->name(
         'reseller.subscription.upgrade'
     );
+
+
+/*
+ * RESELLER_CLIENT_TRANSFER_ROUTES_V1
+ *
+ * Source-zone operator requests.
+ * Destination-zone operator approves/rejects.
+ */
+\Illuminate\Support\Facades\Route::middleware([
+    'auth',
+])
+    ->prefix(
+        'reseller/transfers'
+    )
+    ->name(
+        'reseller.transfers.'
+    )
+    ->group(function (): void {
+        \Illuminate\Support\Facades\Route::get(
+            '/',
+            [
+                \App\Http\Controllers\Reseller\ClientTransferController::class,
+                'index',
+            ]
+        )->name(
+            'index'
+        );
+
+        \Illuminate\Support\Facades\Route::post(
+            '/',
+            [
+                \App\Http\Controllers\Reseller\ClientTransferController::class,
+                'store',
+            ]
+        )->name(
+            'store'
+        );
+
+        \Illuminate\Support\Facades\Route::post(
+            '/{transfer}/approve',
+            [
+                \App\Http\Controllers\Reseller\ClientTransferController::class,
+                'approve',
+            ]
+        )->name(
+            'approve'
+        );
+
+        \Illuminate\Support\Facades\Route::post(
+            '/{transfer}/reject',
+            [
+                \App\Http\Controllers\Reseller\ClientTransferController::class,
+                'reject',
+            ]
+        )->name(
+            'reject'
+        );
+
+        \Illuminate\Support\Facades\Route::post(
+            '/{transfer}/cancel',
+            [
+                \App\Http\Controllers\Reseller\ClientTransferController::class,
+                'cancel',
+            ]
+        )->name(
+            'cancel'
+        );
+    });

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\ClientProvisioningException;
 use App\Models\Client;
 use App\Models\ClientRouterBinding;
+use App\Models\IpRange;
 use App\Models\Router;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -189,6 +190,112 @@ class ClientProvisionService
     }
 
     /*
+     * TRANSFER_SOURCE_ZONE_CLEANUP_V1
+     *
+     * Remove a client's OLD MAC/IP state only
+     * from routers belonging to the source zone.
+     *
+     * This deliberately bypasses the current
+     * operator ZoneScope because transfer approval
+     * is performed by the DESTINATION operator.
+     *
+     * No client zone/database ownership is changed
+     * here. The transfer service changes ownership
+     * only after source-router cleanup succeeds.
+     */
+    public function removeFromZone(
+        Client $client,
+        int $zoneId
+    ): bool {
+        if (
+            !$client->id
+            || $zoneId < 1
+        ) {
+            return false;
+        }
+
+        /*
+         * Destination operator cannot normally load
+         * the old source IP Pool through ZoneScope.
+         * Supply the source relation explicitly.
+         */
+        if ($client->ip_range_id) {
+            $sourceRange =
+                IpRange::withoutGlobalScopes()
+                    ->find(
+                        $client->ip_range_id
+                    );
+
+            if ($sourceRange) {
+                $client->setRelation(
+                    'ipRange',
+                    $sourceRange
+                );
+            }
+        }
+
+        $routerIds =
+            Router::withoutGlobalScopes()
+                ->where(
+                    'zone_id',
+                    $zoneId
+                )
+                ->pluck(
+                    'id'
+                );
+
+        if ($routerIds->isEmpty()) {
+            return true;
+        }
+
+        $bindings =
+            ClientRouterBinding::query()
+                ->where(
+                    'client_id',
+                    $client->id
+                )
+                ->whereIn(
+                    'router_id',
+                    $routerIds
+                )
+                ->get();
+
+        $ok = true;
+
+        foreach (
+            $bindings
+            as $binding
+        ) {
+            $router =
+                Router::withoutGlobalScopes()
+                    ->find(
+                        $binding->router_id
+                    );
+
+            /*
+             * Router record disappeared from panel,
+             * therefore there is no managed router
+             * left to clean.
+             */
+            if (!$router) {
+                continue;
+            }
+
+            if (
+                !$this->removeFromRouter(
+                    $client,
+                    $router,
+                    $binding
+                )
+            ) {
+                $ok = false;
+            }
+        }
+
+        return $ok;
+    }
+
+    /*
      * Public entry used by automatic retry
      * command and future RouterController hook.
      */
@@ -290,8 +397,19 @@ class ClientProvisionService
          * Same MAC/IP/state goes to every enabled
          * MikroTik inside this client's zone.
          */
+        /*
+         * TRANSFER_AUTH_INDEPENDENT_FANOUT_V1
+         *
+         * Network convergence follows the CLIENT'S
+         * explicit zone, not the currently logged-in
+         * operator's ZoneScope.
+         *
+         * This is required when a destination operator
+         * completes a transfer or when source state
+         * must be restored after a failed move.
+         */
         $routers =
-            Router::query()
+            Router::withoutGlobalScopes()
                 ->where(
                     'enabled',
                     true

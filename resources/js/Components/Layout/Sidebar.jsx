@@ -76,6 +76,7 @@ function ResellerSidebar({
         mac:
             route().current('reseller.mac-pos')
             || route().current('clients.*')
+            || route().current('reseller.transfers.*')
             || route().current('packages.*')
             || route().current('ip-ranges.*'),
 
@@ -119,6 +120,13 @@ function ResellerSidebar({
             active: 'clients.*',
             permission: 'clients.view',
             icon: '👥',
+        },
+        {
+            label: 'Client Transfers',
+            route: 'reseller.transfers.index',
+            active: 'reseller.transfers.*',
+            permission: 'clients.view',
+            icon: '⇄',
         },
         {
             label: 'Packages',
