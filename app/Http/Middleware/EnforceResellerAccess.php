@@ -83,6 +83,31 @@ class EnforceResellerAccess
             );
         }
 
+        /*
+         * PUBLIC_AUTH_RESELLER_BYPASS
+         *
+         * Login and password-recovery screens are public
+         * authentication endpoints, not reseller-panel actions.
+         */
+        if (
+            in_array(
+                $routeName,
+                [
+                    'login',
+                    'password.request',
+                    'password.email',
+                    'password.reset',
+                    'password.store',
+                ],
+                true
+            )
+        ) {
+            return $next(
+                $request
+            );
+        }
+
+
         if (
             $routeName === 'dashboard'
         ) {
