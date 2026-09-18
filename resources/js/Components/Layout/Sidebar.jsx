@@ -301,6 +301,22 @@ function ResellerSidebar({
     }
 
     if (
+        (
+            isOwner
+            || user?.staff_role === 'manager'
+        )
+        && routeExists(
+            'reseller.cash.index',
+        )
+    ) {
+        managementItems.push({
+            label: 'Manager Cash',
+            route: 'reseller.cash.index',
+            active: 'reseller.cash.*',
+        });
+    }
+
+    if (
         routeExists(
             'reseller.notifications.index',
         )

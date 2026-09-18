@@ -8,4 +8,5 @@ return [
     App\Providers\PanelAuthorizationServiceProvider::class,
     App\Providers\ResellerTenancyServiceProvider::class,
     App\Providers\ZoneTenancyServiceProvider::class,
+    App\Providers\ManagerCashServiceProvider::class,
 ];

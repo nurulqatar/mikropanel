@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
 class CheckPanelPermission
@@ -48,6 +49,131 @@ class CheckPanelPermission
 
         $routeName =
             $request->route()?->getName();
+
+        /*
+         * MANAGER_OPERATION_GUARD_V1
+         *
+         * Manager is an operational cash-accountable
+         * role, never a destructive/admin role.
+         */
+        if ($user->isManager()) {
+            /*
+             * No DELETE endpoint is available to
+             * Manager, even if a permission is added
+             * accidentally later.
+             */
+            if (
+                $request->isMethod(
+                    'delete'
+                )
+            ) {
+                abort(
+                    403,
+                    'Managers cannot delete records.'
+                );
+            }
+
+            /*
+             * MikroTik Router information is hidden
+             * completely from Managers.
+             */
+            if (
+                $routeName
+                && str_starts_with(
+                    $routeName,
+                    'routers.'
+                )
+            ) {
+                abort(
+                    403,
+                    'Router access is not available to Managers.'
+                );
+            }
+
+            /*
+             * Manager expenses are immutable after
+             * submission. Suspicious entries are
+             * rejected by Reseller Admin instead.
+             */
+            if (
+                in_array(
+                    $routeName,
+                    [
+                        'expenses.edit',
+                        'expenses.update',
+                    ],
+                    true
+                )
+            ) {
+                abort(
+                    403,
+                    'Managers cannot edit submitted expenses.'
+                );
+            }
+
+            /*
+             * Refund workflow changes physical cash
+             * and is reserved for Reseller Admin.
+             */
+            if (
+                $routeName
+                && str_starts_with(
+                    $routeName,
+                    'payments.refund'
+                )
+            ) {
+                abort(
+                    403,
+                    'Managers cannot issue customer refunds.'
+                );
+            }
+
+            /*
+             * MAC client/payment work requires one
+             * explicitly selected active MAC zone.
+             */
+            if (
+                (
+                    $routeName
+                    && str_starts_with(
+                        $routeName,
+                        'clients.'
+                    )
+                )
+                || (
+                    $routeName
+                    && str_starts_with(
+                        $routeName,
+                        'payments.'
+                    )
+                )
+                || $routeName
+                    === 'reseller.mac-pos'
+            ) {
+                $this->assertManagerMacZone(
+                    $request,
+                    $user
+                );
+            }
+
+            /*
+             * Expense always belongs to the currently
+             * selected active Network Zone.
+             */
+            if (
+                $routeName
+                && str_starts_with(
+                    $routeName,
+                    'expenses.'
+                )
+            ) {
+                $this->assertManagerActiveZone(
+                    $request,
+                    $user
+                );
+            }
+        }
+
 
         /*
          * MANAGER_FINANCE_HARD_BLOCK_V1
@@ -133,6 +259,94 @@ class CheckPanelPermission
 
         return $next($request);
     }
+
+    private function assertManagerMacZone(
+        Request $request,
+        $user
+    ): void {
+        $zoneId =
+            (int) (
+                $request
+                    ->session()
+                    ->get(
+                        'network_zone_id'
+                    )
+                ?? 0
+            );
+
+        $valid =
+            $zoneId > 0
+            && DB::table(
+                'network_zones'
+            )
+                ->where(
+                    'id',
+                    $zoneId
+                )
+                ->where(
+                    'reseller_id',
+                    $user->reseller_id
+                )
+                ->where(
+                    'service_type',
+                    'mac'
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->exists();
+
+        if (!$valid) {
+            abort(
+                403,
+                'Select an active MAC Network Zone before working with clients or payments.'
+            );
+        }
+    }
+
+    private function assertManagerActiveZone(
+        Request $request,
+        $user
+    ): void {
+        $zoneId =
+            (int) (
+                $request
+                    ->session()
+                    ->get(
+                        'network_zone_id'
+                    )
+                ?? 0
+            );
+
+        $valid =
+            $zoneId > 0
+            && DB::table(
+                'network_zones'
+            )
+                ->where(
+                    'id',
+                    $zoneId
+                )
+                ->where(
+                    'reseller_id',
+                    $user->reseller_id
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->exists();
+
+        if (!$valid) {
+            abort(
+                403,
+                'Select an active Network Zone before recording expenses.'
+            );
+        }
+    }
+
+
 
     private function managerFinanceMutationRoute(
         ?string $routeName

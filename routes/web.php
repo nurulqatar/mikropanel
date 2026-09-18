@@ -946,3 +946,5 @@ Route::get(
 )
     ->middleware('auth')
     ->name('scanner.agent-token');
+
+require __DIR__.'/manager_cash.php';

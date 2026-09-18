@@ -13,78 +13,43 @@ class ZoneScope implements Scope
         Builder $builder,
         Model $model
     ): void {
-        $user =
-            Auth::user();
+        $user = Auth::user();
 
         /*
-         * Queue / scheduler / CLI.
+         * CLI / queue / scheduler.
          */
         if (!$user) {
             return;
         }
 
         /*
-         * Platform admin.
+         * Platform-level accounts are not
+         * restricted by reseller Network Zones.
          */
         if (!$user->reseller_id) {
             return;
         }
 
+        $column =
+            $model->qualifyColumn(
+                'zone_id'
+            );
+
         /*
-         * Reseller Owner / Manager:
-         * ResellerScope still keeps them inside
-         * their own company.
+         * Reseller Owner remains all-zone.
+         *
+         * Existing AccountingController may set
+         * accounting_zone_id explicitly.
          */
         if (
             $user->role === 'reseller'
-            || $user->isManager()
         ) {
-            /*
-             * ACCOUNTING_MANAGER_ZONE_FILTER_V1
-             *
-             * Owner / manager normally sees all zones.
-             * Accounting can explicitly select one.
-             */
             $accountingZoneId =
-                null;
-
-            if (
-                app()->bound(
-                    'request'
-                )
-            ) {
-                $request =
-                    request();
-
-                $routeName =
-                    (string) (
-                        $request
-                            ->route()
-                            ?->getName()
-                        ?? ''
-                    );
-
-                if (
-                    str_starts_with(
-                        $routeName,
-                        'accounting.'
-                    )
-                ) {
-                    $accountingZoneId =
-                        $request
-                            ->attributes
-                            ->get(
-                                'accounting_zone_id'
-                            );
-                }
-            }
+                $this->accountingZoneId();
 
             if ($accountingZoneId) {
                 $builder->where(
-                    $model->qualifyColumn(
-                        'zone_id'
-                    ),
-                    (int)
+                    $column,
                     $accountingZoneId
                 );
             }
@@ -93,26 +58,131 @@ class ZoneScope implements Scope
         }
 
         /*
-         * Operator:
-         * only assigned zone.
+         * Manager:
+         *
+         * zone_id on users remains NULL because a
+         * Manager may move between sites.
+         *
+         * Every zone-aware operational query is
+         * limited to the currently selected
+         * Network Zone stored in session.
+         *
+         * Accounting's explicit zone filter wins
+         * when AccountingController sets one.
          */
-        if ($user->zone_id) {
+        if ($user->isManager()) {
+            $zoneId =
+                $this->accountingZoneId()
+                ?: $this->sessionZoneId();
+
+            if (!$zoneId) {
+                $builder->whereRaw(
+                    '1 = 0'
+                );
+
+                return;
+            }
+
             $builder->where(
-                $model->qualifyColumn(
-                    'zone_id'
-                ),
-                (int)
-                $user->zone_id
+                $column,
+                $zoneId
             );
 
             return;
         }
 
         /*
-         * Never expose all zones accidentally.
+         * Normal Operator is permanently bound
+         * to exactly one Network Zone.
          */
-        $builder->whereRaw(
-            '1 = 0'
+        $zoneId =
+            (int) (
+                $user->zone_id
+                ?? 0
+            );
+
+        if ($zoneId <= 0) {
+            $builder->whereRaw(
+                '1 = 0'
+            );
+
+            return;
+        }
+
+        $builder->where(
+            $column,
+            $zoneId
         );
+    }
+
+    private function sessionZoneId(): ?int
+    {
+        if (
+            !app()->bound(
+                'request'
+            )
+        ) {
+            return null;
+        }
+
+        $request = request();
+
+        if (
+            !$request->hasSession()
+        ) {
+            return null;
+        }
+
+        $value =
+            $request
+                ->session()
+                ->get(
+                    'network_zone_id'
+                );
+
+        return $value
+            ? (int) $value
+            : null;
+    }
+
+    private function accountingZoneId(): ?int
+    {
+        if (
+            !app()->bound(
+                'request'
+            )
+        ) {
+            return null;
+        }
+
+        $request = request();
+
+        $routeName =
+            (string) (
+                $request
+                    ->route()
+                    ?->getName()
+                ?? ''
+            );
+
+        if (
+            !str_starts_with(
+                $routeName,
+                'accounting.'
+            )
+        ) {
+            return null;
+        }
+
+        $value =
+            $request
+                ->attributes
+                ->get(
+                    'accounting_zone_id'
+                );
+
+        return $value
+            ? (int) $value
+            : null;
     }
 }
