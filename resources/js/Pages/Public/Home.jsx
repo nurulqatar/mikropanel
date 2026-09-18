@@ -81,11 +81,9 @@ export default function Home({
 }) {
     return (
         <div className="min-h-screen bg-slate-950 text-white">
-            <Head>
-                <title>
-                    {brand} — ISP & MikroTik Reseller Platform
-                </title>
-
+            <Head
+                title={`${brand} — ISP & MikroTik Reseller Platform`}
+            >
                 <meta
                     name="description"
                     content="Professional MikroTik client management, Hotspot, billing, accounting, reseller operations and Network Zone platform."
