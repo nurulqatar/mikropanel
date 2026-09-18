@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -148,6 +149,13 @@ class NetworkZoneController extends Controller
             'name' =>
                 trim(
                     $data['name']
+                ),
+
+            'code' =>
+                $this->nextZoneCode(
+                    $owner,
+                    $data['name'],
+                    $data['service_type']
                 ),
 
             'service_type' =>
@@ -379,54 +387,291 @@ class NetworkZoneController extends Controller
     }
 
     public function destroy(
-        Request $request,
-        NetworkZone $zone
-    ): RedirectResponse {
-        $owner =
-            $this->owner(
-                $request
-            );
-
-        $this->ownedZone(
-            $owner,
-            $zone
+    Request $request,
+    NetworkZone $zone
+): RedirectResponse {
+    $owner =
+        $this->owner(
+            $request
         );
 
-        if (
-            $this->referenced(
-                $zone
+    $this->ownedZone(
+        $owner,
+        $zone
+    );
+
+    /*
+     * Hard business/network records must never
+     * be silently moved during zone deletion.
+     */
+    if (
+        $this->hasNonUserReferences(
+            $zone
+        )
+    ) {
+        throw ValidationException::withMessages([
+            'zone' =>
+                'This Network Zone still contains clients, routers, IP pools, Hotspot servers or finance records and cannot be deleted.',
+        ]);
+    }
+
+    $boundUsers =
+        User::query()
+            ->where(
+                'reseller_id',
+                $owner->reseller_id
             )
+            ->where(
+                'zone_id',
+                $zone->id
+            )
+            ->get([
+                'id',
+                'role',
+                'staff_role',
+            ]);
+
+    foreach ($boundUsers as $boundUser) {
+        if (
+            $boundUser->role !== 'operator'
+            || $boundUser->staff_role !== 'operator'
         ) {
             throw ValidationException::withMessages([
                 'zone' =>
-                    'This Network Zone is in use and cannot be deleted.',
+                    'This Network Zone is assigned to a non-operator account and cannot be deleted automatically.',
             ]);
         }
+    }
 
-        if (
-            (int)
-            $request
-                ->session()
-                ->get(
-                    'network_zone_id'
+    $replacement = null;
+
+    if ($boundUsers->isNotEmpty()) {
+        $replacement =
+            NetworkZone::query()
+                ->where(
+                    'reseller_id',
+                    $owner->reseller_id
                 )
-            === (int)
-            $zone->id
-        ) {
-            $request
-                ->session()
-                ->forget(
-                    'network_zone_id'
-                );
+                ->where(
+                    'service_type',
+                    $zone->service_type
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->where(
+                    'id',
+                    '!=',
+                    $zone->id
+                )
+                ->orderBy('id')
+                ->first();
+
+        if (!$replacement) {
+            throw ValidationException::withMessages([
+                'zone' =>
+                    'Create another active '
+                    . strtoupper(
+                        $zone->service_type
+                    )
+                    . ' Network Zone first. The assigned operator will be moved there automatically before this zone is deleted.',
+            ]);
+        }
+    }
+
+    DB::transaction(
+        function () use (
+            $boundUsers,
+            $replacement,
+            $request,
+            $zone
+        ): void {
+            if (
+                $boundUsers->isNotEmpty()
+                && $replacement
+            ) {
+                DB::table('users')
+                    ->whereIn(
+                        'id',
+                        $boundUsers->pluck(
+                            'id'
+                        )
+                    )
+                    ->update([
+                        'zone_id' =>
+                            $replacement->id,
+
+                        'updated_at' =>
+                            now(),
+                    ]);
+            }
+
+            $zone->delete();
+
+            if (
+                (int)
+                $request
+                    ->session()
+                    ->get(
+                        'network_zone_id'
+                    )
+                === (int)
+                $zone->id
+            ) {
+                if ($replacement) {
+                    $request
+                        ->session()
+                        ->put(
+                            'network_zone_id',
+                            (int)
+                            $replacement->id
+                        );
+                } else {
+                    $request
+                        ->session()
+                        ->forget(
+                            'network_zone_id'
+                        );
+                }
+            }
+        }
+    );
+
+    return back()->with(
+        'success',
+        $replacement
+            ? 'Network Zone deleted. Assigned operator(s) moved to '
+                . $replacement->name
+                . '.'
+            : 'Network Zone deleted.'
+    );
+}
+
+    private function nextZoneCode(
+
+        User $owner,
+
+        string $name,
+
+        string $serviceType
+
+    ): string {
+
+        $slug =
+
+            Str::upper(
+
+                Str::slug(
+
+                    trim($name),
+
+                    '-'
+
+                )
+
+            );
+
+
+        if ($slug === '') {
+
+            $slug = 'ZONE';
+
         }
 
-        $zone->delete();
 
-        return back()->with(
-            'success',
-            'Network Zone deleted.'
-        );
+        $base =
+
+            'R'
+
+            . (int)
+
+                $owner->reseller_id
+
+            . '-'
+
+            . Str::upper(
+
+                $serviceType
+
+            )
+
+            . '-'
+
+            . $slug;
+
+
+        $base =
+
+            Str::limit(
+
+                $base,
+
+                80,
+
+                ''
+
+            );
+
+
+        $code = $base;
+
+        $counter = 2;
+
+
+        while (
+
+            NetworkZone::query()
+
+                ->where(
+
+                    'code',
+
+                    $code
+
+                )
+
+                ->exists()
+
+        ) {
+
+            $suffix =
+
+                '-'
+
+                . $counter;
+
+
+            $code =
+
+                Str::limit(
+
+                    $base,
+
+                    80
+
+                        - strlen(
+
+                            $suffix
+
+                        ),
+
+                    ''
+
+                )
+
+                . $suffix;
+
+
+            $counter++;
+
+        }
+
+
+        return $code;
+
     }
+
 
     private function actor(
         Request $request
@@ -478,6 +723,95 @@ class NetworkZoneController extends Controller
             404
         );
     }
+
+    private function hasNonUserReferences(
+
+        NetworkZone $zone
+
+    ): bool {
+
+        foreach (
+
+            [
+
+                'clients',
+
+                'routers',
+
+                'ip_ranges',
+
+                'hotspot_servers',
+
+                'invoices',
+
+                'payments',
+
+                'client_refunds',
+
+                'expenses',
+
+                'client_monthly_usages',
+
+            ]
+
+            as $table
+
+        ) {
+
+            if (
+
+                !Schema::hasTable(
+
+                    $table
+
+                )
+
+                || !Schema::hasColumn(
+
+                    $table,
+
+                    'zone_id'
+
+                )
+
+            ) {
+
+                continue;
+
+            }
+
+
+            if (
+
+                DB::table(
+
+                    $table
+
+                )
+
+                    ->where(
+
+                        'zone_id',
+
+                        $zone->id
+
+                    )
+
+                    ->exists()
+
+            ) {
+
+                return true;
+
+            }
+
+        }
+
+
+        return false;
+
+    }
+
 
     private function referenced(
         NetworkZone $zone
