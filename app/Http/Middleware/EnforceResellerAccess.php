@@ -63,6 +63,26 @@ class EnforceResellerAccess
             );
         }
 
+        /*
+         * PUBLIC_WEBSITE_RESELLER_BYPASS
+         *
+         * Public marketing, pricing, legal and reseller
+         * registration/status pages must remain accessible
+         * even when the browser already has a reseller
+         * session. These are not reseller-panel actions.
+         */
+        if (
+            $routeName
+            && str_starts_with(
+                $routeName,
+                'website.'
+            )
+        ) {
+            return $next(
+                $request
+            );
+        }
+
         if (
             $routeName === 'dashboard'
         ) {
