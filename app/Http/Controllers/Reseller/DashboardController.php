@@ -13,6 +13,7 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Package;
 use App\Models\Reseller;
+use App\Models\ResellerPlan;
 use App\Models\ResellerNotification;
 use App\Models\Router;
 use App\Services\Reseller\ResellerUsageService;
@@ -44,6 +45,72 @@ class DashboardController extends Controller
                 ->findOrFail(
                     $user->reseller_id
                 );
+
+        /*
+         * RESELLER_SELF_UPGRADE_DATA_V1
+         */
+        $currentSubscription =
+            $reseller
+                ->activeSubscription;
+
+        $currentClientLimit =
+            (int) (
+                $currentSubscription
+                    ?->client_limit
+                ?? 0
+            );
+
+        $upgradePlans =
+            $user->isResellerOwner()
+                ? ResellerPlan::query()
+                    ->where(
+                        'active',
+                        true
+                    )
+                    ->where(
+                        'price',
+                        '>',
+                        0
+                    )
+                    ->where(
+                        'client_limit',
+                        '>',
+                        $currentClientLimit
+                    )
+                    ->orderBy(
+                        'client_limit'
+                    )
+                    ->get([
+                        'id',
+                        'name',
+                        'code',
+                        'client_limit',
+                        'price',
+                        'validity_days',
+                    ])
+                    ->map(
+                        fn (
+                            ResellerPlan $plan
+                        ): array => [
+                            'id' =>
+                                $plan->id,
+                            'name' =>
+                                $plan->name,
+                            'code' =>
+                                $plan->code,
+                            'client_limit' =>
+                                (int)
+                                $plan->client_limit,
+                            'price' =>
+                                (float)
+                                $plan->price,
+                            'validity_days' =>
+                                (int)
+                                $plan->validity_days,
+                        ]
+                    )
+                    ->values()
+                : collect();
 
         $today =
             Carbon::now(
@@ -106,7 +173,45 @@ class DashboardController extends Controller
                             ->activeSubscription
                             ?->plan
                             ?->name,
+
+                    'current_plan' =>
+                        $currentSubscription
+                            ? [
+                                'id' =>
+                                    $currentSubscription
+                                        ->reseller_plan_id,
+
+                                'name' =>
+                                    $currentSubscription
+                                        ->plan
+                                        ?->name,
+
+                                'client_limit' =>
+                                    (int)
+                                    $currentSubscription
+                                        ->client_limit,
+
+                                'price' =>
+                                    (float)
+                                    $currentSubscription
+                                        ->price,
+
+                                'expires_at' =>
+                                    $currentSubscription
+                                        ->expires_at
+                                        ?->timezone(
+                                            $reseller->timezone
+                                            ?: 'Asia/Qatar'
+                                        )
+                                        ->format(
+                                            'Y-m-d H:i'
+                                        ),
+                            ]
+                            : null,
                 ],
+
+                'upgradePlans' =>
+                    $upgradePlans,
 
                 'usage' =>
                     $usage->snapshot(

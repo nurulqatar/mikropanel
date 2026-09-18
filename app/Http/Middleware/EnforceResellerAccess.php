@@ -163,6 +163,22 @@ class EnforceResellerAccess
             );
         }
 
+        /*
+         * RESELLER_SUBSCRIPTION_UPGRADE_BYPASS_V1
+         *
+         * Active reseller owners may buy a higher
+         * package from wallet even after expiry.
+         */
+        if (
+            $routeName
+            === 'reseller.subscription.upgrade'
+            && $user->isResellerOwner()
+        ) {
+            return $next(
+                $request
+            );
+        }
+
         if (
             $this->usage
                 ->subscriptionIsUsable(

@@ -144,3 +144,19 @@ Schedule::command(
     ->timezone(
         'Asia/Qatar'
     );
+
+
+/*
+ * RESELLER_WALLET_AUTO_RENEW_V1
+ *
+ * Paid reseller subscriptions renew automatically
+ * after expiry when wallet balance is sufficient.
+ */
+Schedule::command(
+    'resellers:auto-renew'
+)
+    ->everyMinute()
+    ->timezone(
+        'Asia/Qatar'
+    )
+    ->withoutOverlapping(5);

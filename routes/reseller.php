@@ -251,3 +251,21 @@ Route::middleware([
             'company-settings.update'
         );
     });
+
+
+/*
+ * RESELLER_SELF_UPGRADE_ROUTE_V1
+ */
+\Illuminate\Support\Facades\Route::post(
+    '/reseller/subscription/upgrade/{plan}',
+    [
+        \App\Http\Controllers\Reseller\SubscriptionController::class,
+        'upgrade',
+    ]
+)
+    ->middleware([
+        'auth',
+    ])
+    ->name(
+        'reseller.subscription.upgrade'
+    );

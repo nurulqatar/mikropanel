@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import {
     Head,
     Link,
+    router,
     useForm,
 } from '@inertiajs/react';
 
@@ -15,10 +16,58 @@ export default function Dashboard({
     stats = {},
     pos = {},
     recentClients = [],
+    upgradePlans = [],
     isOwner = false,
 }) {
     const expired =
         !usage.subscription_usable;
+
+    const [
+        upgradingPlanId,
+        setUpgradingPlanId,
+    ] = useState(null);
+
+    const upgradePlan = (plan) => {
+        if (
+            Number(
+                reseller.wallet_balance ?? 0,
+            ) < Number(plan.price ?? 0)
+        ) {
+            window.alert(
+                'Insufficient wallet balance.',
+            );
+
+            return;
+        }
+
+        if (
+            !window.confirm(
+                `Upgrade to ${plan.name} for QAR ${money(plan.price)}?`,
+            )
+        ) {
+            return;
+        }
+
+        setUpgradingPlanId(
+            plan.id,
+        );
+
+        router.post(
+            route(
+                'reseller.subscription.upgrade',
+                plan.id,
+            ),
+            {},
+            {
+                preserveScroll: true,
+
+                onFinish: () =>
+                    setUpgradingPlanId(
+                        null,
+                    ),
+            },
+        );
+    };
 
     return (
         <AppLayout title={isOwner ? 'Reseller Dashboard' : 'Operator Dashboard'}>
@@ -73,6 +122,159 @@ export default function Dashboard({
                         Expiry policy:{' '}
                         {reseller.expiry_mode}.
                     </div>
+                )}
+
+                {/* RESELLER_SELF_UPGRADE_UI_V1 */}
+                {isOwner && (
+                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                                <h2 className="text-xl font-black text-slate-900">
+                                    Subscription & Wallet
+                                </h2>
+
+                                <p className="mt-1 text-sm text-slate-500">
+                                    Paid packages automatically renew from wallet balance after expiry.
+                                </p>
+                            </div>
+
+                            <div className="rounded-xl bg-emerald-50 px-5 py-3 text-right">
+                                <div className="text-xs font-bold uppercase tracking-wide text-emerald-700">
+                                    Wallet Balance
+                                </div>
+
+                                <div className="mt-1 text-2xl font-black text-emerald-700">
+                                    QAR{' '}
+                                    {money(
+                                        reseller.wallet_balance,
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-5 grid gap-4 md:grid-cols-2">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                                    Current Package
+                                </div>
+
+                                <div className="mt-2 text-lg font-black text-slate-900">
+                                    {reseller.current_plan?.name ||
+                                        reseller.plan ||
+                                        'No active package'}
+                                </div>
+
+                                <div className="mt-2 text-sm text-slate-600">
+                                    Client Limit:{' '}
+                                    {reseller.current_plan?.client_limit ??
+                                        usage.client_limit ??
+                                        '-'}
+                                </div>
+
+                                <div className="text-sm text-slate-600">
+                                    Expires:{' '}
+                                    {reseller.current_plan?.expires_at ||
+                                        usage.subscription_expires_at ||
+                                        '-'}
+                                </div>
+
+                                {Number(
+                                    reseller.current_plan?.price ??
+                                        0,
+                                ) > 0 && (
+                                    <div className="mt-3 rounded-lg bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800">
+                                        Auto renew price: QAR{' '}
+                                        {money(
+                                            reseller.current_plan
+                                                ?.price,
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200 p-4">
+                                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                                    Available Upgrades
+                                </div>
+
+                                {upgradePlans.length ===
+                                0 ? (
+                                    <div className="mt-3 text-sm text-slate-500">
+                                        No higher package is currently available.
+                                    </div>
+                                ) : (
+                                    <div className="mt-3 space-y-3">
+                                        {upgradePlans.map(
+                                            (plan) => {
+                                                const enoughBalance =
+                                                    Number(
+                                                        reseller.wallet_balance ??
+                                                            0,
+                                                    ) >=
+                                                    Number(
+                                                        plan.price ??
+                                                            0,
+                                                    );
+
+                                                return (
+                                                    <div
+                                                        key={
+                                                            plan.id
+                                                        }
+                                                        className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-3"
+                                                    >
+                                                        <div>
+                                                            <div className="font-black text-slate-900">
+                                                                {
+                                                                    plan.name
+                                                                }
+                                                            </div>
+
+                                                            <div className="text-sm text-slate-500">
+                                                                {
+                                                                    plan.client_limit
+                                                                }{' '}
+                                                                clients ·{' '}
+                                                                {
+                                                                    plan.validity_days
+                                                                }{' '}
+                                                                days · QAR{' '}
+                                                                {money(
+                                                                    plan.price,
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <button
+                                                            type="button"
+                                                            disabled={
+                                                                !enoughBalance ||
+                                                                upgradingPlanId ===
+                                                                    plan.id
+                                                            }
+                                                            onClick={() =>
+                                                                upgradePlan(
+                                                                    plan,
+                                                                )
+                                                            }
+                                                            className="rounded-xl bg-cyan-600 px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                                                        >
+                                                            {upgradingPlanId ===
+                                                            plan.id
+                                                                ? 'UPGRADING...'
+                                                                : enoughBalance
+                                                                  ? 'UPGRADE'
+                                                                  : 'LOW BALANCE'}
+                                                        </button>
+                                                    </div>
+                                                );
+                                            },
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </section>
                 )}
 
                 {isOwner && (
