@@ -29,8 +29,24 @@ class ClientController extends Controller
 {
     public function index(): Response
     {
-        return Inertia::render('Clients/Index', [
-            'clients' => Client::query()
+        /*
+         * CLIENT_FAMILY_LIST_V1
+         *
+         * Database:
+         *   1 Client row = 1 physical device.
+         *
+         * Clients page:
+         *   1 primary Client = 1 customer.
+         *   Additional-device rows are shown inside
+         *   that customer's device list instead of
+         *   appearing as separate customers.
+         *
+         * Reseller quota is intentionally NOT changed:
+         * every physical device row still consumes
+         * one client slot.
+         */
+        $deviceRows =
+            Client::query()
                 ->with([
                     'router',
                     'package',
@@ -40,18 +56,305 @@ class ClientController extends Controller
                     [
                         'invoices as total_due' =>
                             function ($query) {
-                                $query->where(
-                                    'status',
-                                    '!=',
-                                    'cancelled'
-                                );
+                                $query
+                                    ->whereNotIn(
+                                        'status',
+                                        [
+                                            'cancelled',
+                                            'refunded',
+                                        ]
+                                    );
                             },
                     ],
                     'due_amount'
                 )
-                ->latest()
-                ->get(),
-        ]);
+                ->latest('id')
+                ->get();
+
+        $clients =
+            $deviceRows
+                ->whereNull(
+                    'parent_client_id'
+                )
+                ->map(
+                    function (
+                        Client $primary
+                    ) use (
+                        $deviceRows
+                    ): array {
+                        $devices =
+                            $deviceRows
+                                ->filter(
+                                    fn (
+                                        Client $device
+                                    ): bool =>
+                                        (int) $device->id
+                                        ===
+                                        (int) $primary->id
+                                        ||
+                                        (int) (
+                                            $device
+                                                ->parent_client_id
+                                            ?? 0
+                                        )
+                                        ===
+                                        (int) $primary->id
+                                )
+                                ->sortBy(
+                                    function (
+                                        Client $device
+                                    ): string {
+                                        return
+                                            (
+                                                $device
+                                                    ->parent_client_id
+                                                ? '1-'
+                                                : '0-'
+                                            )
+                                            . str_pad(
+                                                (string)
+                                                $device->id,
+                                                12,
+                                                '0',
+                                                STR_PAD_LEFT
+                                            );
+                                    }
+                                )
+                                ->values();
+
+                        $accountDue =
+                            round(
+                                (float)
+                                $devices->sum(
+                                    fn (
+                                        Client $device
+                                    ): float =>
+                                        (float) (
+                                            $device
+                                                ->total_due
+                                            ?? 0
+                                        )
+                                ),
+                                2
+                            );
+
+                        /*
+                         * Clients page can receive due
+                         * against the actual device that
+                         * owns the due invoice.
+                         */
+                        $dueDevice =
+                            $devices->first(
+                                fn (
+                                    Client $device
+                                ): bool =>
+                                    round(
+                                        (float) (
+                                            $device
+                                                ->total_due
+                                            ?? 0
+                                        ),
+                                        2
+                                    ) > 0
+                            );
+
+                        $payload =
+                            $primary->toArray();
+
+                        $payload[
+                            'total_due'
+                        ] =
+                            $accountDue;
+
+                        $payload[
+                            'device_count'
+                        ] =
+                            $devices->count();
+
+                        $payload[
+                            'additional_device_count'
+                        ] =
+                            max(
+                                0,
+                                $devices->count()
+                                - 1
+                            );
+
+                        $payload[
+                            'payment_client_id'
+                        ] =
+                            (int) (
+                                $dueDevice
+                                    ?->id
+                                ?? $primary->id
+                            );
+
+                        $payload[
+                            'payment_due'
+                        ] =
+                            round(
+                                (float) (
+                                    $dueDevice
+                                        ?->total_due
+                                    ?? 0
+                                ),
+                                2
+                            );
+
+                        $payload[
+                            'devices'
+                        ] =
+                            $devices
+                                ->map(
+                                    function (
+                                        Client $device
+                                    ): array {
+                                        return [
+                                            'id' =>
+                                                (int)
+                                                $device->id,
+
+                                            'client_code' =>
+                                                $device
+                                                    ->client_code,
+
+                                            'parent_client_id' =>
+                                                $device
+                                                    ->parent_client_id,
+
+                                            'device_label' =>
+                                                !$device
+                                                    ->parent_client_id
+                                                    ? 'Main Device'
+                                                    : (
+                                                        $device
+                                                            ->device_label
+                                                        ?: 'Device #'
+                                                            . $device->id
+                                                    ),
+
+                                            'mac_address' =>
+                                                $device
+                                                    ->active_mac_address
+                                                ?: $device
+                                                    ->mac_address,
+
+                                            'ip_address' =>
+                                                $device
+                                                    ->ip_address,
+
+                                            'expiry_date' =>
+                                                $device
+                                                    ->expiry_date
+                                                    ?->format(
+                                                        'Y-m-d'
+                                                    ),
+
+                                            'enabled' =>
+                                                (bool)
+                                                $device
+                                                    ->enabled,
+
+                                            'connected' =>
+                                                (bool)
+                                                $device
+                                                    ->connected,
+
+                                            'total_due' =>
+                                                round(
+                                                    (float) (
+                                                        $device
+                                                            ->total_due
+                                                        ?? 0
+                                                    ),
+                                                    2
+                                                ),
+
+                                            'package' =>
+                                                $device
+                                                    ->package
+                                                ? [
+                                                    'id' =>
+                                                        $device
+                                                            ->package
+                                                            ->id,
+
+                                                    'name' =>
+                                                        $device
+                                                            ->package
+                                                            ->name,
+
+                                                    'price' =>
+                                                        (float)
+                                                        $device
+                                                            ->package
+                                                            ->price,
+
+                                                    'validity_days' =>
+                                                        (int)
+                                                        $device
+                                                            ->package
+                                                            ->validity_days,
+                                                ]
+                                                : null,
+                                        ];
+                                    }
+                                )
+                                ->values()
+                                ->all();
+
+                        /*
+                         * Searching any child MAC, IP,
+                         * code or label must find the
+                         * primary customer row.
+                         */
+                        $payload[
+                            'searchable_text'
+                        ] =
+                            $devices
+                                ->flatMap(
+                                    function (
+                                        Client $device
+                                    ): array {
+                                        return [
+                                            $device->name,
+                                            $device->client_code,
+                                            $device->device_label,
+                                            $device->mac_address,
+                                            $device->active_mac_address,
+                                            $device->ip_address,
+                                            $device->phone,
+                                            $device->identity_number,
+                                            $device->identity_barcode,
+                                            $device->qatar_id_number,
+                                            $device->passport_number,
+                                            $device
+                                                ->package
+                                                ?->name,
+                                        ];
+                                    }
+                                )
+                                ->filter(
+                                    fn ($value): bool =>
+                                        trim(
+                                            (string)
+                                            $value
+                                        ) !== ''
+                                )
+                                ->implode(' ');
+
+                        return $payload;
+                    }
+                )
+                ->values();
+
+        return Inertia::render(
+            'Clients/Index',
+            [
+                'clients' =>
+                    $clients,
+            ]
+        );
     }
 
     public function create(): Response
@@ -480,21 +783,42 @@ class ClientController extends Controller
         $data['enabled'] = true;
         $data['connected'] = false;
 
+        /*
+         * CLIENT_CODE_GLOBAL_SEQUENCE_V1
+         *
+         * client_code has a global UNIQUE index.
+         * Tenant/Zone scopes must not reset the
+         * CLI sequence for reseller operators.
+         */
         $nextId =
             (
-                Client::withTrashed()
+                (int)
+                Client::withoutGlobalScopes()
                     ->max('id')
-                ?? 0
             ) + 1;
 
-        $data['client_code'] =
-            'CLI-'
-            . str_pad(
-                (string) $nextId,
-                5,
-                '0',
-                STR_PAD_LEFT
-            );
+        do {
+            $data['client_code'] =
+                'CLI-'
+                . str_pad(
+                    (string) $nextId,
+                    5,
+                    '0',
+                    STR_PAD_LEFT
+                );
+
+            $codeExists =
+                Client::withoutGlobalScopes()
+                    ->where(
+                        'client_code',
+                        $data['client_code']
+                    )
+                    ->exists();
+
+            if ($codeExists) {
+                $nextId++;
+            }
+        } while ($codeExists);
 
         /*
          * Client + first invoice + optional

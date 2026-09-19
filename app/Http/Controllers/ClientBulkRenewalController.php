@@ -155,10 +155,18 @@ class ClientBulkRenewalController extends Controller
                                 'client_id',
                                 $deviceIds
                             )
-                            ->where(
+                            /*
+                             * ACCOUNT_DUE_STATUS_HARDEN_V1
+                             *
+                             * Refunded service is cancelled
+                             * service, not collectible due.
+                             */
+                            ->whereNotIn(
                                 'status',
-                                '!=',
-                                'cancelled'
+                                [
+                                    'cancelled',
+                                    'refunded',
+                                ]
                             )
                             ->where(
                                 'due_amount',

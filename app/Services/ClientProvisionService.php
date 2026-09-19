@@ -108,6 +108,245 @@ class ClientProvisionService
     public function unsuspend(
         Client $client
     ): void {
+
+        /*
+         * REFUNDED_CLIENT_ACTIVATION_LOCK_V1
+         *
+         * A refunded service is permanently locked from
+         * free/manual activation.
+         *
+         * It may be activated again only after a NEW,
+         * fully-paid, non-cancelled service invoice is
+         * created AFTER the latest refund.
+         *
+         * This guard lives in the provisioning service,
+         * so manual Activate, POS, renewal and any other
+         * code path calling unsuspend() cannot bypass it.
+         */
+        /*
+         * ACCOUNT_DUE_FAMILY_ACTIVATION_LOCK_V1
+         *
+         * A due-mode refund is an account-level service
+         * termination. Every device in the family was
+         * suspended, so no sibling may be manually
+         * activated for free afterwards.
+         *
+         * Each device unlocks independently only after
+         * that device receives a NEW, fully-paid service
+         * renewal backed by real Payment ledger money.
+         */
+        $latestFamilyDueRefund =
+            $this->latestAccountDueFamilyRefund(
+                $client
+            );
+
+        if ($latestFamilyDueRefund) {
+            $familyRefundMoment =
+                $latestFamilyDueRefund
+                    ->created_at
+                ?? $latestFamilyDueRefund
+                    ->refund_date
+                ?? null;
+
+            $hasPaidRenewalAfterFamilyRefund =
+                $this->hasFullyPaidRenewalAfter(
+                    $client,
+                    $familyRefundMoment
+                );
+
+            if (
+                !$hasPaidRenewalAfterFamilyRefund
+            ) {
+                /*
+                 * Defense in depth:
+                 * keep local flags suspended before
+                 * returning the hard-lock exception.
+                 */
+                $client->forceFill([
+                    'enabled' => false,
+                    'connected' => false,
+                ])->save();
+
+                throw new
+                    ClientProvisioningException(
+                        'ACCOUNT_REFUND_LOCK: This customer account was closed by a due-mode refund. Receive full payment and create a new renewal for this device before activation.',
+                        true
+                    );
+            }
+        }
+
+        $latestRefund =
+            \App\Models\ClientRefund::withoutGlobalScopes()
+                ->where(
+                    'client_id',
+                    $client->id
+                )
+                ->orderByDesc('id')
+                ->first();
+
+        if ($latestRefund) {
+            /*
+             * REFUNDED_CLIENT_PAYMENT_LEDGER_V2
+             *
+             * A "paid" invoice flag alone is NOT enough.
+             *
+             * Unlock requires:
+             * 1. a NEW service invoice after the refund;
+             * 2. invoice status fully paid with zero due;
+             * 3. service was not cancelled/refunded;
+             * 4. actual Payment ledger entries created
+             *    after the refund cover the full net price.
+             *
+             * Minimum actual payment is QAR 0.01, so a
+             * refunded device cannot be reactivated using
+             * a zero-price/manual paid invoice.
+             */
+            $refundMoment =
+                $latestRefund->created_at
+                ?? $latestRefund->refund_date
+                ?? null;
+
+            $paidRenewalInvoices =
+                \App\Models\Invoice::withoutGlobalScopes()
+                    ->where(
+                        'client_id',
+                        $client->id
+                    )
+                    ->where(
+                        'id',
+                        '>',
+                        (int)
+                        $latestRefund->invoice_id
+                    )
+                    ->where(
+                        'applies_service_period',
+                        true
+                    )
+                    ->where(
+                        'status',
+                        'paid'
+                    )
+                    ->where(
+                        'due_amount',
+                        '<=',
+                        0
+                    )
+                    ->whereNull(
+                        'service_cancelled_at'
+                    )
+                    ->when(
+                        $refundMoment,
+                        function (
+                            $query
+                        ) use (
+                            $refundMoment
+                        ): void {
+                            $query->where(
+                                'created_at',
+                                '>',
+                                $refundMoment
+                            );
+                        }
+                    )
+                    ->orderByDesc('id')
+                    ->get([
+                        'id',
+                        'amount',
+                        'discount',
+                        'created_at',
+                    ]);
+
+            $hasPaidRenewalAfterRefund =
+                $paidRenewalInvoices
+                    ->contains(
+                        function (
+                            $invoice
+                        ) use (
+                            $client,
+                            $refundMoment
+                        ): bool {
+                            $netPrice = round(
+                                max(
+                                    0,
+                                    (float)
+                                    $invoice->amount
+                                    -
+                                    (float)
+                                    $invoice->discount
+                                ),
+                                2
+                            );
+
+                            /*
+                             * Even a zero-price invoice
+                             * cannot unlock a refunded
+                             * device for free.
+                             */
+                            $requiredPayment =
+                                max(
+                                    0.01,
+                                    $netPrice
+                                );
+
+                            $paidAmount =
+                                round(
+                                    (float)
+                                    \App\Models\Payment::withoutGlobalScopes()
+                                        ->where(
+                                            'client_id',
+                                            $client->id
+                                        )
+                                        ->where(
+                                            'invoice_id',
+                                            $invoice->id
+                                        )
+                                        ->when(
+                                            $refundMoment,
+                                            function (
+                                                $query
+                                            ) use (
+                                                $refundMoment
+                                            ): void {
+                                                $query->where(
+                                                    'created_at',
+                                                    '>',
+                                                    $refundMoment
+                                                );
+                                            }
+                                        )
+                                        ->sum(
+                                            'amount'
+                                        ),
+                                    2
+                                );
+
+                            return
+                                $paidAmount
+                                >=
+                                $requiredPayment;
+                        }
+                    );
+
+            if (!$hasPaidRenewalAfterRefund) {
+                /*
+                 * Defense in depth:
+                 * even if another code path changed the
+                 * local flags, force the refunded device
+                 * back to suspended state before exiting.
+                 */
+                $client->forceFill([
+                    'enabled' => false,
+                    'connected' => false,
+                ])->save();
+
+                throw new
+                    ClientProvisioningException(
+                        'REFUND_LOCK: This device was refunded. Receive full payment and create a new renewal before activation.',
+                        true
+                    );
+            }
+        }
+
         $client->loadMissing([
             'package',
             'ipRange',
@@ -143,6 +382,233 @@ class ClientProvisionService
                 $exception
             );
         }
+    }
+
+    /*
+     * Locate the latest account-level due-mode refund.
+     *
+     * The machine marker is written only by the
+     * due-mode refund transaction.
+     */
+    private function latestAccountDueFamilyRefund(
+        Client $client
+    ): ?\App\Models\ClientRefund {
+        $primaryId =
+            (int) (
+                $client
+                    ->parent_client_id
+                ?: $client->id
+            );
+
+        $familyQuery =
+            Client::withoutGlobalScopes()
+                ->whereNull(
+                    'deleted_at'
+                )
+                ->where(
+                    function (
+                        $query
+                    ) use (
+                        $primaryId
+                    ): void {
+                        $query
+                            ->whereKey(
+                                $primaryId
+                            )
+                            ->orWhere(
+                                'parent_client_id',
+                                $primaryId
+                            );
+                    }
+                )
+                ->orderBy('id');
+
+        /*
+         * Never allow a corrupted parent link to
+         * cross reseller/zone tenancy boundaries.
+         */
+        if (
+            $client
+                ->reseller_id
+            === null
+        ) {
+            $familyQuery
+                ->whereNull(
+                    'reseller_id'
+                );
+        } else {
+            $familyQuery
+                ->where(
+                    'reseller_id',
+                    $client
+                        ->reseller_id
+                );
+        }
+
+        if (
+            $client
+                ->zone_id
+            === null
+        ) {
+            $familyQuery
+                ->whereNull(
+                    'zone_id'
+                );
+        } else {
+            $familyQuery
+                ->where(
+                    'zone_id',
+                    $client
+                        ->zone_id
+                );
+        }
+
+        $familyClientIds =
+            $familyQuery
+                ->pluck('id')
+                ->map(
+                    fn ($id) =>
+                        (int) $id
+                )
+                ->values();
+
+        if (
+            $familyClientIds
+                ->isEmpty()
+        ) {
+            return null;
+        }
+
+        return
+            \App\Models\ClientRefund::withoutGlobalScopes()
+                ->whereIn(
+                    'client_id',
+                    $familyClientIds
+                )
+                ->where(
+                    'reason',
+                    'like',
+                    '%[ACCOUNT_DUE_FAMILY_LOCK_V1]%'
+                )
+                ->orderByDesc(
+                    'created_at'
+                )
+                ->orderByDesc('id')
+                ->first();
+    }
+
+    /*
+     * A family-refund lock is released for ONE device
+     * only when that same device has a new paid service
+     * invoice after the family refund and real payments
+     * after that refund cover its full net service price.
+     */
+    private function hasFullyPaidRenewalAfter(
+        Client $client,
+        mixed $refundMoment
+    ): bool {
+        if (!$refundMoment) {
+            return false;
+        }
+
+        $paidRenewalInvoices =
+            \App\Models\Invoice::withoutGlobalScopes()
+                ->where(
+                    'client_id',
+                    $client->id
+                )
+                ->where(
+                    'applies_service_period',
+                    true
+                )
+                ->where(
+                    'status',
+                    'paid'
+                )
+                ->where(
+                    'due_amount',
+                    '<=',
+                    0
+                )
+                ->whereNull(
+                    'service_cancelled_at'
+                )
+                ->where(
+                    'created_at',
+                    '>',
+                    $refundMoment
+                )
+                ->orderByDesc('id')
+                ->get([
+                    'id',
+                    'amount',
+                    'discount',
+                    'created_at',
+                ]);
+
+        return
+            $paidRenewalInvoices
+                ->contains(
+                    function (
+                        $invoice
+                    ) use (
+                        $client,
+                        $refundMoment
+                    ): bool {
+                        $netPrice =
+                            round(
+                                max(
+                                    0,
+                                    (float)
+                                    $invoice
+                                        ->amount
+                                    -
+                                    (float)
+                                    $invoice
+                                        ->discount
+                                ),
+                                2
+                            );
+
+                        /*
+                         * Zero-price/manual invoices
+                         * can never unlock the device.
+                         */
+                        $requiredPayment =
+                            max(
+                                0.01,
+                                $netPrice
+                            );
+
+                        $paidAmount =
+                            round(
+                                (float)
+                                \App\Models\Payment::withoutGlobalScopes()
+                                    ->where(
+                                        'client_id',
+                                        $client->id
+                                    )
+                                    ->where(
+                                        'invoice_id',
+                                        $invoice->id
+                                    )
+                                    ->where(
+                                        'created_at',
+                                        '>',
+                                        $refundMoment
+                                    )
+                                    ->sum(
+                                        'amount'
+                                    ),
+                                2
+                            );
+
+                        return
+                            $paidAmount
+                            >=
+                            $requiredPayment;
+                    }
+                );
     }
 
     /*

@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\ClientCustomField;
 use App\Models\IpRange;
 use App\Models\Package;
+use App\Models\Router;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -737,6 +738,34 @@ class ClientMigrationSpreadsheetService
         $ip =
             $allocation['ip'];
 
+        /*
+         * IMPORT_ZONE_ROUTER_SELECTION_V1
+         *
+         * IP Pool router_id is optional.
+         * Import selects an enabled Router independently
+         * from the SAME package Network Zone.
+         * No cross-zone fallback is permitted.
+         */
+        $router =
+            Router::query()
+                ->where(
+                    'zone_id',
+                    $package->zone_id
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->orderBy('id')
+                ->first();
+
+        if (!$router) {
+            throw new RuntimeException(
+                'No enabled Router is available in the selected package Network Zone.'
+            );
+        }
+
+
         $rechargeDate =
             $this->parseDate(
                 $this->rowValue(
@@ -876,6 +905,7 @@ class ClientMigrationSpreadsheetService
                 $mac,
                 $package,
                 $range,
+                $router,
                 $ip,
                 $rechargeDate,
                 $expiryDate,
@@ -907,8 +937,7 @@ class ClientMigrationSpreadsheetService
                             $package->zone_id,
 
                         'router_id' =>
-                            $range
-                                ->router_id,
+                            $router->id,
 
                         'ip_range_id' =>
                             $range->id,

@@ -56,6 +56,18 @@ export default function Index({
     const hasDue = (client) =>
         clientDue(client) > 0;
 
+    /*
+     * CLIENT_FAMILY_LIST_UI_V1
+     *
+     * total_due = entire customer account.
+     * payment_due = current due-owning device.
+     */
+    const paymentDue = (client) =>
+        numberValue(
+            client?.payment_due
+            ?? client?.total_due,
+        );
+
     const packagePrice = (client) =>
         numberValue(client?.package?.price);
 
@@ -63,7 +75,7 @@ export default function Index({
         clearErrors();
 
         const defaultAmount = hasDue(client)
-            ? clientDue(client)
+            ? paymentDue(client)
             : packagePrice(client);
 
         setData({
@@ -98,7 +110,8 @@ export default function Index({
         post(
             route(
                 'clients.renew',
-                selectedClient.id,
+                selectedClient.payment_client_id
+                    ?? selectedClient.id,
             ),
             {
                 preserveScroll: true,
@@ -165,6 +178,7 @@ export default function Index({
                 client.ip_address,
                 client.phone,
                 client.package?.name,
+                client.searchable_text,
             ]
                 .join(' ')
                 .toLowerCase();
@@ -209,7 +223,7 @@ export default function Index({
     const payableAmount = selectedClient
         ? (
               selectedHasDue
-                  ? clientDue(selectedClient)
+                  ? paymentDue(selectedClient)
                   : packagePrice(
                         selectedClient,
                     )
@@ -435,6 +449,72 @@ export default function Index({
                                                     ?.name ??
                                                     '-'}
                                             </div>
+
+                                            <details className="mt-2 max-w-[460px] whitespace-normal">
+                                                <summary className="cursor-pointer select-none text-xs font-black text-cyan-700">
+                                                    {client.device_count
+                                                        ?? 1}{' '}
+                                                    device(s)
+                                                </summary>
+
+                                                <div className="mt-2 space-y-1.5 rounded-lg border border-cyan-100 bg-cyan-50/50 p-2">
+                                                    {(client.devices
+                                                        ?? []).map(
+                                                        (device) => (
+                                                            <div
+                                                                key={
+                                                                    device.id
+                                                                }
+                                                                className="rounded-md bg-white px-2 py-1.5 text-[11px] leading-snug text-slate-600"
+                                                            >
+                                                                <div className="flex flex-wrap items-center gap-x-2">
+                                                                    <span className="font-black text-slate-800">
+                                                                        {
+                                                                            device.device_label
+                                                                        }
+                                                                    </span>
+
+                                                                    <span className="font-mono text-slate-400">
+                                                                        {
+                                                                            device.client_code
+                                                                        }
+                                                                    </span>
+
+                                                                    <span
+                                                                        className={`font-black ${
+                                                                            device.enabled
+                                                                                ? 'text-emerald-600'
+                                                                                : 'text-red-600'
+                                                                        }`}
+                                                                    >
+                                                                        {device.enabled
+                                                                            ? 'ACTIVE'
+                                                                            : 'SUSPENDED'}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div className="mt-0.5 font-mono text-slate-500">
+                                                                    {device.mac_address
+                                                                        || '-'}
+                                                                    {' · '}
+                                                                    {device.ip_address
+                                                                        || '-'}
+                                                                </div>
+
+                                                                <div className="mt-0.5">
+                                                                    {device.package
+                                                                        ?.name
+                                                                        || '-'}
+                                                                    {' · Due QAR '}
+                                                                    {formatMoney(
+                                                                        device.total_due,
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ),
+                                                    )}
+                                                </div>
+                                            </details>
                                         </td>
 
                                         <td className="whitespace-nowrap px-2 py-0.5 font-mono text-sm">
@@ -543,7 +623,7 @@ export default function Index({
                                                         client,
                                                     )
                                                         ? `Pay Due — QAR ${formatMoney(
-                                                              clientDue(
+                                                              paymentDue(
                                                                   client,
                                                               ),
                                                           )}`

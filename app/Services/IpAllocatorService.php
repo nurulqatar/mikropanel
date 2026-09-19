@@ -21,9 +21,6 @@ class IpAllocatorService
                     'enabled',
                     true
                 )
-                ->whereNotNull(
-                    'router_id'
-                )
                 ->orderBy('id')
                 ->get();
 

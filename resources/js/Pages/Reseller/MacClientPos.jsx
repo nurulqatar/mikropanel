@@ -401,6 +401,34 @@ function QuickClientWorkspace({
     onAddDevice,
     onRenewAll,
 }) {
+
+    /*
+     * ACTION_DEVICE_SELECTOR_V1
+     *
+     * Quick actions default to the customer's
+     * main device. Operator may explicitly select
+     * any additional device before an action.
+     */
+    const [
+        actionDeviceId,
+        setActionDeviceId,
+    ] = useState(null);
+
+    const mainActionClient = () =>
+        clientDevices.find(
+            (device) =>
+                !device.parent_client_id,
+        )
+        ?? selectedClient;
+
+    const actionClient = () =>
+        clientDevices.find(
+            (device) =>
+                Number(device.id)
+                === Number(actionDeviceId),
+        )
+        ?? mainActionClient();
+
     const [search, setSearch] =
         useState('');
 
@@ -466,6 +494,40 @@ function QuickClientWorkspace({
                 ),
             0,
         );
+
+    /*
+     * ACCOUNT_DUE_ACTION_UI_V3
+     *
+     * Any due anywhere in this customer's device
+     * family hides every non-financial action.
+     */
+    const accountHasDue =
+        Number(accountDue ?? 0) > 0;
+
+    const duePaymentClient = () => {
+        const selected =
+            actionClient();
+
+        if (
+            Number(
+                selected?.total_due
+                ?? 0,
+            ) > 0
+        ) {
+            return selected;
+        }
+
+        return (
+            clientDevices.find(
+                (device) =>
+                    Number(
+                        device.total_due
+                        ?? 0,
+                    ) > 0,
+            )
+            ?? selected
+        );
+    };
 
     const results =
         useMemo(() => {
@@ -899,6 +961,201 @@ function QuickClientWorkspace({
                                 </span>
                             </div>
 
+                            <div className="grid gap-2 rounded-xl border border-cyan-100 bg-cyan-50/50 p-2 sm:grid-cols-2 xl:grid-cols-3">
+
+                                {clientDevices.length > 1 && (
+                                    <>
+    <div className="sm:col-span-2 xl:col-span-3">
+                                        <label className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600">
+                                            Action Device
+                                        </label>
+
+                                        <select
+                                            value={String(
+                                                actionClient()?.id
+                                                ?? '',
+                                            )}
+                                            onChange={(event) =>
+                                                setActionDeviceId(
+                                                    event.target.value
+                                                        ? Number(
+                                                            event.target.value,
+                                                        )
+                                                        : null,
+                                                )
+                                            }
+                                            className="w-full rounded-lg border border-cyan-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 focus:border-cyan-500 focus:ring-cyan-500"
+                                        >
+                                            {clientDevices.map(
+                                                (device) => {
+                                                    const isMain =
+                                                        !device.parent_client_id;
+
+                                                    const label =
+                                                        isMain
+                                                            ? 'Main Device'
+                                                            : (
+                                                                device.device_label
+                                                                || `Device #${device.id}`
+                                                            );
+
+                                                    return (
+                                                        <option
+                                                            key={device.id}
+                                                            value={device.id}
+                                                        >
+                                                            {label}
+                                                            {' · '}
+                                                            {device.mac_address
+                                                                || '-'}
+                                                            {' · '}
+                                                            {device.ip_address
+                                                                || '-'}
+                                                        </option>
+                                                    );
+                                                },
+                                            )}
+                                        </select>
+
+                                        <div className="mt-1 text-xs font-semibold text-cyan-700">
+                                            Selected:{' '}
+                                            {actionClient()?.parent_client_id
+                                                ? (
+                                                    actionClient()?.device_label
+                                                    || `Device #${actionClient()?.id}`
+                                                )
+                                                : 'Main Device'}
+                                        </div>
+                                    </div>
+                                    </>
+                                )}
+
+                                {/* ACTION_ORDER_DUE_LOCK_V3 */}
+
+                                {permissions.renew
+                                    && !accountHasDue
+                                    && clientDevices.length > 1 && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onRenewAll(
+                                                mainActionClient(),
+                                            )
+                                        }
+                                        className="rounded-xl bg-violet-600 px-4 py-3 font-black text-white hover:bg-violet-700"
+                                    >
+                                        Renew All Devices
+                                    </button>
+                                )}
+
+                                {permissions.renew
+                                    && !accountHasDue && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onRecharge(
+                                                actionClient(),
+                                            )
+                                        }
+                                        className="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white hover:bg-emerald-700"
+                                    >
+                                        Renew
+                                    </button>
+                                )}
+
+                                {permissions.renew
+                                    && accountHasDue && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onRecharge(
+                                                duePaymentClient(),
+                                            )
+                                        }
+                                        className="rounded-xl bg-rose-600 px-4 py-3 font-black text-white hover:bg-rose-700"
+                                    >
+                                        Due Payment
+                                    </button>
+                                )}
+
+                                {permissions.refund && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onRefund(
+                                                actionClient(),
+                                            )
+                                        }
+                                        className="rounded-xl bg-amber-600 px-4 py-3 font-black text-white hover:bg-amber-700"
+                                    >
+                                        Refund Service
+                                    </button>
+                                )}
+
+                                {!accountHasDue
+                                    && permissions.suspend && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onToggle(
+                                                actionClient(),
+                                            )
+                                        }
+                                        className={`rounded-xl px-4 py-3 font-black text-white ${
+                                            actionClient().enabled
+                                                ? 'bg-red-600 hover:bg-red-700'
+                                                : 'bg-cyan-600 hover:bg-cyan-700'
+                                        }`}
+                                    >
+                                        {actionClient().enabled
+                                            ? 'Suspend Client'
+                                            : 'Activate Client'}
+                                    </button>
+                                )}
+
+                                {!accountHasDue
+                                    && permissions.edit && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onEdit(
+                                                actionClient(),
+                                            )
+                                        }
+                                        className="rounded-xl bg-blue-600 px-4 py-3 font-black text-white hover:bg-blue-700"
+                                    >
+                                        Edit Client
+                                    </button>
+                                )}
+
+                                {!accountHasDue && (
+                                    <Link
+                                        href={route(
+                                            'clients.show',
+                                            actionClient().id,
+                                        )}
+                                        className="rounded-xl bg-slate-700 px-4 py-3 text-center font-black text-white hover:bg-slate-800"
+                                    >
+                                        Full Client Details
+                                    </Link>
+                                )}
+
+                                {!accountHasDue
+                                    && permissions.create && (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            onAddDevice(
+                                                mainActionClient(),
+                                            )
+                                        }
+                                        className="rounded-xl bg-cyan-600 px-4 py-3 font-black text-white hover:bg-cyan-700"
+                                    >
+                                        + ADD DEVICE
+                                    </button>
+                                )}
+                            </div>
+
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <QuickInfo
                                     label="MAC"
@@ -971,53 +1228,24 @@ function QuickClientWorkspace({
                                 <div className="flex flex-wrap items-center justify-between gap-3">
                                     <div>
                                         <div className="font-black text-slate-800">
-                                            Additional Devices
+                                            All Devices
                                         </div>
 
                                         <div className="mt-1 text-xs text-slate-500">
-                                            {additionalDevices.length} additional device(s)
+                                            {clientDevices.length} device(s)
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-wrap gap-2">
-                                        {permissions.renew
-                                            && clientDevices.length > 1 && (
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    onRenewAll(
-                                                        selectedClient,
-                                                    )
-                                                }
-                                                className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-black text-white hover:bg-emerald-700"
-                                            >
-                                                Renew All Devices
-                                            </button>
-                                        )}
+                                                                    </div>
 
-                                        {permissions.create && (
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    onAddDevice(
-                                                        selectedClient,
-                                                    )
-                                                }
-                                                className="rounded-lg bg-cyan-600 px-4 py-2 text-xs font-black text-white hover:bg-cyan-700"
-                                            >
-                                                + ADD DEVICE
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {additionalDevices.length === 0 ? (
+                                {clientDevices.length === 0 ? (
                                     <div className="mt-3 rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-400">
-                                        No additional device yet.
+                                        No device found.
                                     </div>
                                 ) : (
                                     <div className="mt-3 space-y-3">
-                                        {additionalDevices.map(
+                                        {/* ALL_DEVICES_LIST_V3 */}
+                                {clientDevices.map(
                                             (device) => (
                                                 <div
                                                     key={device.id}
@@ -1026,8 +1254,12 @@ function QuickClientWorkspace({
                                                     <div className="flex flex-wrap items-start justify-between gap-3">
                                                         <div>
                                                             <div className="font-black text-slate-800">
-                                                                {device.device_label
-                                                                    || 'Device'}
+                                                                {!device.parent_client_id
+                                                                    ? 'Main Device'
+                                                                    : (
+                                                                        device.device_label
+                                                                        || `Device #${device.id}`
+                                                                    )}
                                                             </div>
 
                                                             <div className="mt-1 text-xs text-slate-500">
@@ -1069,7 +1301,7 @@ function QuickClientWorkspace({
                                                         </span>
                                                     </div>
 
-                                                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                                                    <div className="hidden">
                                                         {permissions.renew && (
                                                             <button
                                                                 type="button"
@@ -1149,79 +1381,7 @@ function QuickClientWorkspace({
                                 )}
                             </div>
 
-                            <div className="grid gap-2 pt-2 sm:grid-cols-2">
-                                {permissions.renew && (
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            onRecharge(
-                                                selectedClient,
-                                            )
-                                        }
-                                        className="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white hover:bg-emerald-700"
-                                    >
-                                        Recharge / Due Payment
-                                    </button>
-                                )}
 
-                                {permissions.refund && (
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            onRefund(
-                                                selectedClient,
-                                            )
-                                        }
-                                        className="rounded-xl bg-amber-600 px-4 py-3 font-black text-white hover:bg-amber-700"
-                                    >
-                                        Refund Service
-                                    </button>
-                                )}
-
-                                {permissions.edit && (
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            onEdit(
-                                                selectedClient,
-                                            )
-                                        }
-                                        className="rounded-xl bg-blue-600 px-4 py-3 font-black text-white hover:bg-blue-700"
-                                    >
-                                        Edit Client
-                                    </button>
-                                )}
-
-                                {permissions.suspend && (
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            onToggle(
-                                                selectedClient,
-                                            )
-                                        }
-                                        className={`rounded-xl px-4 py-3 font-black text-white ${
-                                            selectedClient.enabled
-                                                ? 'bg-red-600 hover:bg-red-700'
-                                                : 'bg-cyan-600 hover:bg-cyan-700'
-                                        }`}
-                                    >
-                                        {selectedClient.enabled
-                                            ? 'Suspend Client'
-                                            : 'Activate Client'}
-                                    </button>
-                                )}
-
-                                <Link
-                                    href={route(
-                                        'clients.show',
-                                        selectedClient.id,
-                                    )}
-                                    className="rounded-xl bg-slate-700 px-4 py-3 text-center font-black text-white hover:bg-slate-800"
-                                >
-                                    Full Client Details
-                                </Link>
-                            </div>
                         </div>
                     )}
                 </div>
@@ -1319,10 +1479,22 @@ function RefundModal({
 
         const confirmed =
             window.confirm(
-                `Refund QAR ${money(
-                    preview.refund_amount,
-                )} to ${client.name}? `
-                + 'The client will be suspended and disconnected immediately.',
+                preview.account_due_mode
+                    ? (
+                        `Refund QAR ${money(
+                            preview.refund_amount,
+                        )} to ${client.name}? `
+                        + `QAR ${money(
+                            preview.due_usage_offset,
+                        )} used due service will be retained. `
+                        + `All ${preview.family_device_count} devices will be suspended.`
+                    )
+                    : (
+                        `Refund QAR ${money(
+                            preview.refund_amount,
+                        )} to ${client.name}? `
+                        + 'The client will be suspended and disconnected immediately.'
+                    ),
             );
 
         if (!confirmed) {
@@ -1411,6 +1583,7 @@ function RefundModal({
                     {!loading
                         && preview?.eligible && (
                         <>
+                            {!preview.account_due_mode && (
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <QuickInfo
                                     label="Invoice"
@@ -1466,9 +1639,181 @@ function RefundModal({
                                 />
                             </div>
 
+                                                        )}
+
+{/* ACCOUNT_DUE_REFUND_UI_V1 */}
+                            {preview.account_due_mode && (
+                                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5">
+                                    <div className="text-sm font-black uppercase tracking-wide text-rose-700">
+                                        Due Account Refund Adjustment
+                                    </div>
+
+                                    {/* ACCOUNT_WIDE_REFUND_SOURCES_UI_V2 */}
+                                    <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div className="text-xs font-black uppercase tracking-wide text-emerald-700">
+                                                Refundable Paid Devices
+                                            </div>
+
+                                            <div className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">
+                                                {preview.refund_sources
+                                                    ?.length
+                                                    ?? 0} device(s)
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-3 space-y-2">
+                                            {preview.refund_sources
+                                                ?.map(
+                                                    (row) => (
+                                                        <div
+                                                            key={`${row.client_id}-${row.invoice_id}`}
+                                                            className="rounded-xl border border-emerald-100 bg-white p-3"
+                                                        >
+                                                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                                                <div>
+                                                                    <div className="font-black text-slate-800">
+                                                                        {row.device_label}
+                                                                    </div>
+
+                                                                    <div className="mt-1 text-xs font-semibold text-slate-500">
+                                                                        {row.client_code
+                                                                            || `#${row.client_id}`}
+                                                                        {' · '}
+                                                                        {row.used_days} days used
+                                                                        {' · '}
+                                                                        {row.invoice_no}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="text-right">
+                                                                    <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">
+                                                                        Refundable Balance
+                                                                    </div>
+
+                                                                    <div className="mt-1 text-xl font-black text-emerald-700">
+                                                                        QAR {money(
+                                                                            row.refund_amount,
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                                                                <div className="rounded-lg bg-slate-50 p-2">
+                                                                    <div className="text-[10px] font-black uppercase text-slate-400">
+                                                                        Paid
+                                                                    </div>
+
+                                                                    <div className="font-black text-slate-700">
+                                                                        QAR {money(
+                                                                            row.net_paid,
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="rounded-lg bg-slate-50 p-2">
+                                                                    <div className="text-[10px] font-black uppercase text-slate-400">
+                                                                        Used Value
+                                                                    </div>
+
+                                                                    <div className="font-black text-slate-700">
+                                                                        QAR {money(
+                                                                            row.used_value,
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="rounded-lg bg-slate-50 p-2">
+                                                                    <div className="text-[10px] font-black uppercase text-slate-400">
+                                                                        Remaining Refund
+                                                                    </div>
+
+                                                                    <div className="font-black text-emerald-700">
+                                                                        QAR {money(
+                                                                            row.refund_amount,
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ),
+                                                )}
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                        <QuickInfo
+                                            label="Refund Before Due Adjustment"
+                                            value={`QAR ${money(
+                                                preview.base_refund_amount,
+                                            )}`}
+                                        />
+
+                                        <QuickInfo
+                                            label="Account Outstanding Due"
+                                            value={`QAR ${money(
+                                                preview.account_due_amount,
+                                            )}`}
+                                        />
+
+                                        <QuickInfo
+                                            label="Used Due Service Charge"
+                                            value={`QAR ${money(
+                                                preview.due_usage_offset,
+                                            )}`}
+                                        />
+
+                                        <QuickInfo
+                                            label="Final Cash Refund"
+                                            value={`QAR ${money(
+                                                preview.refund_amount,
+                                            )}`}
+                                        />
+                                    </div>
+
+                                    {preview.due_adjustments
+                                        ?.length > 0 && (
+                                        <div className="mt-4 space-y-2">
+                                            {preview.due_adjustments.map(
+                                                (row) => (
+                                                    <div
+                                                        key={row.invoice_id}
+                                                        className="rounded-xl border border-rose-100 bg-white p-3 text-sm"
+                                                    >
+                                                        <div className="font-black text-slate-800">
+                                                            {row.device_label}
+                                                        </div>
+
+                                                        <div className="mt-1 text-xs font-semibold text-slate-500">
+                                                            {row.used_days} days used
+                                                            {' · '}
+                                                            QAR {Number(
+                                                                row.daily_rate
+                                                                ?? 0,
+                                                            ).toFixed(2)}/day
+                                                            {' · '}
+                                                            Unpaid used service QAR {money(
+                                                                row.unpaid_used_value,
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ),
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <div className="mt-4 rounded-xl bg-rose-100 p-3 text-sm font-bold text-rose-800">
+                                        This rule is active because this customer account has due. Only already-used unpaid service is deducted; unused future due service will be cancelled.
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-5 text-center">
                                 <div className="text-xs font-black uppercase tracking-wider text-emerald-600">
-                                    Customer Will Receive
+                                    {preview.account_due_mode
+                                        ? 'Final Customer Refund'
+                                        : 'Customer Will Receive'}
                                 </div>
 
                                 <div className="mt-1 text-4xl font-black text-emerald-700">
@@ -1478,16 +1823,38 @@ function RefundModal({
                                 </div>
 
                                 <div className="mt-2 text-sm font-bold text-emerald-700">
-                                    {preview.used_days} days used
-                                    {' · '}
-                                    QAR {money(
-                                        preview.used_value,
-                                    )} retained
+                                    {preview.account_due_mode
+                                        ? (
+                                            <>
+                                                Base refund QAR {money(
+                                                    preview.base_refund_amount,
+                                                )}
+                                                {' · '}
+                                                Due usage QAR {money(
+                                                    preview.due_usage_offset,
+                                                )} deducted
+                                            </>
+                                        )
+                                        : (
+                                            <>
+                                                {preview.used_days} days used
+                                                {' · '}
+                                                QAR {money(
+                                                    preview.used_value,
+                                                )} retained
+                                            </>
+                                        )}
                                 </div>
                             </div>
 
                             <div className="rounded-xl bg-red-50 p-4 text-sm font-bold text-red-700">
-                                After refund, this client will be suspended and disconnected immediately. The original payment will remain permanently in payment history.
+                                {preview.account_due_mode
+                                    ? (
+                                        `After this due-mode refund, all ${preview.family_device_count} devices will be suspended and disconnected. Unused future due service will be cancelled. Original payments remain permanently in payment history.`
+                                    )
+                                    : (
+                                        'After refund, this client will be suspended and disconnected immediately. The original payment will remain permanently in payment history.'
+                                    )}
                             </div>
 
                             <div>
@@ -1519,9 +1886,13 @@ function RefundModal({
                             >
                                 {submitting
                                     ? 'PROCESSING REFUND...'
-                                    : `REFUND QAR ${money(
-                                        preview.refund_amount,
-                                    )} & DISCONNECT`}
+                                    : preview.account_due_mode
+                                      ? `REFUND QAR ${money(
+                                            preview.refund_amount,
+                                        )} & SUSPEND ALL`
+                                      : `REFUND QAR ${money(
+                                            preview.refund_amount,
+                                        )} & DISCONNECT`}
                             </button>
                         </>
                     )}
