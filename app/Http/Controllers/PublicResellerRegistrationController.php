@@ -22,6 +22,13 @@ class PublicResellerRegistrationController extends Controller
                     'active',
                     true
                 )
+                /*
+                 * PUBLIC_REGISTRATION_EXCLUDE_UNLIMITED_V1
+                 */
+                ->where(
+                    'is_unlimited',
+                    false
+                )
                 ->orderBy('price')
                 ->orderBy(
                     'client_limit'

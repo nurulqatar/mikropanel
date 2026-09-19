@@ -111,6 +111,15 @@
             vertical-align: top;
         }
 
+        .company-logo {
+            display: inline-block;
+            max-width: 90px;
+            max-height: 55px;
+            margin-right: 12px;
+            vertical-align: top;
+            object-fit: contain;
+        }
+
         .brand-content {
             display: inline-block;
             max-width: 460px;
@@ -501,6 +510,18 @@
 </head>
 
 <body class="{{ $pdfMode ? 'pdf-mode' : 'screen-mode' }}">
+@php
+    /*
+     * TENANT_COMPANY_INVOICE_BRANDING_V1
+     */
+    $company = $company
+        ?? $panelSettings
+        ?? [];
+
+    $currency =
+        $company['currency']
+        ?? 'QAR';
+@endphp
 @if (!$pdfMode)
     <div class="toolbar">
         <div class="toolbar-title">
@@ -544,28 +565,50 @@
 
         $client = $invoice->client;
         $package = $client?->package;
+        $currency =
+            $company['currency']
+            ?? 'QAR';
     @endphp
 
     <div class="invoice-page">
         <table class="header-table">
             <tr>
                 <td class="brand-cell">
-                    <span class="brand-mark">
-                        GIT
-                    </span>
+                    @if (
+                        ($company['show_logo_on_documents'] ?? true)
+                        && !empty(
+                            $company['company_logo_data_uri']
+                        )
+                    )
+                        <img
+                            src="{{ $company['company_logo_data_uri'] }}"
+                            alt="{{ $company['company_name'] ?? 'Company' }}"
+                            class="company-logo"
+                        >
+                    @else
+                        <span class="brand-mark">
+                            {{ $company['brand_mark'] ?? 'CO' }}
+                        </span>
+                    @endif
 
                     <span class="brand-content">
                         <span class="company-name">
-                            {{ $panelSettings['company_name'] ?? 'Genius Information Technology W.L.L' }}
+                            {{ $company['company_name'] ?? 'Company' }}
                         </span>
 
                         <span class="company-contact">
-                            Mobile: {{ $panelSettings['company_phone'] ?? '+974 6633 2403' }}
+                            Mobile: {{ $company['company_phone'] ?: '-' }}
                         </span>
 
                         <span class="company-contact">
-                            Email: {{ $panelSettings['company_email'] ?? 'qatarhighspeedwifi@gmail.com' }}
+                            Email: {{ $company['company_email'] ?: '-' }}
                         </span>
+
+                        @if (!empty($company['company_address']))
+                            <span class="company-contact">
+                                {{ $company['company_address'] }}
+                            </span>
+                        @endif
                     </span>
                 </td>
 
@@ -704,7 +747,7 @@
                             </span>
 
                             <span class="value">
-                                QAR
+                                {{ $currency }}
                             </span>
                         </div>
                     </div>
@@ -759,11 +802,11 @@
                     </td>
 
                     <td class="number">
-                        QAR {{ number_format($subTotal, 2) }}
+                        {{ $currency }} {{ number_format($subTotal, 2) }}
                     </td>
 
                     <td class="number">
-                        QAR {{ number_format($subTotal, 2) }}
+                        {{ $currency }} {{ number_format($subTotal, 2) }}
                     </td>
                 </tr>
             </tbody>
@@ -778,7 +821,18 @@
                         </div>
 
                         <div>
-                                    {{ $invoice->notes ?: ('Thank you for choosing ' . ($panelSettings['company_name'] ?? 'Genius Information Technology W.L.L') . '.') }}
+                                    {{ $invoice->notes
+                                        ?: (
+                                            $company['invoice_terms']
+                                            ?? (
+                                                'Thank you for choosing '
+                                                . (
+                                                    $company['company_name']
+                                                    ?? 'Company'
+                                                )
+                                                . '.'
+                                            )
+                                        ) }}
                         </div>
                     </div>
                 </td>
@@ -791,7 +845,7 @@
                             </td>
 
                             <td class="amount">
-                                QAR {{ number_format($subTotal, 2) }}
+                                {{ $currency }} {{ number_format($subTotal, 2) }}
                             </td>
                         </tr>
 
@@ -801,7 +855,7 @@
                             </td>
 
                             <td class="amount">
-                                QAR {{ number_format($discount, 2) }}
+                                {{ $currency }} {{ number_format($discount, 2) }}
                             </td>
                         </tr>
 
@@ -811,7 +865,7 @@
                             </td>
 
                             <td class="amount">
-                                QAR {{ number_format($paidAmount, 2) }}
+                                {{ $currency }} {{ number_format($paidAmount, 2) }}
                             </td>
                         </tr>
 
@@ -821,7 +875,7 @@
                             </td>
 
                             <td class="amount">
-                                QAR {{ number_format($dueAmount, 2) }}
+                                {{ $currency }} {{ number_format($dueAmount, 2) }}
                             </td>
                         </tr>
                     </table>
@@ -900,7 +954,7 @@
 
                 <td>
                     <span class="signature-line">
-                        Authorized Signature
+                        {{ $company['authorized_signature'] ?? 'Authorized Signature' }}
                     </span>
                 </td>
             </tr>
@@ -911,9 +965,21 @@
         </div>
 
         <div class="footer">
-            {{ $panelSettings['company_name'] ?? 'Genius Information Technology W.L.L' }} |
-            Mobile: {{ $panelSettings['company_phone'] ?? '+974 6633 2403' }} |
-            Email: {{ $panelSettings['company_email'] ?? 'qatarhighspeedwifi@gmail.com' }}
+            @if (!empty($company['invoice_footer']))
+                <div style="margin-bottom: 5px;">
+                    {{ $company['invoice_footer'] }}
+                </div>
+            @endif
+
+            {{ $company['company_name'] ?? 'Company' }}
+
+            @if (!empty($company['company_phone']))
+                | Mobile: {{ $company['company_phone'] }}
+            @endif
+
+            @if (!empty($company['company_email']))
+                | Email: {{ $company['company_email'] }}
+            @endif
         </div>
     </div>
 

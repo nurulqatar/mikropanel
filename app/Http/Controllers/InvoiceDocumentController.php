@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Client;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Services\CompanyBrandingService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -16,9 +17,10 @@ class InvoiceDocumentController extends Controller
     public function print(
         Invoice $invoice
     ): View {
-        $invoices = $this->getInvoices(
-            $invoice
-        );
+        $invoices =
+            $this->getInvoices(
+                $invoice
+            );
 
         return $this->printView(
             $invoices,
@@ -29,26 +31,34 @@ class InvoiceDocumentController extends Controller
     public function download(
         Invoice $invoice
     ): Response {
-        $invoices = $this->getInvoices(
-            $invoice
+        $invoices =
+            $this->getInvoices(
+                $invoice
+            );
+
+        $pdf =
+            $this->makePdf(
+                $invoices,
+                $invoice->invoice_no
+            );
+
+        $fileName =
+            Str::slug(
+                $invoice->invoice_no
+                ?: 'invoice-'
+                    . $invoice->id
+            )
+            . '.pdf';
+
+        return $pdf->download(
+            $fileName
         );
-
-        $pdf = $this->makePdf(
-            $invoices,
-            $invoice->invoice_no
-        );
-
-        $fileName = Str::slug(
-            $invoice->invoice_no
-                ?: 'invoice-' . $invoice->id
-        ) . '.pdf';
-
-        return $pdf->download($fileName);
     }
 
     public function printAll(): View
     {
-        $invoices = $this->getInvoices();
+        $invoices =
+            $this->getInvoices();
 
         return $this->printView(
             $invoices,
@@ -58,24 +68,47 @@ class InvoiceDocumentController extends Controller
 
     public function downloadAll(): Response
     {
-        $invoices = $this->getInvoices();
+        $invoices =
+            $this->getInvoices();
 
-        return $this->makePdf(
-            $invoices,
-            'All Invoices'
-        )->download(
-            'genius-invoices-'
-            . today()->format('Y-m-d')
-            . '.pdf'
-        );
+        $company =
+            $this->company(
+                $invoices
+            );
+
+        $fileName =
+            Str::slug(
+                (
+                    $company[
+                        'company_name'
+                    ]
+                    ?? 'company'
+                )
+                . '-invoices-'
+                . today()
+                    ->format(
+                        'Y-m-d'
+                    )
+            )
+            . '.pdf';
+
+        return $this
+            ->makePdf(
+                $invoices,
+                'All Invoices'
+            )
+            ->download(
+                $fileName
+            );
     }
 
     public function printClient(
         Client $client
     ): View {
-        $invoices = $this->getClientInvoices(
-            $client
-        );
+        $invoices =
+            $this->getClientInvoices(
+                $client
+            );
 
         return $this->printView(
             $invoices,
@@ -86,35 +119,57 @@ class InvoiceDocumentController extends Controller
     public function downloadClient(
         Client $client
     ): Response {
-        $invoices = $this->getClientInvoices(
-            $client
-        );
+        $invoices =
+            $this->getClientInvoices(
+                $client
+            );
 
-        $fileName = Str::slug(
-            $client->client_code
-            . '-'
-            . $client->name
-            . '-invoice-report'
-        ) . '.pdf';
+        $fileName =
+            Str::slug(
+                $client->client_code
+                . '-'
+                . $client->name
+                . '-invoice-report'
+            )
+            . '.pdf';
 
-        return $this->makePdf(
-            $invoices,
-            "Invoice Report - {$client->name}"
-        )->download($fileName);
+        return $this
+            ->makePdf(
+                $invoices,
+                "Invoice Report - {$client->name}"
+            )
+            ->download(
+                $fileName
+            );
     }
 
     private function printView(
         Collection $invoices,
         string $documentTitle
     ): View {
-        return view('invoices.document', [
-            'invoices' => $invoices,
-            'paymentsByInvoice' =>
-                $this->getPayments($invoices),
+        return view(
+            'invoices.document',
+            [
+                'invoices' =>
+                    $invoices,
 
-            'pdfMode' => false,
-            'documentTitle' => $documentTitle,
-        ]);
+                'paymentsByInvoice' =>
+                    $this->getPayments(
+                        $invoices
+                    ),
+
+                'company' =>
+                    $this->company(
+                        $invoices
+                    ),
+
+                'pdfMode' =>
+                    false,
+
+                'documentTitle' =>
+                    $documentTitle,
+            ]
+        );
     }
 
     private function makePdf(
@@ -124,17 +179,34 @@ class InvoiceDocumentController extends Controller
         return Pdf::loadView(
             'invoices.document',
             [
-                'invoices' => $invoices,
-                'paymentsByInvoice' =>
-                    $this->getPayments($invoices),
+                'invoices' =>
+                    $invoices,
 
-                'pdfMode' => true,
+                'paymentsByInvoice' =>
+                    $this->getPayments(
+                        $invoices
+                    ),
+
+                'company' =>
+                    $this->company(
+                        $invoices
+                    ),
+
+                'pdfMode' =>
+                    true,
+
                 'documentTitle' =>
                     $documentTitle,
             ]
         )
-            ->setPaper('a4', 'portrait')
-            ->setOption('dpi', 96)
+            ->setPaper(
+                'a4',
+                'portrait'
+            )
+            ->setOption(
+                'dpi',
+                96
+            )
             ->setOption(
                 'defaultFont',
                 'DejaVu Sans'
@@ -145,21 +217,56 @@ class InvoiceDocumentController extends Controller
             );
     }
 
+    private function company(
+        Collection $invoices
+    ): array {
+        $first =
+            $invoices->first();
+
+        $resellerId =
+            $first?->reseller_id
+            ?? $first
+                ?->client
+                ?->reseller_id
+            ?? auth()
+                ->user()
+                ?->reseller_id;
+
+        return app(
+            CompanyBrandingService::class
+        )->forResellerId(
+            $resellerId
+                ? (int)
+                    $resellerId
+                : null,
+            true
+        );
+    }
+
     private function getInvoices(
         ?Invoice $invoice = null
     ): Collection {
-        $query = Invoice::query()
-            ->with('client.package');
+        $query =
+            Invoice::query()
+                ->with(
+                    'client.package'
+                );
 
         if ($invoice) {
             return $query
-                ->whereKey($invoice->id)
+                ->whereKey(
+                    $invoice->id
+                )
                 ->get();
         }
 
         return $query
-            ->orderByDesc('issue_date')
-            ->orderByDesc('id')
+            ->orderByDesc(
+                'issue_date'
+            )
+            ->orderByDesc(
+                'id'
+            )
             ->get();
     }
 
@@ -167,10 +274,19 @@ class InvoiceDocumentController extends Controller
         Client $client
     ): Collection {
         return Invoice::query()
-            ->where('client_id', $client->id)
-            ->with('client.package')
-            ->orderByDesc('issue_date')
-            ->orderByDesc('id')
+            ->where(
+                'client_id',
+                $client->id
+            )
+            ->with(
+                'client.package'
+            )
+            ->orderByDesc(
+                'issue_date'
+            )
+            ->orderByDesc(
+                'id'
+            )
             ->get();
     }
 
@@ -184,11 +300,18 @@ class InvoiceDocumentController extends Controller
         return Payment::query()
             ->whereIn(
                 'invoice_id',
-                $invoices->pluck('id')
+                $invoices
+                    ->pluck('id')
             )
-            ->orderBy('payment_date')
-            ->orderBy('id')
+            ->orderBy(
+                'payment_date'
+            )
+            ->orderBy(
+                'id'
+            )
             ->get()
-            ->groupBy('invoice_id');
+            ->groupBy(
+                'invoice_id'
+            );
     }
 }

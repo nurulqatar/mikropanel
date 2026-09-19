@@ -13,6 +13,7 @@ export default function Sidebar() {
         ?? null;
 
     const panelName =
+        props.companyBranding?.panel_name ??
         props.panelSettings?.panel_name
         ?? 'MikroPanel';
 

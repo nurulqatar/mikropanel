@@ -11,6 +11,7 @@ class ResellerPlan extends Model
         'name',
         'code',
         'client_limit',
+        'is_unlimited',
         'operator_limit',
         'router_limit',
         'price',
@@ -24,6 +25,7 @@ class ResellerPlan extends Model
     {
         return [
             'client_limit' => 'integer',
+            'is_unlimited' => 'boolean',
             'operator_limit' => 'integer',
             'router_limit' => 'integer',
             'price' => 'decimal:2',

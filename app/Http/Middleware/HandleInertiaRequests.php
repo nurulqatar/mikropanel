@@ -37,6 +37,26 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
 
+            'companyBranding' =>
+                function () use ($request): ?array {
+                    $user =
+                        $request->user();
+
+                    if (
+                        !$user
+                        || !$user->reseller_id
+                    ) {
+                        return null;
+                    }
+
+                    return app(
+                        \App\Services\CompanyBrandingService::class
+                    )->forResellerId(
+                        (int)
+                        $user->reseller_id
+                    );
+                },
+
             'panelNotifications' =>
                 function () use ($request): array {
                     $user = $request->user();

@@ -77,6 +77,7 @@ const money = (value) =>
 
 export default function Home({
     brand = 'MikroPanel',
+    site = {},
     plans = [],
 }) {
     return (
@@ -94,12 +95,19 @@ export default function Home({
                 <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4">
                     <Link
                         href={route('website.home')}
-                        className="text-2xl font-black tracking-tight"
+                        className="flex items-center gap-3 text-2xl font-black tracking-tight"
                     >
-                        <span className="text-cyan-400">
-                            Mikro
+                        {site.logo_url && (
+                            <img
+                                src={site.logo_url}
+                                alt={site.website_name || brand}
+                                className="h-10 w-auto max-w-44 object-contain"
+                            />
+                        )}
+
+                        <span>
+                            {site.website_name || brand}
                         </span>
-                        Panel
                     </Link>
 
                     <nav className="hidden items-center gap-7 text-sm font-semibold text-slate-300 lg:flex">
@@ -142,22 +150,18 @@ export default function Home({
                     <div className="relative mx-auto grid max-w-7xl gap-14 px-5 py-24 lg:grid-cols-[1.1fr_.9fr] lg:py-32">
                         <div>
                             <div className="mb-5 inline-flex rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-bold text-cyan-300">
-                                MikroTik ISP Operations · Reseller SaaS
+                                {site.hero_badge ||
+                                    'MikroTik ISP Operations · Company SaaS'}
                             </div>
 
                             <h1 className="max-w-4xl text-5xl font-black leading-[1.05] tracking-tight sm:text-6xl">
-                                Run your network,
-                                clients and cash flow
-                                from one professional
-                                control panel.
+                                {site.hero_title ||
+                                    'Run your network, clients and cash flow from one professional control panel.'}
                             </h1>
 
                             <p className="mt-7 max-w-3xl text-lg leading-8 text-slate-300">
-                                {brand} combines MAC client management,
-                                Network Zones, MikroTik synchronization,
-                                Hotspot vouchers, billing, staff access,
-                                Manager cash accounting and reseller
-                                operations in one platform.
+                                {site.hero_text ||
+                                    `${brand} provides professional ISP and MikroTik operations from one platform.`}
                             </p>
 
                             <div className="mt-9 flex flex-wrap gap-4">
@@ -366,8 +370,14 @@ export default function Home({
                     <div className="mx-auto max-w-7xl px-5">
                         <SectionTitle
                             eyebrow="Pricing"
-                            title="Choose your reseller package"
-                            text="Packages are managed by Super Admin. Active packages appear here automatically."
+                            title={
+                                site.pricing_title ||
+                                'Choose your Company package'
+                            }
+                            text={
+                                site.pricing_text ||
+                                'Active packages are managed by Super Admin and appear here automatically.'
+                            }
                         />
 
                         {plans.length > 0 ? (
@@ -376,6 +386,7 @@ export default function Home({
                                     <PlanCard
                                         key={plan.id}
                                         plan={plan}
+                                        site={site}
                                     />
                                 ))}
                             </div>
@@ -519,7 +530,9 @@ export default function Home({
                         </div>
 
                         <div className="mt-1 text-sm text-slate-500">
-                            MikroTik ISP & Reseller Operations Platform
+                            {site.footer_text ||
+                                site.website_tagline ||
+                                'ISP & MikroTik Operations Platform'}
                         </div>
                     </div>
 
@@ -540,13 +553,18 @@ export default function Home({
     );
 }
 
-function PlanCard({ plan }) {
+function PlanCard({
+    plan,
+    site = {},
+}) {
     const features =
         Array.isArray(plan.features)
         && plan.features.length > 0
             ? plan.features
             : [
-                `${plan.client_limit} total client capacity`,
+                plan.is_unlimited
+                    ? 'Unlimited client capacity'
+                    : `${plan.client_limit} total client capacity`,
                 'MAC client operations',
                 'Network Zone support',
                 'Hotspot operations',
@@ -556,16 +574,25 @@ function PlanCard({ plan }) {
     return (
         <div
             className={`relative rounded-[2rem] border p-7 ${
-                plan.is_free_trial
-                    ? 'border-cyan-400 bg-cyan-400/10 shadow-xl shadow-cyan-500/10'
-                    : 'border-white/10 bg-white/[0.04]'
+                plan.is_unlimited
+                    ? 'border-indigo-400 bg-indigo-400/10 shadow-xl shadow-indigo-500/10'
+                    : plan.is_free_trial
+                      ? 'border-cyan-400 bg-cyan-400/10 shadow-xl shadow-cyan-500/10'
+                      : 'border-white/10 bg-white/[0.04]'
             }`}
         >
-            {plan.is_free_trial && (
-                <div className="absolute -top-3 left-7 rounded-full bg-cyan-400 px-3 py-1 text-xs font-black uppercase text-slate-950">
-                    7-Day Free Trial
+            {plan.is_unlimited && (
+                <div className="absolute -top-3 left-7 rounded-full bg-indigo-400 px-3 py-1 text-xs font-black uppercase text-slate-950">
+                    Unlimited
                 </div>
             )}
+
+            {!plan.is_unlimited
+                && plan.is_free_trial && (
+                    <div className="absolute -top-3 left-7 rounded-full bg-cyan-400 px-3 py-1 text-xs font-black uppercase text-slate-950">
+                        7-Day Free Trial
+                    </div>
+                )}
 
             <h3 className="text-2xl font-black">
                 {plan.name}
@@ -581,7 +608,9 @@ function PlanCard({ plan }) {
 
             <div className="mt-2 text-sm text-slate-400">
                 {plan.validity_days} days ·{' '}
-                {plan.client_limit} clients
+                {plan.is_unlimited
+                    ? 'Unlimited clients'
+                    : `${plan.client_limit} clients`}
             </div>
 
             <div className="mt-6 space-y-3">
@@ -596,20 +625,31 @@ function PlanCard({ plan }) {
                 <CheckLine text="Staff & Manager operations" />
             </div>
 
-            <Link
-                href={route('website.register', {
-                    plan: plan.id,
-                })}
-                className={`mt-8 block rounded-xl px-5 py-3 text-center font-black ${
-                    plan.is_free_trial
-                        ? 'bg-cyan-400 text-slate-950'
-                        : 'bg-white text-slate-950'
-                }`}
-            >
-                {plan.is_free_trial
-                    ? 'Start Free Trial'
-                    : 'Apply for this Package'}
-            </Link>
+            {plan.is_unlimited ? (
+                <a
+                    href={
+                        site.contact_url || '#'
+                    }
+                    className="mt-8 block rounded-xl bg-indigo-400 px-5 py-3 text-center font-black text-slate-950"
+                >
+                    Contact Super Admin
+                </a>
+            ) : (
+                <Link
+                    href={route('website.register', {
+                        plan: plan.id,
+                    })}
+                    className={`mt-8 block rounded-xl px-5 py-3 text-center font-black ${
+                        plan.is_free_trial
+                            ? 'bg-cyan-400 text-slate-950'
+                            : 'bg-white text-slate-950'
+                    }`}
+                >
+                    {plan.is_free_trial
+                        ? 'Start Free Trial'
+                        : 'Apply for this Package'}
+                </Link>
+            )}
         </div>
     );
 }

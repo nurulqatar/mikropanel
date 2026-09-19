@@ -250,6 +250,31 @@ Route::middleware([
         )->name(
             'company-settings.update'
         );
+
+        /*
+         * COMPANY_BRANDING_SETTINGS_ROUTES_V1
+         *
+         * POST is used for multipart logo uploads.
+         */
+        Route::post(
+            'company-settings',
+            [
+                CompanySettingsController::class,
+                'update',
+            ]
+        )->name(
+            'company-settings.save'
+        );
+
+        Route::delete(
+            'company-settings/logo',
+            [
+                CompanySettingsController::class,
+                'removeLogo',
+            ]
+        )->name(
+            'company-settings.logo.destroy'
+        );
     });
 
 

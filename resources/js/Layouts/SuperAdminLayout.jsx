@@ -16,6 +16,12 @@ const navigation = [
         match: '/super-admin/resellers',
     },
     {
+        label: 'Website Settings',
+        short: 'WS',
+        route: 'superadmin.website-settings.index',
+        match: '/super-admin/website-settings',
+    },
+    {
         label: 'Reseller Plans',
         short: 'PL',
         route: 'superadmin.plans.index',

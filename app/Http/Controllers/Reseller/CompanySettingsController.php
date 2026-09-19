@@ -4,16 +4,20 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Models\Reseller;
+use App\Models\ResellerSetting;
 use App\Models\User;
+use App\Services\CompanyBrandingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CompanySettingsController extends Controller
 {
     public function index(
-        Request $request
+        Request $request,
+        CompanyBrandingService $branding
     ): Response {
         $owner =
             $this->owner(
@@ -30,20 +34,13 @@ class CompanySettingsController extends Controller
             'Reseller/CompanySettings',
             [
                 'company' => [
-                    'company_name' =>
-                        $reseller->company_name,
+                    ...$branding
+                        ->forResellerId(
+                            $reseller->id
+                        ),
 
                     'owner_name' =>
                         $reseller->owner_name,
-
-                    'email' =>
-                        $reseller->email,
-
-                    'phone' =>
-                        $reseller->phone,
-
-                    'address' =>
-                        $reseller->address,
 
                     'timezone' =>
                         $reseller->timezone
@@ -73,28 +70,40 @@ class CompanySettingsController extends Controller
                     'max:255',
                 ],
 
+                'panel_name' => [
+                    'nullable',
+                    'string',
+                    'max:255',
+                ],
+
                 'owner_name' => [
                     'required',
                     'string',
                     'max:255',
                 ],
 
-                'email' => [
+                'company_email' => [
                     'nullable',
                     'email',
                     'max:255',
                 ],
 
-                'phone' => [
+                'company_phone' => [
                     'nullable',
                     'string',
-                    'max:60',
+                    'max:100',
                 ],
 
-                'address' => [
+                'company_address' => [
                     'nullable',
                     'string',
-                    'max:1000',
+                    'max:1500',
+                ],
+
+                'website' => [
+                    'nullable',
+                    'url',
+                    'max:500',
                 ],
 
                 'timezone' => [
@@ -106,6 +115,35 @@ class CompanySettingsController extends Controller
                     'required',
                     'string',
                     'max:10',
+                ],
+
+                'invoice_terms' => [
+                    'nullable',
+                    'string',
+                    'max:5000',
+                ],
+
+                'invoice_footer' => [
+                    'nullable',
+                    'string',
+                    'max:2000',
+                ],
+
+                'authorized_signature' => [
+                    'nullable',
+                    'string',
+                    'max:255',
+                ],
+
+                'show_logo_on_documents' => [
+                    'nullable',
+                ],
+
+                'company_logo' => [
+                    'nullable',
+                    'image',
+                    'mimes:jpg,jpeg,png,webp',
+                    'max:4096',
                 ],
             ]);
 
@@ -127,25 +165,40 @@ class CompanySettingsController extends Controller
                 ),
 
             'email' =>
-                $data['email']
+                filled(
+                    $data['company_email']
+                    ?? null
+                )
                     ? strtolower(
                         trim(
-                            $data['email']
+                            $data[
+                                'company_email'
+                            ]
                         )
                     )
                     : null,
 
             'phone' =>
-                $data['phone']
+                filled(
+                    $data['company_phone']
+                    ?? null
+                )
                     ? trim(
-                        $data['phone']
+                        $data[
+                            'company_phone'
+                        ]
                     )
                     : null,
 
             'address' =>
-                $data['address']
+                filled(
+                    $data['company_address']
+                    ?? null
+                )
                     ? trim(
-                        $data['address']
+                        $data[
+                            'company_address'
+                        ]
                     )
                     : null,
 
@@ -162,9 +215,163 @@ class CompanySettingsController extends Controller
 
         $reseller->save();
 
+        $settings = [
+            'panel_name' => [
+                $data['panel_name']
+                ?? null,
+                'company',
+                'string',
+            ],
+
+            'website' => [
+                $data['website']
+                ?? null,
+                'company',
+                'string',
+            ],
+
+            'invoice_terms' => [
+                $data['invoice_terms']
+                ?? null,
+                'billing',
+                'string',
+            ],
+
+            'invoice_footer' => [
+                $data['invoice_footer']
+                ?? null,
+                'billing',
+                'string',
+            ],
+
+            'authorized_signature' => [
+                $data[
+                    'authorized_signature'
+                ]
+                ?? null,
+                'billing',
+                'string',
+            ],
+
+            'show_logo_on_documents' => [
+                $request->boolean(
+                    'show_logo_on_documents'
+                ),
+                'billing',
+                'boolean',
+            ],
+        ];
+
+        foreach (
+            $settings
+            as $key => [
+                $value,
+                $group,
+                $type,
+            ]
+        ) {
+            ResellerSetting::setValue(
+                resellerId:
+                    $reseller->id,
+
+                key:
+                    $key,
+
+                value:
+                    $value,
+
+                group:
+                    $group,
+
+                type:
+                    $type
+            );
+        }
+
+        if (
+            $request->hasFile(
+                'company_logo'
+            )
+        ) {
+            $old =
+                ResellerSetting::getValue(
+                    $reseller->id,
+                    'company_logo_path'
+                );
+
+            if ($old) {
+                Storage::disk('public')
+                    ->delete($old);
+            }
+
+            $path =
+                $request
+                    ->file(
+                        'company_logo'
+                    )
+                    ->store(
+                        'company-branding/'
+                        . $reseller->id,
+                        'public'
+                    );
+
+            ResellerSetting::setValue(
+                resellerId:
+                    $reseller->id,
+
+                key:
+                    'company_logo_path',
+
+                value:
+                    $path,
+
+                group:
+                    'company'
+            );
+        }
+
         return back()->with(
             'success',
             'Company settings updated.'
+        );
+    }
+
+    public function removeLogo(
+        Request $request
+    ): RedirectResponse {
+        $owner =
+            $this->owner(
+                $request
+            );
+
+        $path =
+            ResellerSetting::getValue(
+                $owner->reseller_id,
+                'company_logo_path'
+            );
+
+        if ($path) {
+            Storage::disk('public')
+                ->delete($path);
+        }
+
+        ResellerSetting::setValue(
+            resellerId:
+                $owner->reseller_id,
+
+            key:
+                'company_logo_path',
+
+            value:
+                null,
+
+            group:
+                'company'
+        );
+
+        return back()->with(
+            'success',
+            'Company logo removed.'
         );
     }
 

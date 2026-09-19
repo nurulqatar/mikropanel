@@ -70,6 +70,9 @@ class ResellerSubscriptionService
                     'client_limit' =>
                         $plan
                             ->client_limit,
+                    /* SUBSCRIPTION_UNLIMITED_PLAN_V1 */
+                    'is_unlimited' =>
+                        (bool) $plan->is_unlimited,
 
                     'operator_limit' =>
                         $plan
@@ -196,6 +199,9 @@ class ResellerSubscriptionService
                     'client_limit' =>
                         $plan
                             ->client_limit,
+                    /* SUBSCRIPTION_UNLIMITED_PLAN_V1 */
+                    'is_unlimited' =>
+                        (bool) $plan->is_unlimited,
 
                     'operator_limit' =>
                         $plan

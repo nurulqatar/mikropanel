@@ -4,6 +4,7 @@ use App\Http\Controllers\SuperAdmin\DashboardController;
 use App\Http\Controllers\SuperAdmin\ResellerController;
 use App\Http\Controllers\SuperAdmin\ResellerFinanceController;
 use App\Http\Controllers\SuperAdmin\ResellerPlanController;
+use App\Http\Controllers\SuperAdmin\WebsiteSettingsController;
 use App\Http\Controllers\SuperAdmin\ResellerReportController;
 use App\Http\Controllers\SuperAdmin\ResellerAuditController;
 use App\Http\Controllers\SuperAdmin\ResellerNotificationController;
@@ -20,6 +21,39 @@ Route::middleware([
             DashboardController::class
         )->name(
             'dashboard'
+        );
+
+        /*
+         * SUPER_ADMIN_WEBSITE_SETTINGS_V1
+         */
+        Route::get(
+            'website-settings',
+            [
+                WebsiteSettingsController::class,
+                'index',
+            ]
+        )->name(
+            'website-settings.index'
+        );
+
+        Route::post(
+            'website-settings',
+            [
+                WebsiteSettingsController::class,
+                'update',
+            ]
+        )->name(
+            'website-settings.update'
+        );
+
+        Route::delete(
+            'website-settings/logo',
+            [
+                WebsiteSettingsController::class,
+                'removeLogo',
+            ]
+        )->name(
+            'website-settings.logo.destroy'
         );
 
         Route::get(

@@ -61,6 +61,30 @@ class ResellerUsageService
                 ->gte($now);
     }
 
+    public function clientUnlimited(
+        Reseller $reseller
+    ): bool {
+        /*
+         * An explicit Company override always wins.
+         * If Super Admin sets a finite override on an
+         * Unlimited plan, that Company becomes finite.
+         */
+        if (
+            $reseller
+                ->client_limit_override
+            !== null
+        ) {
+            return false;
+        }
+
+        return (bool) (
+            $this->subscription(
+                $reseller
+            )?->is_unlimited
+            ?? false
+        );
+    }
+
     public function clientLimit(
         Reseller $reseller
     ): int {
@@ -75,6 +99,19 @@ class ResellerUsageService
                 $reseller
                     ->client_limit_override
             );
+        }
+
+        if (
+            $this->clientUnlimited(
+                $reseller
+            )
+        ) {
+            /*
+             * Compatibility return value for older
+             * reporting code. Enforcement bypasses
+             * this numeric value when Unlimited.
+             */
+            return 1000000;
         }
 
         $subscription =
@@ -95,11 +132,6 @@ class ResellerUsageService
     public function usedClientSlots(
         Reseller $reseller
     ): int {
-        /*
-         * Soft-deleted archived clients
-         * do not consume a slot.
-         * Suspended clients still do.
-         */
         return Client::query()
             ->where(
                 'reseller_id',
@@ -111,6 +143,14 @@ class ResellerUsageService
     public function remainingClientSlots(
         Reseller $reseller
     ): int {
+        if (
+            $this->clientUnlimited(
+                $reseller
+            )
+        ) {
+            return PHP_INT_MAX;
+        }
+
         return max(
             0,
             $this->clientLimit(
@@ -125,12 +165,21 @@ class ResellerUsageService
     public function canCreateClient(
         Reseller $reseller
     ): bool {
-        return $reseller->status === 'active'
-            && $this
+        if (
+            $reseller->status
+            !== 'active'
+            || !$this
                 ->subscriptionIsUsable(
                     $reseller
                 )
-            && $this
+        ) {
+            return false;
+        }
+
+        return $this->clientUnlimited(
+            $reseller
+        )
+            || $this
                 ->remainingClientSlots(
                     $reseller
                 ) > 0;
@@ -141,6 +190,11 @@ class ResellerUsageService
     ): array {
         $subscription =
             $this->subscription(
+                $reseller
+            );
+
+        $unlimited =
+            $this->clientUnlimited(
                 $reseller
             );
 
@@ -158,14 +212,19 @@ class ResellerUsageService
             'client_limit' =>
                 $limit,
 
+            'is_unlimited' =>
+                $unlimited,
+
             'used_clients' =>
                 $used,
 
             'remaining_clients' =>
-                max(
-                    0,
-                    $limit - $used
-                ),
+                $unlimited
+                    ? PHP_INT_MAX
+                    : max(
+                        0,
+                        $limit - $used
+                    ),
 
             'subscription_usable' =>
                 $this
@@ -231,8 +290,7 @@ class ResellerUsageService
 
         return max(
             0,
-            (int)
-            (
+            (int) (
                 $this->subscription(
                     $reseller
                 )?->router_limit
@@ -282,8 +340,7 @@ class ResellerUsageService
 
         return max(
             0,
-            (int)
-            (
+            (int) (
                 $this->subscription(
                     $reseller
                 )?->operator_limit
@@ -320,5 +377,4 @@ class ResellerUsageService
             )
         );
     }
-
 }

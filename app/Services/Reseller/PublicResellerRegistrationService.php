@@ -47,6 +47,19 @@ class PublicResellerRegistrationService
                     ]);
                 }
 
+                /*
+                 * PUBLIC_UNLIMITED_CONTACT_ONLY_V1
+                 *
+                 * Unlimited plans are visible publicly but
+                 * can only be activated through Super Admin.
+                 */
+                if ($plan->is_unlimited) {
+                    throw ValidationException::withMessages([
+                        'plan_id' =>
+                            'Unlimited plans require direct contact with Super Admin.',
+                    ]);
+                }
+
                 $email =
                     strtolower(
                         trim(
