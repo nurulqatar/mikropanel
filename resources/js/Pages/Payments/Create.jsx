@@ -481,7 +481,7 @@ export default function Create({
                         </section>
 
                         <div className="rounded-xl border border-cyan-200 bg-cyan-50 px-5 py-4 text-sm text-cyan-800">
-                            Full payment হলে invoice Paid হবে, client expiry renew হবে এবং suspended client MikroTik-এ active হবে। Partial payment হলে invoice Partial থাকবে।
+                            Full payment marks the invoice as Paid, renews the client expiry, and activates a suspended client on MikroTik. Partial payment keeps the invoice as Partial.
                         </div>
 
                         <div className="flex flex-wrap gap-3">

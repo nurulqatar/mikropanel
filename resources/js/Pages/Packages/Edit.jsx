@@ -211,7 +211,7 @@ export default function Edit({ package: pkg, zones = [] }) {
                         </h2>
 
                         <p className="mb-5 text-sm text-slate-500">
-                            শুধু number লিখুন। MikroTik Queue-তে M automatic যোগ হবে।
+                            Enter numbers only. "M" will be added automatically in the MikroTik Queue.
                         </p>
 
                         <div className="grid gap-5 md:grid-cols-2">
@@ -278,9 +278,9 @@ export default function Edit({ package: pkg, zones = [] }) {
                     </label>
 
                     <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                        Package speed পরিবর্তন করলে existing client-এর
-                        MikroTik Queue সঙ্গে সঙ্গে পরিবর্তন হবে না।
-                        Client Edit করে Update করলে নতুন speed apply হবে।
+                        Changing the package speed will not immediately update an existing client's
+                        MikroTik Queue.
+                        Edit the client and click Update to apply the new speed.
                     </div>
 
                     <div className="flex flex-wrap gap-3">

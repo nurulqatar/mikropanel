@@ -253,10 +253,10 @@ export default function Edit({
 
 
                     <div className="rounded-lg bg-cyan-50 px-4 py-3 text-sm text-cyan-800">
-                        Package বা MAC পরিবর্তন করলে MikroTik DHCP
-                        Lease, ARP এবং Simple Queue update হবে।
-                        Installation date, billing day এবং expiry date
-                        অপরিবর্তিত থাকবে।
+                        Changing the package or MAC will update the MikroTik DHCP
+                        Lease, ARP, and Simple Queue.
+                        The installation date, billing day, and expiry date
+                        will remain unchanged.
                     </div>
 
                     <div className="flex flex-wrap gap-3">

@@ -210,7 +210,7 @@ export default function Create({ zones = [] }) {
                         </h2>
 
                         <p className="mb-5 text-sm text-slate-500">
-                            শুধু number লিখুন। যেমন 5 Mbps-এর জন্য 5 লিখুন।
+                            Enter numbers only. For example, enter 5 for 5 Mbps.
                         </p>
 
                         <div className="grid gap-5 md:grid-cols-2">

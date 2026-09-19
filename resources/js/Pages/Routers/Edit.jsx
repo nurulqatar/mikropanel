@@ -260,8 +260,8 @@ export default function Edit({
                     </div>
 
                     <div className="rounded-lg bg-cyan-50 px-4 py-3 text-sm text-cyan-800">
-                        Update করার পর MikroTik API connection
-                        automatic test এবং sync হবে।
+                        After updating, the MikroTik API connection
+                        will be tested and synchronized automatically.
                     </div>
 
                     <div className="flex gap-3">

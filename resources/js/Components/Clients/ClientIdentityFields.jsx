@@ -2120,7 +2120,7 @@ export default function ClientIdentityFields({
                                 </p>
                             ) : (
                                 <p className="mt-3 text-xs text-slate-400">
-                                    Qatar ID front or passport থেকে face নেওয়া হবে
+                                    The face will be taken from the Qatar ID front or passport
                                 </p>
                             )}
                         </div>
@@ -2170,7 +2170,7 @@ export default function ClientIdentityFields({
                                         </p>
 
                                         <p className="mt-1 text-xs text-slate-400">
-                                            Qatar ID হলে Front + Back, Passport হলে full passport page এখানে দেখাবে
+                                            For Qatar ID, Front + Back will be shown here; for Passport, the full passport page will be shown
                                         </p>
                                     </div>
                                 </div>

@@ -405,8 +405,8 @@
         }
 
         /*
-         * PDF page-এর margin @page থেকে আসবে।
-         * এখানে extra width/padding থাকবে না।
+         * PDF page margins are controlled by @page.
+         * No extra width or padding is applied here.
          */
         .pdf-mode .invoice-page {
             display: block;
