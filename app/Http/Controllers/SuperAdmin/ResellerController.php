@@ -310,9 +310,9 @@ class ResellerController extends Controller
                         ]);
 
                     /*
-                     * Login remains intentionally
-                     * disabled until full tenant
-                     * isolation is enabled.
+                     * Reseller tenant isolation is
+                     * enforced globally. Owner login
+                     * is enabled when created.
                      */
                     $owner =
                         User::create([

@@ -218,9 +218,9 @@ Route::get(
 
     /*
      * Hotspot module.
-     * Controller currently enforces admin-only
-     * access until granular Hotspot permissions
-     * are installed in the next phase.
+     * Access is protected by reseller tenancy,
+     * Network Zone isolation and granular
+     * panel permissions.
      */
     Route::prefix('hotspot')
         ->name('hotspot.')

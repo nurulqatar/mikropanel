@@ -176,7 +176,7 @@ export default function Show({
                                 reseller.owner
                                     ?.is_active
                                     ? 'Enabled'
-                                    : 'Disabled - pending tenant isolation'
+                                    : 'Disabled'
                             }
                         />
 
