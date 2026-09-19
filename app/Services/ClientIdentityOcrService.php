@@ -12,9 +12,25 @@ use Symfony\Component\Process\Process;
 
 class ClientIdentityOcrService
 {
+    /*
+     * IDENTITY_SCAN_HARD_BUDGET_V7
+     *
+     * A customer-facing ID scan must never spend
+     * close to the web-server 60-second timeout.
+     */
+    private ?float $scanDeadline = null;
+
     public function scan(
         UploadedFile $document
     ): array {
+        /*
+         * SCAN_DEADLINE_START_V7
+         * SCAN_DEADLINE_V15B
+         */
+        $this->scanDeadline =
+            microtime(true)
+            + 18.0;
+
         $directory =
             storage_path(
                 'app/private/client-id-scan/'
@@ -100,7 +116,19 @@ class ClientIdentityOcrService
                         $ocrText;
                 }
 
-                if ($barcode === '') {
+                /*
+                 * BARCODE_ONLY_WHEN_OCR_EMPTY_V7
+                 *
+                 * Qatar ID/passport text already gives
+                 * the information we need. Do not waste
+                 * another subprocess on every scan.
+                 */
+                if (
+                    $barcode === ''
+                    && trim(
+                        $ocrText
+                    ) === ''
+                ) {
                     $barcode =
                         $this->readBarcode(
                             $image
@@ -152,10 +180,28 @@ class ClientIdentityOcrService
                         ) !== ''
                 );
 
-            if ($meaningful === []) {
+            /*
+             * STRUCTURED_PARSER_GATE_V5
+             *
+             * Do NOT reject only because the generic
+             * parser did not populate fields.
+             *
+             * QatarIdStructureService and
+             * PassportStructureService run afterwards
+             * in the controller and need the raw text.
+             *
+             * Reject only when OCR/barcode produced
+             * absolutely nothing.
+             */
+            if (
+                trim($text) === ''
+                && trim(
+                    (string) $barcode
+                ) === ''
+            ) {
                 throw ValidationException::withMessages([
                     'document' =>
-                        'No readable ID/passport information was detected. Use a clearer scan or enter the information manually.',
+                        'No text could be read from this document. Please reposition the document and scan again.',
                 ]);
             }
 
@@ -173,6 +219,11 @@ class ClientIdentityOcrService
             ];
 
         } finally {
+            /*
+             * SCAN_DEADLINE_CLEAR_V7
+             */
+            $this->scanDeadline = null;
+
             File::deleteDirectory(
                 $directory
             );
@@ -1002,31 +1053,25 @@ class ClientIdentityOcrService
         string $image
     ): string {
         /*
-         * Keep language discovery once per request.
-         * PDFs may contain several pages.
+         * OCR_LANGUAGE_FIXED_V4
+         *
+         * Production server has both eng and ara
+         * traineddata installed. Avoid an extra
+         * tesseract --list-langs process per scan.
          */
-        static $language = null;
+        $language = 'eng+ara';
 
-        if ($language === null) {
-            $languages =
-                $this->run(
-                    [
-                        'tesseract',
-                        '--list-langs',
-                    ],
-                    15,
-                    true
-                );
-
-            $language =
-                preg_match(
-                    '/^ara$/m',
-                    $languages
-                )
-                    ? 'eng+ara'
-                    : 'eng';
-        }
-
+        /*
+         * OCR_FAST_PIPELINE_V3
+         *
+         * QID-first pipeline:
+         *
+         * 1. Create only one small enhanced image.
+         * 2. Run one fast English OCR pass.
+         * 3. If Qatar ID is detected, stop immediately.
+         * 4. Only non-QID documents pay the cost of
+         *    creating/reading passport MRZ crops.
+         */
         $variants =
             $this->prepareOcrVariants(
                 $image,
@@ -1066,7 +1111,8 @@ class ClientIdentityOcrService
                     ],
                     'eng',
                     6,
-                    'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
+                    'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<',
+                    5
                 );
 
             if (
@@ -1122,12 +1168,17 @@ class ClientIdentityOcrService
                         $printedStructured;
                 }
 
+                /*
+                 * PASSPORT_FAST_MRZ_V2
+                 *
+                 * A validated MRZ plus the structured
+                 * PSM 6 pass is enough here.
+                 *
+                 * The old extra PSM 11 pass could add
+                 * another 45-second wait.
+                 */
                 $printedSparse =
-                    $this->tesseractText(
-                        $enhanced,
-                        'eng',
-                        11
-                    );
+                    '';
 
                 if (
                     trim(
@@ -1161,11 +1212,53 @@ class ClientIdentityOcrService
          * eng+ara and reads the English side of Qatar
          * residency cards/passports.
          */
+        /*
+         * QID_BILINGUAL_SINGLE_PASS_V4
+         *
+         * Benchmark on this VPS:
+         * eng+ara PSM6 ~= 2.1 sec at 700-1000px.
+         *
+         * One pass reads both English and Arabic and
+         * replaces the old English-then-Arabic design.
+         */
+        /*
+         * QID_REAL_LAYOUT_PSM11_V5
+         *
+         * Qatar ID labels/values are scattered across
+         * the card, so sparse-text mode is a better
+         * real-document fit.
+         */
+        /*
+         * QID_PRIMARY_BUDGET_V9B
+         *
+         * Real-card OCR was being terminated at
+         * approximately the previous 4-second limit.
+         */
+        /*
+         * QID_PRIMARY_PSM6_V11
+         *
+         * PSM11 repeatedly hit the real-card timeout.
+         * PSM6 was previously benchmarked much faster
+         * at the current ~1000px OCR size while still
+         * reading English + Arabic in one pass.
+         */
+                /*
+         * QID_PRIMARY_ENGLISH_V13
+         * QID_PRIMARY_BUDGET_V15B
+         * OCR_RELIABILITY_BUDGET_V26
+         *
+         * Real bilingual OCR exceeded the fast
+         * request budget. Qatar ID English text is
+         * used for the primary recognition pass.
+         * Arabic-aware parsing remains preserved.
+         */
         $printed =
             $this->tesseractText(
                 $enhanced,
                 'eng',
-                11
+                6,
+                null,
+                12
             );
 
         if (
@@ -1221,58 +1314,41 @@ class ClientIdentityOcrService
          */
         if ($looksLikeQatarId) {
             /*
-             * Qatar ID back now requires only:
-             * - passport number
-             * - passport expiry
-             * - serial number
+             * QID_ARABIC_OCCUPATION_DETAIL_V17
              *
-             * If the fast English pass already read
-             * all three, do not run another Tesseract
-             * process at all.
+             * The real Qatar ID front can contain an
+             * English "Occupation" label while the
+             * actual occupation value is Arabic only.
+             *
+             * Keep the fast English whole-card pass,
+             * then OCR only the lower front-card area
+             * in Arabic when front-side labels exist.
              */
-            $quickFields =
-                $this->parse(
+            $needsArabicFrontDetail =
+                preg_match(
+                    '/(?:'
+                    . 'OCCUPATION'
+                    . '|PROFESSION'
+                    . '|NATIONALITY'
+                    . '|D\\.?O\\.?B'
+                    . ')/iu',
                     $combined
-                );
+                ) === 1;
 
-            if (
-                !empty(
-                    $quickFields[
-                        'passport_number'
-                    ]
-                )
-                && !empty(
-                    $quickFields[
-                        'passport_expiry_date'
-                    ]
-                )
-                && !empty(
-                    $quickFields[
-                        'document_serial_number'
-                    ]
-                )
-            ) {
-                return $combined;
-            }
+            if ($needsArabicFrontDetail) {
+                $arabicDetail =
+                    $this->qatarIdArabicFrontDetail(
+                        $enhanced
+                    );
 
-            /*
-             * Front side still benefits from Arabic
-             * labels for DOB / occupation accuracy.
-             */
-            $qatarText =
-                $this->tesseractText(
-                    $enhanced,
-                    $language,
-                    6
-                );
-
-            if (
-                trim(
-                    $qatarText
-                ) !== ''
-            ) {
-                $texts[] =
-                    $qatarText;
+                if (
+                    trim(
+                        $arabicDetail
+                    ) !== ''
+                ) {
+                    $texts[] =
+                        $arabicDetail;
+                }
             }
 
             return $this->joinOcrTexts(
@@ -1284,6 +1360,12 @@ class ClientIdentityOcrService
          * We now know this is NOT a Qatar ID.
          * Only at this point prepare passport MRZ
          * crops and run the MRZ OCR.
+         */
+        /*
+         * PASSPORT_MRZ_ON_DEMAND_V3
+         *
+         * We reach here only after the quick whole-page
+         * OCR did not classify this document as QID.
          */
         $passportVariants =
             $this->prepareOcrVariants(
@@ -1319,7 +1401,8 @@ class ClientIdentityOcrService
                     ],
                     'eng',
                     6,
-                    'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
+                    'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<',
+                    5
                 );
 
             if (
@@ -1384,7 +1467,8 @@ class ClientIdentityOcrService
                     ],
                     'eng',
                     6,
-                    'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<'
+                    'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<',
+                    5
                 );
 
             if (
@@ -1555,9 +1639,223 @@ class ClientIdentityOcrService
         );
     }
 
+    private function qatarIdArabicFrontDetail(
+        string $image
+    ): string {
+        $dimensions =
+            $this->imageDimensions(
+                $image
+            );
+
+        $width =
+            (int) (
+                $dimensions[0]
+                ?? 0
+            );
+
+        $height =
+            (int) (
+                $dimensions[1]
+                ?? 0
+            );
+
+        if (
+            $width < 1
+            || $height < 1
+        ) {
+            return '';
+        }
+
+        /*
+         * Occupation is in the lower half of the
+         * Qatar ID front. Crop only that small area
+         * so Arabic OCR stays inexpensive.
+         */
+        $cropTop =
+            (int) round(
+                $height
+                * 0.45
+            );
+
+        $cropHeight =
+            max(
+                1,
+                $height
+                - $cropTop
+            );
+
+        $detail =
+            dirname($image)
+            . '/qid-front-arabic-detail.jpg';
+
+        $created =
+            false;
+
+        /*
+         * Prefer in-process GD when available.
+         * This avoids another expensive full
+         * ImageMagick preprocessing pass.
+         */
+        if (
+            function_exists(
+                'imagecreatefromstring'
+            )
+            && function_exists(
+                'imagecrop'
+            )
+            && function_exists(
+                'imagejpeg'
+            )
+        ) {
+            $bytes =
+                @file_get_contents(
+                    $image
+                );
+
+            $source =
+                is_string($bytes)
+                    ? @imagecreatefromstring(
+                        $bytes
+                    )
+                    : false;
+
+            if ($source !== false) {
+                $cropped =
+                    @imagecrop(
+                        $source,
+                        [
+                            'x' => 0,
+                            'y' => $cropTop,
+                            'width' =>
+                                $width,
+                            'height' =>
+                                $cropHeight,
+                        ]
+                    );
+
+                if ($cropped !== false) {
+                    $created =
+                        @imagejpeg(
+                            $cropped,
+                            $detail,
+                            92
+                        );
+
+                    imagedestroy(
+                        $cropped
+                    );
+                }
+
+                imagedestroy(
+                    $source
+                );
+            }
+        }
+
+        /*
+         * Safe fallback when GD is unavailable.
+         */
+        if (
+            !$created
+            && is_executable(
+                '/usr/bin/convert'
+            )
+        ) {
+            $this->run(
+                [
+                    '/usr/bin/convert',
+                    $image,
+                    '-crop',
+                    $width
+                    . 'x'
+                    . $cropHeight
+                    . '+0+'
+                    . $cropTop,
+                    '+repage',
+                    '-strip',
+                    $detail,
+                ],
+                2,
+                true
+            );
+        }
+
+        if (
+            !File::exists(
+                $detail
+            )
+        ) {
+            return '';
+        }
+
+        return $this->tesseractText(
+            $detail,
+            'ara',
+            6,
+            null,
+            4
+        );
+    }
+
     private function looksLikeQatarIdOcrText(
         string $text
     ): bool {
+        /*
+         * QID_ARABIC_SIGNAL_V5
+         *
+         * Tesseract may read the Arabic side correctly
+         * while missing the English "Qatar ID" label.
+         * Normalize Arabic digits and recognize genuine
+         * Qatar-ID Arabic labels before trying passport
+         * fallbacks.
+         */
+        $qidText =
+            strtr(
+                $text,
+                [
+                    '٠' => '0',
+                    '١' => '1',
+                    '٢' => '2',
+                    '٣' => '3',
+                    '٤' => '4',
+                    '٥' => '5',
+                    '٦' => '6',
+                    '٧' => '7',
+                    '٨' => '8',
+                    '٩' => '9',
+                    '۰' => '0',
+                    '۱' => '1',
+                    '۲' => '2',
+                    '۳' => '3',
+                    '۴' => '4',
+                    '۵' => '5',
+                    '۶' => '6',
+                    '۷' => '7',
+                    '۸' => '8',
+                    '۹' => '9',
+                ]
+            );
+
+        if (
+            preg_match(
+                '/(?:'
+                . 'دولة\s*قطر'
+                . '|بطاقة\s*شخصية'
+                . '|الرقم\s*الشخصي'
+                . '|رقم\s*البطاقة'
+                . '|بطاقة\s*الإقامة'
+                . '|تصريح\s*الإقامة'
+                . ')/u',
+                $qidText
+            )
+            || preg_match(
+                '/(?<!\d)\d{11}(?!\d)/',
+                $qidText
+            )
+        ) {
+            return true;
+        }
+
         /*
          * Front-side Qatar ID signals.
          */
@@ -1655,9 +1953,25 @@ class ClientIdentityOcrService
         string $image,
         string $language,
         int $psm,
-        ?string $whitelist = null
+        ?string $whitelist = null,
+        int $timeout = 5
     ): string {
+        /*
+         * OCR_TESSERACT_TIMEOUT_V2
+         *
+         * One OCR attempt must never block the panel
+         * for 45 seconds.
+         */
+        /*
+         * TESSERACT_SINGLE_THREAD_V3
+         *
+         * The VPS has limited CPU. OpenMP spawning
+         * several workers can increase latency.
+         */
         $command = [
+            '/usr/bin/env',
+            'OMP_THREAD_LIMIT=1',
+            'OMP_NUM_THREADS=1',
             'tesseract',
             $image,
             'stdout',
@@ -1680,11 +1994,51 @@ class ClientIdentityOcrService
                 . $whitelist;
         }
 
-        return $this->run(
-            $command,
-            45,
-            true
+        /*
+         * OCR_SAFE_METRICS_V8A
+         *
+         * Never log document text, names, numbers,
+         * dates or any identity-document contents.
+         */
+        $metricStarted =
+            microtime(true);
+
+        $output =
+            $this->run(
+                $command,
+                $timeout,
+                true
+            );
+
+        \Illuminate\Support\Facades\Log::info(
+            'Identity OCR safe metric.',
+            [
+                'language' =>
+                    $language,
+
+                'psm' =>
+                    $psm,
+
+                'budget_seconds' =>
+                    $timeout,
+
+                'elapsed_seconds' =>
+                    round(
+                        microtime(true)
+                        - $metricStarted,
+                        3
+                    ),
+
+                'character_count' =>
+                    mb_strlen(
+                        trim(
+                            (string) $output
+                        )
+                    ),
+            ]
         );
+
+        return $output;
     }
 
     private function prepareOcrVariants(
@@ -1720,43 +2074,163 @@ class ClientIdentityOcrService
             $dimensions[0]
             ?? 0;
 
+        $height =
+            $dimensions[1]
+            ?? 0;
+
+        /*
+         * QID_ZERO_CONVERT_V14
+         *
+         * Browser-side V14 already sends normal image
+         * uploads at about the final OCR resolution.
+         *
+         * The first pass is QID detection only, so use
+         * that image directly instead of spending several
+         * seconds running ImageMagick merely to resize it.
+         *
+         * Passport processing is intentionally unchanged:
+         * includeMrz=true continues through the normal
+         * enhanced-image and MRZ crop pipeline.
+         */
+        if (
+            !$includeMrz
+            && $width > 0
+            && $height > 0
+            && max(
+                $width,
+                $height
+            ) <= 1100
+        ) {
+            \Illuminate\Support\Facades\Log::info(
+                'Identity preprocess safe metric.',
+                [
+                    'elapsed_seconds' =>
+                        0.0,
+
+                    'output_width' =>
+                        (int) $width,
+
+                    'output_height' =>
+                        (int) $height,
+
+                    'bypassed' =>
+                        true,
+                ]
+            );
+
+            return [
+                'enhanced' =>
+                    $image,
+            ];
+        }
+
         /*
          * Keep phone photos manageable on the VPS,
          * while enlarging low resolution uploads.
          */
+        /*
+         * OCR_REAL_CARD_FAST_WIDTH_V9B
+         *
+         * Real Qatar ID labels are much smaller than
+         * synthetic benchmark text. 1000px keeps the
+         * pipeline fast while preserving more detail.
+         */
         if ($width > 0) {
-            if ($width < 1800) {
-                $targetWidth = 1800;
-            } elseif ($width > 3200) {
-                $targetWidth = 3200;
-            } else {
-                $targetWidth = $width;
-            }
+            $targetWidth =
+                min(
+                    $width,
+                    1000
+                );
         } else {
-            $targetWidth = 2400;
+            $targetWidth = 1000;
         }
+
+        /*
+         * OCR_FAST_JPEG_DECODE_V9B
+         *
+         * Thumbnail-before-OCR is substantially cheaper
+         * than Lanczos resize + sharpening on full-size
+         * phone/scanner images.
+         *
+         * MRZ receives its own sharpening later.
+         */
+        /*
+         * OCR_FAST_JPEG_DECODE_V9B
+         *
+         * Large JPEG phone photos are decoded near
+         * OCR size instead of fully decoding the
+         * original multi-megapixel image first.
+         */
+        $preprocessStarted =
+            microtime(true);
 
         $this->run(
             [
                 '/usr/bin/convert',
+
+                '-define',
+                'jpeg:size=1400x1400',
+
                 $image,
+
                 '-auto-orient',
                 '-strip',
+
+                '-thumbnail',
+                $targetWidth . 'x',
+
                 '-colorspace',
                 'Gray',
-                '-filter',
-                'Lanczos',
-                '-resize',
-                $targetWidth . 'x',
+
                 '-auto-level',
-                '-contrast-stretch',
-                '0.5%x0.5%',
-                '-sharpen',
-                '0x1',
+
                 $enhanced,
             ],
-            35,
+            /*
+             * QID_PREPROCESS_BUDGET_V12
+             *
+             * Real V11 measurement was 4.15s,
+             * narrowly exceeding the old 4s cap.
+             */
+            5,
             true
+        );
+
+        $preprocessDimensions =
+            @getimagesize(
+                $enhanced
+            );
+
+        \Illuminate\Support\Facades\Log::info(
+            'Identity preprocess safe metric.',
+            [
+                'elapsed_seconds' =>
+                    round(
+                        microtime(true)
+                        - $preprocessStarted,
+                        3
+                    ),
+
+                'output_width' =>
+                    is_array(
+                        $preprocessDimensions
+                    )
+                        ? (int) (
+                            $preprocessDimensions[0]
+                            ?? 0
+                        )
+                        : 0,
+
+                'output_height' =>
+                    is_array(
+                        $preprocessDimensions
+                    )
+                        ? (int) (
+                            $preprocessDimensions[1]
+                            ?? 0
+                        )
+                        : 0,
+            ]
         );
 
         if (
@@ -1889,6 +2363,32 @@ class ClientIdentityOcrService
     private function imageDimensions(
         string $image
     ): array {
+        /*
+         * OCR_NATIVE_DIMENSIONS_V4
+         *
+         * Avoid spawning ImageMagick identify for
+         * ordinary JPG/PNG/WebP files.
+         */
+        $native =
+            @getimagesize(
+                $image
+            );
+
+        if (
+            is_array($native)
+            && isset(
+                $native[0],
+                $native[1]
+            )
+            && (int) $native[0] > 0
+            && (int) $native[1] > 0
+        ) {
+            return [
+                (int) $native[0],
+                (int) $native[1],
+            ];
+        }
+
         $value =
             $this->run(
                 [
@@ -3277,7 +3777,8 @@ class ClientIdentityOcrService
                 '--raw',
                 $image,
             ],
-            20,
+            /* BARCODE_TIMEOUT_V7 */
+            2,
             true
         );
     }
@@ -3538,6 +4039,36 @@ class ClientIdentityOcrService
         int $timeout = 30,
         bool $allowFailure = false
     ): string {
+        /*
+         * PROCESS_REMAINING_BUDGET_V7
+         *
+         * Best-effort OCR/conversion fallbacks share
+         * one global customer-facing deadline.
+         */
+        if (
+            $allowFailure
+            && $this->scanDeadline !== null
+        ) {
+            $remaining =
+                $this->scanDeadline
+                - microtime(true);
+
+            if ($remaining <= 0.25) {
+                return '';
+            }
+
+            $timeout =
+                max(
+                    1,
+                    min(
+                        $timeout,
+                        (int) ceil(
+                            $remaining
+                        )
+                    )
+                );
+        }
+
         $process =
             new Process(
                 $command
@@ -3547,7 +4078,29 @@ class ClientIdentityOcrService
             $timeout
         );
 
-        $process->run();
+        /*
+         * OCR_TIMEOUT_RECOVERY_V2
+         *
+         * Symfony throws before the normal
+         * allowFailure handling when a process hits
+         * its timeout. OCR fallback calls are allowed
+         * to fail, so keep any partial output and move
+         * on instead of turning it into a 500 response.
+         */
+        try {
+            $process->run();
+        } catch (
+            \Symfony\Component\Process\Exception\ProcessTimedOutException
+            $exception
+        ) {
+            if (!$allowFailure) {
+                throw $exception;
+            }
+
+            return trim(
+                $process->getOutput()
+            );
+        }
 
         $output =
             trim(

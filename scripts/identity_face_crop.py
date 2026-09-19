@@ -11,94 +11,143 @@ CASCADE_PATH = (
     "haarcascade_frontalface_default.xml"
 )
 
+DETECTION_MAX_SIDE = 640
+
 
 def fail(message):
-    print(message, file=sys.stderr)
+    print(message, file=sys.stderr, flush=True)
     sys.exit(2)
 
 
-def rotated_images(image):
-    return [
+def detection_image(image):
+    height, width = image.shape[:2]
+    longest = max(width, height)
+
+    if longest <= DETECTION_MAX_SIDE:
+        return image, 1.0
+
+    scale = DETECTION_MAX_SIDE / float(longest)
+
+    resized = cv2.resize(
         image,
-        cv2.rotate(
-            image,
-            cv2.ROTATE_90_CLOCKWISE
+        (
+            max(1, int(round(width * scale))),
+            max(1, int(round(height * scale))),
         ),
-        cv2.rotate(
-            image,
-            cv2.ROTATE_90_COUNTERCLOCKWISE
+        interpolation=cv2.INTER_AREA,
+    )
+
+    return resized, scale
+
+
+def detect_one_orientation(image, cascade):
+    small, scale = detection_image(image)
+
+    gray = cv2.cvtColor(
+        small,
+        cv2.COLOR_BGR2GRAY,
+    )
+
+    gray = cv2.equalizeHist(gray)
+
+    height, width = gray.shape[:2]
+
+    min_side = max(
+        28,
+        min(width, height) // 18,
+    )
+
+    faces = cascade.detectMultiScale(
+        gray,
+        scaleFactor=1.12,
+        minNeighbors=5,
+        minSize=(
+            min_side,
+            min_side,
         ),
-    ]
+        flags=cv2.CASCADE_SCALE_IMAGE,
+    )
+
+    if len(faces) == 0:
+        return None
+
+    best = None
+
+    for x, y, w, h in faces:
+        if w <= 0 or h <= 0:
+            continue
+
+        ratio = w / float(h)
+
+        if ratio < 0.68 or ratio > 1.48:
+            continue
+
+        image_area = width * height
+        face_area = w * h
+
+        relative_area = (
+            face_area /
+            float(image_area)
+        )
+
+        if relative_area < 0.0008:
+            continue
+
+        if relative_area > 0.40:
+            continue
+
+        if (
+            best is None
+            or face_area > best["score"]
+        ):
+            inverse = 1.0 / scale
+
+            best = {
+                "image": image,
+                "x": int(round(x * inverse)),
+                "y": int(round(y * inverse)),
+                "w": int(round(w * inverse)),
+                "h": int(round(h * inverse)),
+                "score": int(face_area),
+            }
+
+    return best
 
 
 def find_best_face(image, cascade):
-    best = None
+    # Fast path:
+    # scanner/browser images normally arrive correctly oriented.
+    candidate = detect_one_orientation(
+        image,
+        cascade,
+    )
 
-    for rotated in rotated_images(image):
-        gray = cv2.cvtColor(
-            rotated,
-            cv2.COLOR_BGR2GRAY
-        )
+    if candidate is not None:
+        return candidate
 
-        gray = cv2.equalizeHist(gray)
+    # Rotation fallback runs only when normal orientation fails.
+    rotated = cv2.rotate(
+        image,
+        cv2.ROTATE_90_CLOCKWISE,
+    )
 
-        height, width = gray.shape[:2]
+    candidate = detect_one_orientation(
+        rotated,
+        cascade,
+    )
 
-        min_side = max(
-            40,
-            min(width, height) // 22
-        )
+    if candidate is not None:
+        return candidate
 
-        faces = cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.06,
-            minNeighbors=7,
-            minSize=(
-                min_side,
-                min_side
-            ),
-            flags=cv2.CASCADE_SCALE_IMAGE,
-        )
+    rotated = cv2.rotate(
+        image,
+        cv2.ROTATE_90_COUNTERCLOCKWISE,
+    )
 
-        for x, y, w, h in faces:
-            if w <= 0 or h <= 0:
-                continue
-
-            ratio = w / float(h)
-
-            if ratio < 0.72 or ratio > 1.42:
-                continue
-
-            image_area = width * height
-            face_area = w * h
-
-            relative_area = (
-                face_area /
-                float(image_area)
-            )
-
-            if relative_area < 0.001:
-                continue
-
-            if relative_area > 0.35:
-                continue
-
-            score = face_area
-
-            if (
-                best is None
-                or score > best["score"]
-            ):
-                best = {
-                    "image": rotated,
-                    "x": int(x),
-                    "y": int(y),
-                    "w": int(w),
-                    "h": int(h),
-                    "score": int(score),
-                }
-
-    return best
+    return detect_one_orientation(
+        rotated,
+        cascade,
+    )
 
 
 def crop_face_only(candidate):
@@ -114,22 +163,17 @@ def crop_face_only(candidate):
     center_x = x + (w / 2.0)
     center_y = y + (h / 2.0)
 
-    # Tight square around the detected face.
-    # Enough space for hair/chin, but intentionally
-    # avoids ID text and document background.
     side = int(
         round(
-            max(w, h) * 1.28
+            max(w, h) * 1.30
         )
     )
 
     side = max(
         side,
-        max(w, h)
+        max(w, h),
     )
 
-    # Slight upward bias keeps forehead/hair
-    # while preventing too much area below face.
     center_y -= h * 0.03
 
     left = int(
@@ -159,7 +203,7 @@ def crop_face_only(candidate):
         shift = right - image_w
         left = max(
             0,
-            left - shift
+            left - shift,
         )
         right = image_w
 
@@ -167,7 +211,7 @@ def crop_face_only(candidate):
         shift = bottom - image_h
         top = max(
             0,
-            top - shift
+            top - shift,
         )
         bottom = image_h
 
@@ -177,14 +221,12 @@ def crop_face_only(candidate):
     ]
 
     if crop.size == 0:
-        fail(
-            "FACE_CROP_EMPTY"
-        )
+        fail("FACE_CROP_EMPTY")
 
     crop = cv2.resize(
         crop,
         (360, 360),
-        interpolation=cv2.INTER_LANCZOS4
+        interpolation=cv2.INTER_LANCZOS4,
     )
 
     return crop
@@ -201,38 +243,37 @@ def main():
     target = sys.argv[2]
 
     if not os.path.isfile(source):
-        fail(
-            "SOURCE_NOT_FOUND"
-        )
+        fail("SOURCE_NOT_FOUND")
+
+    # Keep OpenCV predictable on the 1-vCPU VPS.
+    try:
+        cv2.setNumThreads(1)
+        cv2.setUseOptimized(True)
+    except Exception:
+        pass
 
     cascade = cv2.CascadeClassifier(
         CASCADE_PATH
     )
 
     if cascade.empty():
-        fail(
-            "FACE_CASCADE_UNAVAILABLE"
-        )
+        fail("FACE_CASCADE_UNAVAILABLE")
 
     image = cv2.imread(
         source,
-        cv2.IMREAD_COLOR
+        cv2.IMREAD_COLOR,
     )
 
     if image is None:
-        fail(
-            "IMAGE_READ_FAILED"
-        )
+        fail("IMAGE_READ_FAILED")
 
     candidate = find_best_face(
         image,
-        cascade
+        cascade,
     )
 
     if candidate is None:
-        fail(
-            "FACE_NOT_DETECTED"
-        )
+        fail("FACE_NOT_DETECTED")
 
     face = crop_face_only(
         candidate
@@ -242,7 +283,7 @@ def main():
         os.path.dirname(
             os.path.abspath(target)
         ),
-        exist_ok=True
+        exist_ok=True,
     )
 
     ok = cv2.imwrite(
@@ -251,24 +292,21 @@ def main():
         [
             cv2.IMWRITE_WEBP_QUALITY,
             72,
-        ]
+        ],
     )
 
     if not ok:
-        fail(
-            "FACE_WRITE_FAILED"
-        )
+        fail("FACE_WRITE_FAILED")
 
     if (
         not os.path.isfile(target)
         or os.path.getsize(target) < 100
     ):
-        fail(
-            "FACE_OUTPUT_INVALID"
-        )
+        fail("FACE_OUTPUT_INVALID")
 
     print(
-        "FACE_ONLY_CROP=PASS"
+        "FACE_FAST_V29=PASS",
+        flush=True,
     )
 
 

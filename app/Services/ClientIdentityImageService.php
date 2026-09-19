@@ -267,8 +267,15 @@ class ClientIdentityImageService
                         $faceOutput,
                     ]);
 
+                /*
+                 * FACE_PROCESS_BUDGET_V27
+                 *
+                 * Face extraction is CPU-bound on the
+                 * 1 GB VPS. Five seconds was too short
+                 * for real scanned Qatar IDs/passports.
+                 */
                 $process->setTimeout(
-                    20
+                    15
                 );
 
                 $process->run();
@@ -727,6 +734,19 @@ class ClientIdentityImageService
         array $command,
         int $timeout
     ): void {
+        /*
+         * IMAGE_STAGE_PROCESS_CAP_V7
+         * FACE_PREVIEW_PROCESS_BUDGET_V25B
+         *
+         * Preview generation is optional. Never let
+         * it hold the OCR response for many seconds.
+         */
+        $timeout =
+            min(
+                $timeout,
+                8
+            );
+
         $process =
             new Process(
                 $command

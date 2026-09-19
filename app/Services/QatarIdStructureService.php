@@ -173,6 +173,12 @@ class QatarIdStructureService
         }
 
         if ($backDetected) {
+            /*
+             * QID_STRICT_BACK_CODES_V18
+             *
+             * Never concatenate neighbouring OCR text
+             * into passport/serial identifiers.
+             */
             $this->fillTextField(
                 $fields,
                 'passport_number',
@@ -180,27 +186,43 @@ class QatarIdStructureService
                 $text
             );
 
+            $passportNumber =
+                $this->strictCodeAfterLabel(
+                    $text,
+                    $this->labels(
+                        'back',
+                        'passport_number'
+                    ),
+                    5,
+                    15
+                );
+
             if (
-                !empty(
+                $passportNumber === null
+                && !empty(
                     $fields[
                         'passport_number'
                     ]
                 )
+                && preg_match(
+                    '/^[A-Z0-9]{5,15}$/i',
+                    trim(
+                        (string) $fields[
+                            'passport_number'
+                        ]
+                    ),
+                    $passportMatch
+                )
             ) {
-                $fields[
-                    'passport_number'
-                ] =
+                $passportNumber =
                     strtoupper(
-                        preg_replace(
-                            '/[^A-Z0-9]/i',
-                            '',
-                            (string) $fields[
-                                'passport_number'
-                            ]
-                        )
-                        ?? ''
+                        $passportMatch[0]
                     );
             }
+
+            $fields[
+                'passport_number'
+            ] = $passportNumber;
 
             $this->fillDateField(
                 $fields,
@@ -215,6 +237,44 @@ class QatarIdStructureService
                 'back',
                 $text
             );
+
+            $serialNumber =
+                $this->strictCodeAfterLabel(
+                    $text,
+                    $this->labels(
+                        'back',
+                        'document_serial_number'
+                    ),
+                    5,
+                    20
+                );
+
+            if (
+                $serialNumber === null
+                && !empty(
+                    $fields[
+                        'document_serial_number'
+                    ]
+                )
+                && preg_match(
+                    '/^[A-Z0-9]{5,20}$/i',
+                    trim(
+                        (string) $fields[
+                            'document_serial_number'
+                        ]
+                    ),
+                    $serialMatch
+                )
+            ) {
+                $serialNumber =
+                    strtoupper(
+                        $serialMatch[0]
+                    );
+            }
+
+            $fields[
+                'document_serial_number'
+            ] = $serialNumber;
 
             $this->fillTextField(
                 $fields,
@@ -313,6 +373,33 @@ class QatarIdStructureService
                     'المهنة',
                 ]
             );
+
+        /*
+         * QID_ENGLISH_OCCUPATION_V16
+         *
+         * Primary real-card OCR is currently English.
+         * Recover the front-side occupation directly
+         * from the English label when Arabic text is
+         * not available.
+         */
+        $englishOccupation =
+            $this->englishLabelValue(
+                $text,
+                [
+                    'Occupation',
+                    'Profession',
+                ],
+                3
+            );
+
+        if (
+            $arabicOccupation === null
+            && $englishOccupation !== null
+        ) {
+            $fields[
+                'occupation'
+            ] = $englishOccupation;
+        }
 
         if (
             $arabicOccupation
@@ -931,6 +1018,87 @@ class QatarIdStructureService
         );
     }
 
+    private function strictCodeAfterLabel(
+        string $text,
+        array $labels,
+        int $minimumLength,
+        int $maximumLength
+    ): ?string {
+        $lines =
+            preg_split(
+                '/\R/u',
+                $this->stripBidi(
+                    $text
+                )
+            ) ?: [];
+
+        foreach ($lines as $line) {
+            foreach ($labels as $label) {
+                $label =
+                    trim(
+                        (string) $label
+                    );
+
+                if ($label === '') {
+                    continue;
+                }
+
+                $position =
+                    mb_stripos(
+                        $line,
+                        $label,
+                        0,
+                        'UTF-8'
+                    );
+
+                if ($position === false) {
+                    continue;
+                }
+
+                $after =
+                    mb_substr(
+                        $line,
+                        $position
+                        + mb_strlen(
+                            $label,
+                            'UTF-8'
+                        ),
+                        null,
+                        'UTF-8'
+                    );
+
+                $after =
+                    preg_replace(
+                        '/^[\s:;#.,\-–—"“”\'()]+/u',
+                        '',
+                        $after
+                    )
+                    ?? '';
+
+                $pattern =
+                    '/^([A-Z0-9]{'
+                    . $minimumLength
+                    . ','
+                    . $maximumLength
+                    . '})(?=[^A-Z0-9]|$)/i';
+
+                if (
+                    preg_match(
+                        $pattern,
+                        $after,
+                        $match
+                    )
+                ) {
+                    return strtoupper(
+                        $match[1]
+                    );
+                }
+            }
+        }
+
+        return null;
+    }
+
     private function normalizeResidencyType(
         string $value
     ): string {
@@ -1046,6 +1214,39 @@ class QatarIdStructureService
                 '/(?<!\d)\d{11}(?!\d)/',
                 $text
             ) === 1;
+
+        /*
+         * QID_STRONG_FRONT_SIGNAL_V6
+         *
+         * A real Qatar ID front may be read mainly in
+         * Arabic. If a valid 11-digit QID is present
+         * together with a Qatar-ID-specific English or
+         * Arabic signal, this is strong enough to treat
+         * the document as a Qatar ID front.
+         *
+         * Do not require name/nationality/DOB labels
+         * before extracting the QID itself.
+         */
+        if (
+            $hasQid
+            && preg_match(
+                '/(?:'
+                . 'STATE\s+OF\s+QATAR'
+                . '|QATAR\s+ID'
+                . '|\bQID\b'
+                . '|ID\.?\s*(?:NO|NUMBER)'
+                . '|دولة\s*قطر'
+                . '|بطاقة\s*شخصية'
+                . '|البطاقة\s*الشخصية'
+                . '|الرقم\s*الشخصي'
+                . '|الرقم\s*الشخصى'
+                . '|رقم\s*البطاقة'
+                . ')/iu',
+                $text
+            ) === 1
+        ) {
+            return true;
+        }
 
         $score = 0;
 

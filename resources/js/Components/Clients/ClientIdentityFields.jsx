@@ -104,6 +104,205 @@ function scannerAgentFetch(
     );
 }
 
+
+/*
+ * CLIENT_ID_SAFE_UPLOAD_RESIZE_V1
+ *
+ * Normal image uploads are reduced before sending
+ * them to the small VPS. PDF files stay unchanged.
+ *
+ * OCR still receives enough resolution for an ID card
+ * while avoiding multi-megapixel Tesseract workloads.
+ */
+const prepareIdentityUploadFile =
+    async (file) => {
+        if (!file) {
+            return file;
+        }
+
+        const mime =
+            String(
+                file.type
+                ?? ''
+            ).toLowerCase();
+
+        if (
+            mime === 'application/pdf'
+            || !mime.startsWith(
+                'image/'
+            )
+        ) {
+            return file;
+        }
+
+        const maxDimension =
+            1000;
+
+        let bitmap =
+            null;
+
+        try {
+            bitmap =
+                await createImageBitmap(
+                    file
+                );
+
+            const width =
+                bitmap.width;
+
+            const height =
+                bitmap.height;
+
+            if (
+                width < 1
+                || height < 1
+            ) {
+                return file;
+            }
+
+            const scale =
+                Math.min(
+                    1,
+                    maxDimension
+                    / Math.max(
+                        width,
+                        height
+                    )
+                );
+
+            /*
+             * Already small enough:
+             * preserve the original file.
+             */
+            if (scale >= 1) {
+                return file;
+            }
+
+            const outputWidth =
+                Math.max(
+                    1,
+                    Math.round(
+                        width
+                        * scale
+                    )
+                );
+
+            const outputHeight =
+                Math.max(
+                    1,
+                    Math.round(
+                        height
+                        * scale
+                    )
+                );
+
+            const canvas =
+                document.createElement(
+                    'canvas'
+                );
+
+            canvas.width =
+                outputWidth;
+
+            canvas.height =
+                outputHeight;
+
+            const context =
+                canvas.getContext(
+                    '2d',
+                    {
+                        alpha:
+                            false,
+                    }
+                );
+
+            if (!context) {
+                return file;
+            }
+
+            context.fillStyle =
+                '#ffffff';
+
+            context.fillRect(
+                0,
+                0,
+                outputWidth,
+                outputHeight
+            );
+
+            context.imageSmoothingEnabled =
+                true;
+
+            context.imageSmoothingQuality =
+                'high';
+
+            context.drawImage(
+                bitmap,
+                0,
+                0,
+                outputWidth,
+                outputHeight
+            );
+
+            const blob =
+                await new Promise(
+                    (resolve) => {
+                        canvas.toBlob(
+                            resolve,
+                            'image/jpeg',
+                            0.92
+                        );
+                    }
+                );
+
+            if (
+                !blob
+                || blob.size < 1
+            ) {
+                return file;
+            }
+
+            const originalName =
+                String(
+                    file.name
+                    ?? 'identity-image'
+                );
+
+            const baseName =
+                originalName
+                    .replace(
+                        /\.[^.]+$/,
+                        ''
+                    )
+                || 'identity-image';
+
+            return new File(
+                [
+                    blob,
+                ],
+                `${baseName}.jpg`,
+                {
+                    type:
+                        'image/jpeg',
+
+                    lastModified:
+                        Date.now(),
+                }
+            );
+        } catch {
+            return file;
+        } finally {
+            if (
+                bitmap
+                && typeof bitmap.close
+                    === 'function'
+            ) {
+                bitmap.close();
+            }
+        }
+    };
+
+
 export default function ClientIdentityFields({
     data,
     setData,
@@ -597,9 +796,14 @@ export default function ClientIdentityFields({
                     const payload =
                         new FormData();
 
+                    const uploadFile =
+                        await prepareIdentityUploadFile(
+                            documentFile
+                        );
+
                     payload.append(
                         'document',
-                        documentFile
+                        uploadFile
                     );
 
                     const response =
