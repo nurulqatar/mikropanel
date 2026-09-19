@@ -921,6 +921,23 @@ require __DIR__.'/reseller.php';
     \App\Http\Controllers\Reseller\MacClientPosController::class
 )->name('reseller.mac-pos');
 
+/*
+ * MAC_POS_DEVICE_TRANSFER_ROUTE_V2
+ */
+\Illuminate\Support\Facades\Route::middleware([
+    'auth',
+    \App\Http\Middleware\EnforceResellerAccess::class,
+])->post(
+    '/reseller/mac-pos/transfer-device',
+    [
+        \App\Http\Controllers\Reseller\MacClientPosController::class,
+        'transferDevice',
+    ]
+)->name(
+    'reseller.mac-pos.transfer-device'
+);
+
+
 
 /*
 |--------------------------------------------------------------------------

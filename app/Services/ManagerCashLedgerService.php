@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ClientRefund;
 use App\Models\Expense;
 use App\Models\ManagerCashHandover;
 use App\Models\ManagerCashLedgerEntry;
@@ -113,6 +114,107 @@ class ManagerCashLedgerService
                 Auth::id()
         );
     }
+
+    /*
+     * CASH_REFUND_LEDGER_V2
+     *
+     * A refund against a Cash payment removes
+     * physical cash from the same Manager account.
+     */
+    public function recordRefund(
+        ClientRefund $refund
+    ): ?ManagerCashLedgerEntry {
+        if (
+            (float) $refund->amount <= 0
+            || !$refund->payment_id
+        ) {
+            return null;
+        }
+
+        $payment =
+            Payment::withoutGlobalScopes()
+                ->find(
+                    $refund->payment_id
+                );
+
+        if (
+            !$payment
+            || !$this->isCash(
+                $payment->payment_method
+            )
+        ) {
+            return null;
+        }
+
+        /*
+         * Prefer the Manager that owns the
+         * original payment collection entry.
+         */
+        $collection =
+            ManagerCashLedgerEntry::query()
+                ->where(
+                    'entry_type',
+                    'collection'
+                )
+                ->where(
+                    'source_type',
+                    'payment'
+                )
+                ->where(
+                    'source_id',
+                    $payment->id
+                )
+                ->first();
+
+        $manager =
+            $collection
+                ? $this->manager(
+                    $collection->manager_id
+                )
+                : $this->manager(
+                    $refund->refunded_by
+                );
+
+        if (!$manager) {
+            return null;
+        }
+
+        $refundDate =
+            $refund->refund_date
+                ? \Illuminate\Support\Carbon::parse(
+                    $refund->refund_date
+                )->toDateString()
+                : now(
+                    'Asia/Qatar'
+                )->toDateString();
+
+        return $this->record(
+            manager: $manager,
+            zoneId:
+                $refund->zone_id
+                ?: $payment->zone_id,
+            entryDate:
+                $refundDate,
+            direction:
+                'debit',
+            entryType:
+                'refund',
+            amount:
+                (float) $refund->amount,
+            sourceType:
+                'client_refund',
+            sourceId:
+                (int) $refund->id,
+            reference:
+                'REFUND-'
+                . $refund->id,
+            notes:
+                'Cash returned to client.',
+            createdBy:
+                $refund->refunded_by
+        );
+    }
+
 
     public function recordExpense(
         Expense $expense
@@ -313,6 +415,9 @@ class ManagerCashLedgerService
         );
     }
 
+    /*
+     * MANAGER_CASH_BACKFILL_WITH_REFUNDS_V2
+     */
     public function backfillExisting(): array
     {
         $beforeCollections =
@@ -328,6 +433,14 @@ class ManagerCashLedgerService
                 ->where(
                     'entry_type',
                     'expense'
+                )
+                ->count();
+
+        $beforeRefunds =
+            ManagerCashLedgerEntry::query()
+                ->where(
+                    'entry_type',
+                    'refund'
                 )
                 ->count();
 
@@ -382,6 +495,30 @@ class ManagerCashLedgerService
                 }
             );
 
+        ClientRefund::withoutGlobalScopes()
+            ->where(
+                'amount',
+                '>',
+                0
+            )
+            ->whereNotNull(
+                'payment_id'
+            )
+            ->orderBy('id')
+            ->chunkById(
+                200,
+                function ($refunds): void {
+                    foreach (
+                        $refunds
+                        as $refund
+                    ) {
+                        $this->recordRefund(
+                            $refund
+                        );
+                    }
+                }
+            );
+
         return [
             'collections_created' =>
                 ManagerCashLedgerEntry::query()
@@ -400,8 +537,18 @@ class ManagerCashLedgerService
                     )
                     ->count()
                 - $beforeExpenses,
+
+            'refunds_created' =>
+                ManagerCashLedgerEntry::query()
+                    ->where(
+                        'entry_type',
+                        'refund'
+                    )
+                    ->count()
+                - $beforeRefunds,
         ];
     }
+
 
     private function record(
         User $manager,
@@ -486,6 +633,18 @@ class ManagerCashLedgerService
             );
     }
 
+    /*
+     * OPERATOR_MANAGER_CASH_RESOLUTION_V2
+     *
+     * Manager action:
+     *   -> own Manager Cash.
+     *
+     * Normal Operator action:
+     *   -> reseller's single active Manager.
+     *
+     * Owner cash is not silently mixed into
+     * Manager physical cash.
+     */
     private function manager(
         ?int $userId
     ): ?User {
@@ -520,24 +679,94 @@ class ManagerCashLedgerService
 
         if (
             !$user
-            || !$user->isManager()
             || !$user->reseller_id
         ) {
-            $this
-                ->managerCache[
-                    $userId
-                ] = null;
+            $this->managerCache[
+                $userId
+            ] = null;
 
             return null;
         }
 
-        $this
-            ->managerCache[
+        /*
+         * Direct Manager transaction.
+         */
+        if ($user->isManager()) {
+            $this->managerCache[
                 $userId
             ] = $user;
 
-        return $user;
+            return $user;
+        }
+
+        /*
+         * Only normal Operators are mapped
+         * automatically to Manager Cash.
+         */
+        if (!$user->isOperator()) {
+            $this->managerCache[
+                $userId
+            ] = null;
+
+            return null;
+        }
+
+        $managers =
+            User::query()
+                ->where(
+                    'reseller_id',
+                    $user->reseller_id
+                )
+                ->where(
+                    'is_active',
+                    true
+                )
+                ->where(
+                    function ($query): void {
+                        $query
+                            ->where(
+                                'role',
+                                'manager'
+                            )
+                            ->orWhere(
+                                function (
+                                    $query
+                                ): void {
+                                    $query
+                                        ->where(
+                                            'role',
+                                            'operator'
+                                        )
+                                        ->where(
+                                            'staff_role',
+                                            'manager'
+                                        );
+                                }
+                            );
+                    }
+                )
+                ->orderBy('id')
+                ->limit(2)
+                ->get();
+
+        if (
+            $managers->count() !== 1
+        ) {
+            throw new \RuntimeException(
+                'Cash accounting requires exactly one active Manager for this reseller.'
+            );
+        }
+
+        $manager =
+            $managers->first();
+
+        $this->managerCache[
+            $userId
+        ] = $manager;
+
+        return $manager;
     }
+
 
     private function isCash(
         ?string $method

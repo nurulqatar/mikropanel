@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\ClientRefund;
 use App\Models\Expense;
 use App\Models\Payment;
 use App\Services\ManagerCashLedgerService;
@@ -43,6 +44,24 @@ class ManagerCashServiceProvider extends ServiceProvider
             ): void {
                 $ledger->reversePayment(
                     $payment
+                );
+            }
+        );
+
+        /*
+         * CASH_REFUND_LISTENER_V2
+         *
+         * Cash refund immediately reduces the
+         * responsible Manager physical cash.
+         */
+        ClientRefund::created(
+            function (
+                ClientRefund $refund
+            ) use (
+                $ledger
+            ): void {
+                $ledger->recordRefund(
+                    $refund
                 );
             }
         );

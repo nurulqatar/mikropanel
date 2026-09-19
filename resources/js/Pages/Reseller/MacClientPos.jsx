@@ -387,7 +387,8 @@ export default function MacClientPos({
                     }
                 />
             )}
-        </AppLayout>
+
+</AppLayout>
     );
 }
 
@@ -475,6 +476,303 @@ function QuickClientWorkspace({
             selectedClient,
         ]);
 
+    /*
+     * MAC_POS_DEVICE_TRANSFER_UI_V2
+     */
+    const [
+        transferModalOpen,
+        setTransferModalOpen,
+    ] = useState(false);
+
+    const [
+        transferDeviceId,
+        setTransferDeviceId,
+    ] = useState('');
+
+    const [
+        transferTargetClientId,
+        setTransferTargetClientId,
+    ] = useState('');
+
+    const [
+        transferProcessing,
+        setTransferProcessing,
+    ] = useState(false);
+
+    const [
+        transferErrors,
+        setTransferErrors,
+    ] = useState({});
+
+    const transferTargets =
+        useMemo(() => {
+            if (!selectedClient) {
+                return [];
+            }
+
+            return clients
+                .filter(
+                    (client) =>
+                        !client.parent_client_id
+                        && Number(
+                            client.id,
+                        )
+                            !== Number(
+                                selectedClient.id,
+                            )
+                        && Number(
+                            client.zone_id,
+                        )
+                            === Number(
+                                selectedClient
+                                    .zone_id,
+                            ),
+                )
+                .map(
+                    (primary) => {
+                        const family =
+                            clients.filter(
+                                (device) =>
+                                    Number(
+                                        device.id,
+                                    )
+                                        === Number(
+                                            primary.id,
+                                        )
+                                    || Number(
+                                        device.parent_client_id
+                                            ?? 0,
+                                    )
+                                        === Number(
+                                            primary.id,
+                                        ),
+                            );
+
+                        return {
+                            ...primary,
+
+                            family_due:
+                                family.reduce(
+                                    (
+                                        total,
+                                        device,
+                                    ) =>
+                                        total
+                                        + Number(
+                                            device.total_due
+                                            ?? 0,
+                                        ),
+                                    0,
+                                ),
+
+                            device_count:
+                                family.length,
+                        };
+                    },
+                )
+                .sort(
+                    (left, right) =>
+                        String(
+                            left.name
+                            ?? '',
+                        ).localeCompare(
+                            String(
+                                right.name
+                                ?? '',
+                            ),
+                        ),
+                );
+        }, [
+            clients,
+            selectedClient,
+        ]);
+
+    const selectedTransferDevice =
+        clientDevices.find(
+            (device) =>
+                String(device.id)
+                === String(
+                    transferDeviceId,
+                ),
+        ) ?? null;
+
+    const selectedTransferTarget =
+        transferTargets.find(
+            (client) =>
+                String(client.id)
+                === String(
+                    transferTargetClientId,
+                ),
+        ) ?? null;
+
+    const autoPromoteDevice =
+        selectedTransferDevice
+        && !selectedTransferDevice
+            .parent_client_id
+            ? (
+                clientDevices
+                    .filter(
+                        (device) =>
+                            Number(
+                                device.id,
+                            )
+                            !== Number(
+                                selectedTransferDevice.id,
+                            ),
+                    )
+                    .sort(
+                        (left, right) =>
+                            Number(left.id)
+                            - Number(right.id),
+                    )[0]
+                ?? null
+            )
+            : null;
+
+    const openTransferDeviceModal =
+        () => {
+            setTransferErrors({});
+
+            setTransferTargetClientId(
+                '',
+            );
+
+            setTransferDeviceId(
+                selectedClient?.id
+                    ? String(
+                        selectedClient.id,
+                    )
+                    : '',
+            );
+
+            setTransferModalOpen(
+                true,
+            );
+        };
+
+    const closeTransferDeviceModal =
+        () => {
+            if (transferProcessing) {
+                return;
+            }
+
+            setTransferModalOpen(
+                false,
+            );
+
+            setTransferDeviceId(
+                '',
+            );
+
+            setTransferTargetClientId(
+                '',
+            );
+
+            setTransferErrors({});
+        };
+
+    const submitDeviceTransfer =
+        () => {
+            if (
+                !transferDeviceId
+                || !transferTargetClientId
+            ) {
+                return;
+            }
+
+            const isMain =
+                !selectedTransferDevice
+                    ?.parent_client_id;
+
+            const label =
+                isMain
+                    ? 'Main Device'
+                    : (
+                        selectedTransferDevice
+                            ?.device_label
+                        || 'Additional Device'
+                    );
+
+            const promotionText =
+                isMain
+                    ? (
+                        autoPromoteDevice
+                            ? ` ${autoPromoteDevice.device_label || autoPromoteDevice.client_code} will automatically become the new Main Device.`
+                            : ' Source customer will have no remaining device.'
+                    )
+                    : '';
+
+            if (
+                !window.confirm(
+                    `Transfer ${label} (${selectedTransferDevice?.client_code ?? ''}) to ${selectedTransferTarget?.name ?? 'selected customer'}?${promotionText}`,
+                )
+            ) {
+                return;
+            }
+
+            setTransferProcessing(
+                true,
+            );
+
+            setTransferErrors({});
+
+            router.post(
+                route(
+                    'reseller.mac-pos.transfer-device',
+                ),
+                {
+                    device_id:
+                        Number(
+                            transferDeviceId,
+                        ),
+
+                    target_client_id:
+                        Number(
+                            transferTargetClientId,
+                        ),
+                },
+                {
+                    preserveScroll:
+                        true,
+
+                    onError:
+                        (errors) => {
+                            setTransferErrors(
+                                errors ?? {},
+                            );
+                        },
+
+                    onSuccess:
+                        () => {
+                            setTransferModalOpen(
+                                false,
+                            );
+
+                            setTransferDeviceId(
+                                '',
+                            );
+
+                            setTransferTargetClientId(
+                                '',
+                            );
+
+                            setSelectedClient(
+                                null,
+                            );
+
+                            setSearch('');
+                        },
+
+                    onFinish:
+                        () => {
+                            setTransferProcessing(
+                                false,
+                            );
+                        },
+                },
+            );
+        };
+
     const additionalDevices =
         clientDevices.filter(
             (device) =>
@@ -529,6 +827,19 @@ function QuickClientWorkspace({
         );
     };
 
+    /*
+     * MAC_POS_CUSTOMER_SEARCH_GROUP_V1
+     *
+     * Keep every physical device inside `clients`
+     * because billing, action-device, renew/refund and
+     * MikroTik workflows require the individual rows.
+     *
+     * Only the SEARCH RESULT list is grouped:
+     * one primary customer = one visible result.
+     *
+     * Searching any child device MAC / IP / client code /
+     * identity still returns its primary customer.
+     */
     const results =
         useMemo(() => {
             const needle =
@@ -536,35 +847,122 @@ function QuickClientWorkspace({
                     .trim()
                     .toLowerCase();
 
+            const customerFamilies =
+                clients
+                    .filter(
+                        (client) =>
+                            !client.parent_client_id,
+                    )
+                    .map((primary) => {
+                        const family =
+                            clients.filter(
+                                (device) =>
+                                    Number(device.id)
+                                        === Number(
+                                            primary.id,
+                                        )
+                                    || Number(
+                                        device.parent_client_id
+                                            ?? 0,
+                                    )
+                                        === Number(
+                                            primary.id,
+                                        ),
+                            );
+
+                        const latestDeviceId =
+                            Math.max(
+                                ...family.map(
+                                    (device) =>
+                                        Number(
+                                            device.id,
+                                        ) || 0,
+                                ),
+                                Number(
+                                    primary.id,
+                                ) || 0,
+                            );
+
+                        return {
+                            primary,
+                            family,
+                            latestDeviceId,
+                        };
+                    })
+                    .sort(
+                        (left, right) =>
+                            right.latestDeviceId
+                            - left.latestDeviceId,
+                    );
+
             if (!needle) {
-                return clients.slice(
-                    0,
-                    8,
-                );
+                return customerFamilies
+                    .slice(0, 8)
+                    .map(
+                        ({ primary, family }) => ({
+                            ...primary,
+                            family_device_count:
+                                family.length,
+                        }),
+                    );
             }
 
-            return clients
-                .filter((client) => {
-                    const haystack = [
-                        client.name,
-                        client.client_code,
-                        client.phone,
-                        client.mac_address,
-                        client.ip_address,
-                        client.identity_number,
-                        client.identity_barcode,
-                        client.nationality,
-                        client.package?.name,
-                    ]
-                        .filter(Boolean)
-                        .join(' ')
-                        .toLowerCase();
+            return customerFamilies
+                .filter(
+                    ({ primary, family }) => {
+                        const familyHaystack =
+                            family
+                                .flatMap(
+                                    (device) => [
+                                        device.name,
+                                        device.client_code,
+                                        device.device_label,
+                                        device.phone,
+                                        device.mac_address,
+                                        device.ip_address,
+                                        device.identity_number,
+                                        device.identity_barcode,
+                                        device.nationality,
+                                        device.package?.name,
+                                    ],
+                                )
+                                .filter(Boolean)
+                                .join(' ')
+                                .toLowerCase();
 
-                    return haystack.includes(
-                        needle,
-                    );
-                })
-                .slice(0, 8);
+                        const primaryHaystack = [
+                            primary.name,
+                            primary.client_code,
+                            primary.phone,
+                            primary.mac_address,
+                            primary.ip_address,
+                            primary.identity_number,
+                            primary.identity_barcode,
+                            primary.nationality,
+                            primary.package?.name,
+                        ]
+                            .filter(Boolean)
+                            .join(' ')
+                            .toLowerCase();
+
+                        return (
+                            familyHaystack.includes(
+                                needle,
+                            )
+                            || primaryHaystack.includes(
+                                needle,
+                            )
+                        );
+                    },
+                )
+                .slice(0, 8)
+                .map(
+                    ({ primary, family }) => ({
+                        ...primary,
+                        family_device_count:
+                            family.length,
+                    }),
+                );
         }, [
             clients,
             search,
@@ -1154,6 +1552,19 @@ function QuickClientWorkspace({
                                         + ADD DEVICE
                                     </button>
                                 )}
+
+                                {!accountHasDue
+                                    && permissions.edit && (
+                                    <button
+                                        type="button"
+                                        onClick={
+                                            openTransferDeviceModal
+                                        }
+                                        className="rounded-xl bg-violet-600 px-4 py-3 font-black text-white hover:bg-violet-700"
+                                    >
+                                        ⇄ TRANSFER DEVICE
+                                    </button>
+                                )}
                             </div>
 
                             <div className="grid gap-3 sm:grid-cols-2">
@@ -1386,7 +1797,297 @@ function QuickClientWorkspace({
                     )}
                 </div>
             </div>
-        </section>
+                    {transferModalOpen
+                && selectedClient && (
+                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4">
+                    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
+                        <div className="border-b border-slate-200 px-6 py-5">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <div className="text-xs font-black uppercase tracking-widest text-violet-600">
+                                        Same Zone Ownership Transfer
+                                    </div>
+
+                                    <h3 className="mt-1 text-xl font-black text-slate-900">
+                                        Transfer Device
+                                    </h3>
+
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        {selectedClient.name}
+                                        {' · '}
+                                        {selectedClient.client_code}
+                                    </p>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={
+                                        closeTransferDeviceModal
+                                    }
+                                    disabled={
+                                        transferProcessing
+                                    }
+                                    className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-600 hover:bg-slate-200 disabled:opacity-50"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-5 p-6">
+                            <div>
+                                <label className="mb-1 block text-sm font-black text-slate-700">
+                                    Device
+                                </label>
+
+                                <select
+                                    value={
+                                        transferDeviceId
+                                    }
+                                    onChange={(
+                                        event,
+                                    ) => {
+                                        setTransferDeviceId(
+                                            event.target.value,
+                                        );
+
+                                        setTransferErrors(
+                                            {},
+                                        );
+                                    }}
+                                    className="w-full rounded-xl border-slate-300"
+                                >
+                                    <option value="">
+                                        Select device
+                                    </option>
+
+                                    {clientDevices.map(
+                                        (device) => (
+                                            <option
+                                                key={
+                                                    device.id
+                                                }
+                                                value={
+                                                    device.id
+                                                }
+                                            >
+                                                {
+                                                    !device.parent_client_id
+                                                        ? 'Main Device'
+                                                        : (
+                                                            device.device_label
+                                                            || 'Additional Device'
+                                                        )
+                                                }
+                                                {' — '}
+                                                {device.client_code}
+                                                {' — '}
+                                                {device.mac_address || '-'}
+                                                {' — '}
+                                                {device.ip_address || '-'}
+                                            </option>
+                                        ),
+                                    )}
+                                </select>
+                            </div>
+
+                            {selectedTransferDevice
+                                && !selectedTransferDevice
+                                    .parent_client_id && (
+                                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+                                    <div className="font-black">
+                                        Main Device selected
+                                    </div>
+
+                                    {autoPromoteDevice ? (
+                                        <div className="mt-1">
+                                            {
+                                                autoPromoteDevice.device_label
+                                                || autoPromoteDevice.client_code
+                                            }
+                                            {' ('}
+                                            {
+                                                autoPromoteDevice.client_code
+                                            }
+                                            {') will automatically become the new Main Device.'}
+                                        </div>
+                                    ) : (
+                                        <div className="mt-1">
+                                            Source customer has no other device. After this transfer the source customer will have no remaining device.
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="mb-1 block text-sm font-black text-slate-700">
+                                    Transfer To Customer
+                                </label>
+
+                                <select
+                                    value={
+                                        transferTargetClientId
+                                    }
+                                    onChange={(
+                                        event,
+                                    ) => {
+                                        setTransferTargetClientId(
+                                            event.target.value,
+                                        );
+
+                                        setTransferErrors(
+                                            {},
+                                        );
+                                    }}
+                                    className="w-full rounded-xl border-slate-300"
+                                >
+                                    <option value="">
+                                        Select destination customer
+                                    </option>
+
+                                    {transferTargets.map(
+                                        (client) => (
+                                            <option
+                                                key={
+                                                    client.id
+                                                }
+                                                value={
+                                                    client.id
+                                                }
+                                                disabled={
+                                                    Number(
+                                                        client.family_due
+                                                        ?? 0,
+                                                    )
+                                                    > 0
+                                                }
+                                            >
+                                                {client.name}
+                                                {' — '}
+                                                {client.client_code}
+                                                {' — '}
+                                                {client.device_count}
+                                                {' device(s)'}
+                                                {
+                                                    Number(
+                                                        client.family_due
+                                                        ?? 0,
+                                                    ) > 0
+                                                        ? ` — DUE QAR ${money(client.family_due)}`
+                                                        : ''
+                                                }
+                                            </option>
+                                        ),
+                                    )}
+                                </select>
+
+                                {transferTargets.length
+                                    === 0 && (
+                                    <div className="mt-2 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-700">
+                                        No other primary customer exists in this same Network Zone yet.
+                                    </div>
+                                )}
+                            </div>
+
+                            {selectedTransferDevice && (
+                                <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2">
+                                    <QuickInfo
+                                        label="MAC"
+                                        value={
+                                            selectedTransferDevice.mac_address
+                                            || '-'
+                                        }
+                                    />
+
+                                    <QuickInfo
+                                        label="IP"
+                                        value={
+                                            selectedTransferDevice.ip_address
+                                            || '-'
+                                        }
+                                    />
+
+                                    <QuickInfo
+                                        label="Package"
+                                        value={
+                                            selectedTransferDevice.package?.name
+                                            || '-'
+                                        }
+                                    />
+
+                                    <QuickInfo
+                                        label="Expiry"
+                                        value={
+                                            selectedTransferDevice.expiry_date
+                                            || '-'
+                                        }
+                                    />
+                                </div>
+                            )}
+
+                            <div className="rounded-xl bg-cyan-50 p-3 text-xs font-semibold text-cyan-800">
+                                MAC, IP, Router, IP Pool,
+                                Package, Expiry and Client
+                                Code remain unchanged.
+                                Reseller device-slot usage
+                                does not increase.
+                            </div>
+
+                            {(transferErrors.device_id
+                                ||
+                                transferErrors.target_client_id
+                                ||
+                                transferErrors.transfer) && (
+                                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
+                                    {
+                                        transferErrors.device_id
+                                        ||
+                                        transferErrors.target_client_id
+                                        ||
+                                        transferErrors.transfer
+                                    }
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+                            <button
+                                type="button"
+                                onClick={
+                                    closeTransferDeviceModal
+                                }
+                                disabled={
+                                    transferProcessing
+                                }
+                                className="rounded-xl bg-slate-200 px-5 py-3 font-black text-slate-700 hover:bg-slate-300 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={
+                                    submitDeviceTransfer
+                                }
+                                disabled={
+                                    transferProcessing
+                                    || !transferDeviceId
+                                    || !transferTargetClientId
+                                }
+                                className="rounded-xl bg-violet-600 px-5 py-3 font-black text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {
+                                    transferProcessing
+                                        ? 'Transferring...'
+                                        : 'Confirm Transfer'
+                                }
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+</section>
     );
 }
 

@@ -10,6 +10,7 @@ use App\Models\IpRange;
 use App\Models\NetworkZone;
 use App\Models\Package;
 use App\Models\Payment;
+use App\Services\ClientTransferService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -391,6 +392,15 @@ class MacClientPosController extends Controller
                 2
             );
 
+        /*
+         * MAC_POS_LIVE_TODAY_DUE_V2
+         *
+         * Today Due = outstanding balance that
+         * still remains on invoices issued today.
+         *
+         * If the customer pays the due today,
+         * this value immediately decreases.
+         */
         $todayDueCreated =
             round(
                 (float)
@@ -399,13 +409,18 @@ class MacClientPosController extends Controller
                         'issue_date',
                         $today
                     )
-                    ->where(
+                    ->whereNotIn(
                         'status',
-                        '!=',
-                        'cancelled'
+                        [
+                            'cancelled',
+                            'refunded',
+                        ]
+                    )
+                    ->whereNull(
+                        'service_cancelled_at'
                     )
                     ->sum(
-                        'initial_due_amount'
+                        'due_amount'
                     ),
                 2
             );
@@ -639,4 +654,132 @@ class MacClientPosController extends Controller
             ]
         );
     }
+
+    /*
+     * MAC_POS_DEVICE_TRANSFER_CONTROLLER_V2
+     */
+    public function transferDevice(
+        Request $request,
+        ClientTransferService $service
+    ): RedirectResponse {
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user
+            && $user->isResellerUser()
+            && (
+                $user->isResellerOwner()
+                || $user->hasPermission(
+                    'clients.edit'
+                )
+            ),
+            403
+        );
+
+        $data =
+            $request->validate([
+                'device_id' => [
+                    'required',
+                    'integer',
+                ],
+
+                'target_client_id' => [
+                    'required',
+                    'integer',
+                ],
+            ]);
+
+        $contextZoneId =
+            null;
+
+        if (
+            !$user->isResellerOwner()
+        ) {
+            $contextZoneId =
+                $user->isManager()
+                    ? (int)
+                        $request
+                            ->session()
+                            ->get(
+                                'network_zone_id',
+                                0
+                            )
+                    : (int) (
+                        $user->zone_id
+                        ?? 0
+                    );
+
+            if (
+                $contextZoneId
+                <= 0
+            ) {
+                return back()
+                    ->withErrors([
+                        'transfer' =>
+                            'Select an active MAC Network Zone before transferring a device.',
+                    ]);
+            }
+        }
+
+        $result =
+            $service
+                ->transferDeviceOwnership(
+                    $user,
+                    (int)
+                    $data['device_id'],
+                    (int)
+                    $data[
+                        'target_client_id'
+                    ],
+                    $contextZoneId,
+
+                    /*
+                     * MAC_POS_DEVICE_TRANSFER_AUDIT_IP_V3B
+                     */
+                    $request->ip()
+);
+
+        $message =
+            'Device '
+            . $result[
+                'device_code'
+            ]
+            . ' transferred to '
+            . $result[
+                'target_name'
+            ]
+            . '.';
+
+        if (
+            $result[
+                'was_main_device'
+            ]
+        ) {
+            if (
+                $result[
+                    'promoted_client_id'
+                ]
+            ) {
+                $message .=
+                    ' '
+                    . $result[
+                        'promoted_client_code'
+                    ]
+                    . ' is now the source customer Main Device.';
+            } else {
+                $message .=
+                    ' Source customer has no remaining device.';
+            }
+        }
+
+        $message .=
+            ' MAC, IP, Router, Package and Expiry were preserved.';
+
+        return back()->with(
+            'success',
+            $message
+        );
+    }
+
 }

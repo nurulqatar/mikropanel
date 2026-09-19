@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\ClientTransferRequest;
 use App\Models\IpRange;
 use App\Models\NetworkZone;
+use App\Models\ResellerAuditLog;
 use App\Models\Router;
 use App\Models\User;
 use Illuminate\Support\Collection;
@@ -209,6 +210,945 @@ class ClientTransferService
             3
         );
     }
+
+    /*
+     * DEVICE_OWNERSHIP_TRANSFER_V2
+     *
+     * One physical device can move to another
+     * customer inside the SAME Network Zone.
+     *
+     * Network/service fields stay unchanged:
+     * MAC, IP, Router, IP Pool, Package,
+     * Client Code, Expiry and MikroTik IDs.
+     *
+     * MAIN_DEVICE_AUTO_PROMOTE_V2:
+     * If Main Device moves, the oldest remaining
+     * device automatically becomes Main Device.
+     */
+    public function transferDeviceOwnership(
+        User $actor,
+        int $deviceId,
+        int $targetClientId,
+        ?int $contextZoneId = null,
+        ?string $ipAddress = null
+): array {
+        $this->assertMutationPermission(
+            $actor
+        );
+
+        return DB::transaction(
+            function () use (
+                $actor,
+                $deviceId,
+                $targetClientId,
+                $contextZoneId,
+                    $ipAddress
+            ): array {
+                $device =
+                    Client::withoutGlobalScopes()
+                        ->whereNull(
+                            'deleted_at'
+                        )
+                        ->lockForUpdate()
+                        ->findOrFail(
+                            $deviceId
+                        );
+
+                $this->assertTenant(
+                    $actor,
+                    (int)
+                    $device->reseller_id
+                );
+
+                $sourceRootId =
+                    (int) (
+                        $device->parent_client_id
+                        ?: $device->id
+                    );
+
+                if (
+                    $sourceRootId
+                    === $targetClientId
+                ) {
+                    throw ValidationException::withMessages([
+                        'target_client_id' =>
+                            'This device already belongs to the selected customer.',
+                    ]);
+                }
+
+                $rootIds = [
+                    $sourceRootId,
+                    $targetClientId,
+                ];
+
+                sort(
+                    $rootIds,
+                    SORT_NUMERIC
+                );
+
+                $roots =
+                    Client::withoutGlobalScopes()
+                        ->whereNull(
+                            'deleted_at'
+                        )
+                        ->whereNull(
+                            'parent_client_id'
+                        )
+                        ->whereIn(
+                            'id',
+                            $rootIds
+                        )
+                        ->orderBy('id')
+                        ->lockForUpdate()
+                        ->get()
+                        ->keyBy('id');
+
+                $source =
+                    $roots->get(
+                        $sourceRootId
+                    );
+
+                $target =
+                    $roots->get(
+                        $targetClientId
+                    );
+
+                if (!$source) {
+                    throw ValidationException::withMessages([
+                        'device_id' =>
+                            'Source customer was not found.',
+                    ]);
+                }
+
+                if (!$target) {
+                    throw ValidationException::withMessages([
+                        'target_client_id' =>
+                            'Destination customer was not found.',
+                    ]);
+                }
+
+                if (
+                    (int)
+                    $source->reseller_id
+                    !==
+                    (int)
+                    $target->reseller_id
+                    ||
+                    (int)
+                    $source->reseller_id
+                    !==
+                    (int)
+                    $device->reseller_id
+                ) {
+                    throw ValidationException::withMessages([
+                        'target_client_id' =>
+                            'Device transfer is allowed only inside the same reseller.',
+                    ]);
+                }
+
+                if (
+                    (int)
+                    $source->zone_id
+                    !==
+                    (int)
+                    $target->zone_id
+                    ||
+                    (int)
+                    $source->zone_id
+                    !==
+                    (int)
+                    $device->zone_id
+                ) {
+                    throw ValidationException::withMessages([
+                        'target_client_id' =>
+                            'Device transfer is allowed only between customers in the same Network Zone.',
+                    ]);
+                }
+
+                $this->assertZoneAccess(
+                    $actor,
+                    (int)
+                    $source->zone_id,
+                    $contextZoneId
+                );
+
+                $pendingTransfer =
+                    ClientTransferRequest::withoutGlobalScopes()
+                        ->where(
+                            'reseller_id',
+                            $source->reseller_id
+                        )
+                        ->where(
+                            'status',
+                            'pending'
+                        )
+                        ->whereIn(
+                            'client_id',
+                            [
+                                $source->id,
+                                $target->id,
+                            ]
+                        )
+                        ->lockForUpdate()
+                        ->first();
+
+                if ($pendingTransfer) {
+                    throw ValidationException::withMessages([
+                        'device_id' =>
+                            'Complete or cancel the pending Client Zone Transfer first.',
+                    ]);
+                }
+
+                /*
+                 * Lock both families in deterministic
+                 * primary-client order.
+                 */
+                $familyIds = [
+                    (int)
+                    $source->id,
+
+                    (int)
+                    $target->id,
+                ];
+
+                sort(
+                    $familyIds,
+                    SORT_NUMERIC
+                );
+
+                $families = [];
+
+                foreach (
+                    $familyIds
+                    as $familyId
+                ) {
+                    $families[
+                        $familyId
+                    ] =
+                        $this->deviceRows(
+                            $familyId,
+                            true
+                        );
+                }
+
+                $sourceDevices =
+                    $families[
+                        (int)
+                        $source->id
+                    ];
+
+                $targetDevices =
+                    $families[
+                        (int)
+                        $target->id
+                    ];
+
+                $sourceIds =
+                    $sourceDevices
+                        ->pluck('id')
+                        ->map(
+                            fn ($id) =>
+                                (int) $id
+                        )
+                        ->values();
+
+                $targetIds =
+                    $targetDevices
+                        ->pluck('id')
+                        ->map(
+                            fn ($id) =>
+                                (int) $id
+                        )
+                        ->values();
+
+                if (
+                    !$sourceIds
+                        ->contains(
+                            (int)
+                            $device->id
+                        )
+                ) {
+                    throw ValidationException::withMessages([
+                        'device_id' =>
+                            'The selected device no longer belongs to this customer.',
+                    ]);
+                }
+
+                /*
+                 * DEVICE_TRANSFER_ACCOUNT_DUE_LOCK_V2
+                 *
+                 * Do not allow moving a device while
+                 * either account has outstanding due.
+                 */
+                $sourceDueRows =
+                    DB::table(
+                        'invoices'
+                    )
+                        ->whereIn(
+                            'client_id',
+                            $sourceIds->all()
+                        )
+                        ->whereNotIn(
+                            'status',
+                            [
+                                'cancelled',
+                                'refunded',
+                            ]
+                        )
+                        ->whereNull(
+                            'service_cancelled_at'
+                        )
+                        ->where(
+                            'due_amount',
+                            '>',
+                            0
+                        )
+                        ->orderBy(
+                            'client_id'
+                        )
+                        ->orderBy(
+                            'id'
+                        )
+                        ->lockForUpdate()
+                        ->get([
+                            'id',
+                            'client_id',
+                            'due_amount',
+                        ]);
+
+                $targetDueRows =
+                    DB::table(
+                        'invoices'
+                    )
+                        ->whereIn(
+                            'client_id',
+                            $targetIds->all()
+                        )
+                        ->whereNotIn(
+                            'status',
+                            [
+                                'cancelled',
+                                'refunded',
+                            ]
+                        )
+                        ->whereNull(
+                            'service_cancelled_at'
+                        )
+                        ->where(
+                            'due_amount',
+                            '>',
+                            0
+                        )
+                        ->orderBy(
+                            'client_id'
+                        )
+                        ->orderBy(
+                            'id'
+                        )
+                        ->lockForUpdate()
+                        ->get([
+                            'id',
+                            'client_id',
+                            'due_amount',
+                        ]);
+
+                $sourceDue =
+                    round(
+                        (float)
+                        $sourceDueRows
+                            ->sum(
+                                'due_amount'
+                            ),
+                        2
+                    );
+
+                $targetDue =
+                    round(
+                        (float)
+                        $targetDueRows
+                            ->sum(
+                                'due_amount'
+                            ),
+                        2
+                    );
+
+                if ($sourceDue > 0) {
+                    throw ValidationException::withMessages([
+                        'device_id' =>
+                            'Source customer has outstanding due. Clear all account due before transferring a device.',
+                    ]);
+                }
+
+                if ($targetDue > 0) {
+                    throw ValidationException::withMessages([
+                        'target_client_id' =>
+                            'Destination customer has outstanding due. Clear all account due before receiving a device.',
+                    ]);
+                }
+
+                /*
+                 * Family refund hard-lock cannot be
+                 * escaped through ownership transfer.
+                 */
+                $allIds =
+                    array_values(
+                        array_unique(
+                            array_merge(
+                                $sourceIds
+                                    ->all(),
+                                $targetIds
+                                    ->all()
+                            )
+                        )
+                    );
+
+                $refundLock =
+                    DB::table(
+                        'client_refunds'
+                    )
+                        ->whereIn(
+                            'client_id',
+                            $allIds
+                        )
+                        ->where(
+                            'reason',
+                            'like',
+                            '%[ACCOUNT_DUE_FAMILY_LOCK_V1]%'
+                        )
+                        ->orderBy(
+                            'id'
+                        )
+                        ->lockForUpdate()
+                        ->first([
+                            'id',
+                        ]);
+
+                if ($refundLock) {
+                    throw ValidationException::withMessages([
+                        'device_id' =>
+                            'Device transfer is blocked because the source or destination account has an account refund lock.',
+                    ]);
+                }
+
+                $isMainDevice =
+                    (int)
+                    $device->id
+                    ===
+                    (int)
+                    $source->id;
+
+                /*
+                 * Customer identity fields only.
+                 *
+                 * Network/service fields intentionally
+                 * remain attached to the physical device.
+                 */
+                $identityFields = [
+                    'name',
+                    'phone',
+                    'email',
+                    'address',
+                    'identity_type',
+                    'identity_number',
+                    'identity_barcode',
+                    'nationality',
+                    'date_of_birth',
+                    'gender',
+                    'document_expiry_date',
+                    'qatar_id_number',
+                    'qatar_id_expiry_date',
+                    'occupation',
+                    'passport_number',
+                    'passport_expiry_date',
+                    'document_serial_number',
+                    'residency_type',
+                    'employer',
+                    'place_of_birth',
+                    'passport_issue_date',
+                    'issuing_country',
+                    'issuing_authority',
+                    'qatar_id_front_image_path',
+                    'qatar_id_back_image_path',
+                    'passport_image_path',
+                    'profile_image_path',
+                ];
+
+                $sourceIdentity = [];
+                $targetIdentity = [];
+
+                foreach (
+                    $identityFields
+                    as $field
+                ) {
+                    $sourceIdentity[
+                        $field
+                    ] =
+                        $source->{$field};
+
+                    $targetIdentity[
+                        $field
+                    ] =
+                        $target->{$field};
+                }
+
+                /*
+                 * DEVICE_TRANSFER_AUDIT_TRAIL_V3B
+                 *
+                 * All fields other than customer identity,
+                 * ownership label and updated_at are immutable
+                 * during a same-zone ownership transfer.
+                 */
+                $allowedMutableFields =
+                    array_merge(
+                        $identityFields,
+                        [
+                            'parent_client_id',
+                            'device_label',
+                            'updated_at',
+                        ]
+                    );
+
+                $protectedFields =
+                    collect(
+                        array_keys(
+                            $device
+                                ->getAttributes()
+                        )
+                    )
+                        ->reject(
+                            fn ($field) =>
+                                in_array(
+                                    $field,
+                                    $allowedMutableFields,
+                                    true
+                                )
+                        )
+                        ->values();
+
+                $protectedBefore = [];
+
+                foreach (
+                    $protectedFields
+                    as $field
+                ) {
+                    $protectedBefore[
+                        $field
+                    ] =
+                        $device
+                            ->getRawOriginal(
+                                $field
+                            );
+                }
+
+                $deviceBefore = [
+                    'id' =>
+                        (int) $device->id,
+
+                    'client_code' =>
+                        $device->client_code,
+
+                    'parent_client_id' =>
+                        $device->parent_client_id
+                            ? (int)
+                                $device
+                                    ->parent_client_id
+                            : null,
+
+                    'device_label' =>
+                        $device->device_label,
+
+                    'mac_address' =>
+                        $device->mac_address,
+
+                    'active_mac_address' =>
+                        $device
+                            ->active_mac_address,
+
+                    'ip_address' =>
+                        $device->ip_address,
+
+                    'router_id' =>
+                        $device->router_id
+                            ? (int)
+                                $device->router_id
+                            : null,
+
+                    'ip_range_id' =>
+                        $device->ip_range_id
+                            ? (int)
+                                $device->ip_range_id
+                            : null,
+
+                    'package_id' =>
+                        $device->package_id
+                            ? (int)
+                                $device->package_id
+                            : null,
+
+                    'expiry_date' =>
+                        $device->expiry_date
+                            ?->toDateString(),
+
+                    'enabled' =>
+                        (bool) $device->enabled,
+
+                    'connected' =>
+                        (bool) $device->connected,
+
+                    'mikrotik_lease_id' =>
+                        $device
+                            ->mikrotik_lease_id,
+
+                    'mikrotik_arp_id' =>
+                        $device
+                            ->mikrotik_arp_id,
+
+                    'mikrotik_queue_id' =>
+                        $device
+                            ->mikrotik_queue_id,
+                ];
+
+                $sourceBefore = [
+                    'id' =>
+                        (int) $source->id,
+
+                    'client_code' =>
+                        $source->client_code,
+
+                    'name' =>
+                        $source->name,
+                ];
+
+                $targetBefore = [
+                    'id' =>
+                        (int) $target->id,
+
+                    'client_code' =>
+                        $target->client_code,
+
+                    'name' =>
+                        $target->name,
+                ];
+
+                $promotedClientId =
+                    null;
+
+                $promotedClientCode =
+                    null;
+
+                /*
+                 * MAIN_DEVICE_AUTO_PROMOTE_V2
+                 */
+                if ($isMainDevice) {
+                    $remaining =
+                        $sourceDevices
+                            ->filter(
+                                fn ($row) =>
+                                    (int)
+                                    $row->id
+                                    !==
+                                    (int)
+                                    $device->id
+                            )
+                            ->sortBy(
+                                'id'
+                            )
+                            ->values();
+
+                    $promoted =
+                        $remaining
+                            ->first();
+
+                    if ($promoted) {
+                        $promotedModel =
+                            Client::withoutGlobalScopes()
+                                ->whereNull(
+                                    'deleted_at'
+                                )
+                                ->whereKey(
+                                    $promoted->id
+                                )
+                                ->lockForUpdate()
+                                ->firstOrFail();
+
+                        $promotedModel
+                            ->forceFill(
+                                $sourceIdentity
+                                + [
+                                    'parent_client_id' =>
+                                        null,
+
+                                    'device_label' =>
+                                        null,
+                                ]
+                            )
+                            ->save();
+
+                        $promotedClientId =
+                            (int)
+                            $promotedModel->id;
+
+                        $promotedClientCode =
+                            $promotedModel
+                                ->client_code;
+
+                        foreach (
+                            $remaining
+                                ->slice(1)
+                            as $sibling
+                        ) {
+                            $siblingModel =
+                                Client::withoutGlobalScopes()
+                                    ->whereNull(
+                                        'deleted_at'
+                                    )
+                                    ->whereKey(
+                                        $sibling->id
+                                    )
+                                    ->lockForUpdate()
+                                    ->firstOrFail();
+
+                            $siblingModel
+                                ->forceFill(
+                                    $sourceIdentity
+                                    + [
+                                        'parent_client_id' =>
+                                            $promotedClientId,
+                                    ]
+                                )
+                                ->save();
+                        }
+                    }
+                }
+
+                /*
+                 * Move selected physical device.
+                 */
+                $deviceLabel =
+                    trim(
+                        (string) (
+                            $device
+                                ->device_label
+                            ?? ''
+                        )
+                    );
+
+                if (
+                    $deviceLabel
+                    === ''
+                ) {
+                    $deviceLabel =
+                        'Transferred Device';
+                }
+
+                $device
+                    ->forceFill(
+                        $targetIdentity
+                        + [
+                            'parent_client_id' =>
+                                $target->id,
+
+                            'device_label' =>
+                                $deviceLabel,
+                        ]
+                    )
+                    ->save();
+
+                $protectedAfter = [];
+
+                foreach (
+                    $protectedFields
+                    as $field
+                ) {
+                    $protectedAfter[
+                        $field
+                    ] =
+                        $device
+                            ->getRawOriginal(
+                                $field
+                            );
+                }
+
+                if (
+                    $protectedBefore
+                    !== $protectedAfter
+                ) {
+                    throw new \LogicException(
+                        'Same-zone device ownership transfer attempted to modify protected physical/network/service data.'
+                    );
+                }
+
+                $sourceDisappeared =
+                    $isMainDevice
+                    && $promotedClientId
+                        === null;
+
+                $deviceAfter = [
+                    'id' =>
+                        (int) $device->id,
+
+                    'client_code' =>
+                        $device->client_code,
+
+                    'parent_client_id' =>
+                        (int) $target->id,
+
+                    'device_label' =>
+                        $device->device_label,
+
+                    'mac_address' =>
+                        $device->mac_address,
+
+                    'active_mac_address' =>
+                        $device
+                            ->active_mac_address,
+
+                    'ip_address' =>
+                        $device->ip_address,
+
+                    'router_id' =>
+                        $device->router_id
+                            ? (int)
+                                $device->router_id
+                            : null,
+
+                    'ip_range_id' =>
+                        $device->ip_range_id
+                            ? (int)
+                                $device->ip_range_id
+                            : null,
+
+                    'package_id' =>
+                        $device->package_id
+                            ? (int)
+                                $device->package_id
+                            : null,
+
+                    'expiry_date' =>
+                        $device->expiry_date
+                            ?->toDateString(),
+
+                    'enabled' =>
+                        (bool) $device->enabled,
+
+                    'connected' =>
+                        (bool) $device->connected,
+
+                    'mikrotik_lease_id' =>
+                        $device
+                            ->mikrotik_lease_id,
+
+                    'mikrotik_arp_id' =>
+                        $device
+                            ->mikrotik_arp_id,
+
+                    'mikrotik_queue_id' =>
+                        $device
+                            ->mikrotik_queue_id,
+                ];
+
+                ResellerAuditLog::create([
+                    'reseller_id' =>
+                        (int)
+                        $source->reseller_id,
+
+                    'user_id' =>
+                        (int) $actor->id,
+
+                    'action' =>
+                        'client_device_ownership_transferred',
+
+                    'subject_type' =>
+                        Client::class,
+
+                    'subject_id' =>
+                        (int)
+                        $device->id,
+
+                    'metadata' => [
+                        'zone_id' =>
+                            (int)
+                            $source->zone_id,
+
+                        'device_before' =>
+                            $deviceBefore,
+
+                        'device_after' =>
+                            $deviceAfter,
+
+                        'source_customer' =>
+                            $sourceBefore,
+
+                        'destination_customer' =>
+                            $targetBefore,
+
+                        'was_main_device' =>
+                            $isMainDevice,
+
+                        'promoted_client_id' =>
+                            $promotedClientId,
+
+                        'promoted_client_code' =>
+                            $promotedClientCode,
+
+                        'source_disappeared' =>
+                            $sourceDisappeared,
+
+                        'network_changed' =>
+                            false,
+
+                        'quota_slot_delta' =>
+                            0,
+                    ],
+
+                    'ip_address' =>
+                        $ipAddress,
+                ]);
+
+                return [
+                    'device_id' =>
+                        (int)
+                        $device->id,
+
+                    'device_code' =>
+                        $device
+                            ->client_code,
+
+                    'was_main_device' =>
+                        $isMainDevice,
+
+                    'source_client_id' =>
+                        (int)
+                        $source->id,
+
+                    'source_name' =>
+                        $source->name,
+
+                    'target_client_id' =>
+                        (int)
+                        $target->id,
+
+                    'target_name' =>
+                        $target->name,
+
+                    'promoted_client_id' =>
+                        $promotedClientId,
+
+                    'promoted_client_code' =>
+                        $promotedClientCode,
+
+                    'source_has_devices' =>
+                        $promotedClientId
+                        !== null,
+
+                    'network_changed' =>
+                        false,
+                ];
+            },
+            3
+        );
+    }
+
 
     public function approve(
         User $actor,
