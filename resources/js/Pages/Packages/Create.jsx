@@ -5,7 +5,7 @@ import {
     useForm,
 } from '@inertiajs/react';
 
-export default function Create() {
+export default function Create({ zones = [] }) {
     const {
         data,
         setData,
@@ -13,6 +13,10 @@ export default function Create() {
         processing,
         errors,
     } = useForm({
+        zone_id:
+            zones.length === 1
+                ? zones[0].id
+                : '',
         name: '',
         price: '',
         validity_days: 30,
@@ -56,6 +60,35 @@ export default function Create() {
                         </h2>
 
                         <div className="grid gap-5 md:grid-cols-2">
+                            <Field
+                                label="Network Zone"
+                                error={errors.zone_id}
+                            >
+                                <select
+                                    value={data.zone_id}
+                                    onChange={(event) =>
+                                        setData(
+                                            'zone_id',
+                                            event.target.value,
+                                        )
+                                    }
+                                    className={inputClass}
+                                >
+                                    <option value="">
+                                        Select MAC Network Zone
+                                    </option>
+
+                                    {zones.map((zone) => (
+                                        <option
+                                            key={zone.id}
+                                            value={zone.id}
+                                        >
+                                            {zone.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </Field>
+
                             <Field
                                 label="Package Name"
                                 error={errors.name}

@@ -204,6 +204,10 @@ class MacClientPosController extends Controller
                                 $client
                                     ->ip_range_id,
 
+                            'zone_id' =>
+                                $client
+                                    ->zone_id,
+
                             'package_id' =>
                                 $client
                                     ->package_id,
@@ -296,6 +300,9 @@ class MacClientPosController extends Controller
 
         $packages =
             Package::query()
+                ->with(
+                    'zone:id,name'
+                )
                 ->where(
                     'enabled',
                     true
@@ -303,6 +310,7 @@ class MacClientPosController extends Controller
                 ->orderBy('name')
                 ->get([
                     'id',
+                    'zone_id',
                     'name',
                     'price',
                     'validity_days',
@@ -313,6 +321,13 @@ class MacClientPosController extends Controller
                     ): array => [
                         'id' =>
                             $package->id,
+
+                        'zone_id' =>
+                            $package->zone_id,
+
+                        'zone_name' =>
+                            $package->zone
+                                ?->name,
 
                         'name' =>
                             $package->name,

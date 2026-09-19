@@ -380,6 +380,9 @@ class DashboardController extends Controller
                                                     'Y-m-d'
                                                 ),
 
+                                        'zone_id' =>
+                                            $client->zone_id,
+
                                         'package_id' =>
                                             $client->package_id,
 
@@ -433,6 +436,7 @@ class DashboardController extends Controller
                             ->orderBy('name')
                             ->get([
                                 'id',
+                                'zone_id',
                                 'name',
                                 'price',
                                 'validity_days',
@@ -444,6 +448,9 @@ class DashboardController extends Controller
                                     return [
                                         'id' =>
                                             $package->id,
+
+                                        'zone_id' =>
+                                            $package->zone_id,
 
                                         'name' =>
                                             $package->name,

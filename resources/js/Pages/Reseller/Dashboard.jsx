@@ -978,7 +978,18 @@ function QuickRechargePos({
                                         Select Package
                                     </option>
 
-                                    {packages.map(
+                                    {packages
+                                        .filter(
+                                            (pkg) =>
+                                                Number(
+                                                    pkg.zone_id
+                                                )
+                                                === Number(
+                                                    selectedClient
+                                                        ?.zone_id
+                                                )
+                                        )
+                                        .map(
                                         (pkg) => (
                                             <option
                                                 key={

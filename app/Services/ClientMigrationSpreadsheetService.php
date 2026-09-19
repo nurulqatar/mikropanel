@@ -711,33 +711,31 @@ class ClientMigrationSpreadsheetService
                 $defaultPackage
             );
 
-        $range =
-            $this->resolveRange(
-                $row,
-                $defaultRange
-            );
-
-        if (
-            !$range->router_id
-        ) {
+        if (!$package->zone_id) {
             throw new RuntimeException(
-                'The selected IP Pool has no router.'
+                'Selected package has no Network Zone.'
             );
         }
 
-        $ip =
+        $allocation =
             $this->allocator
-                ->allocate(
-                    $range
+                ->allocateForZone(
+                    (int)
+                    $package->zone_id
                 );
 
-        if (!$ip) {
+        if (!$allocation) {
             throw new RuntimeException(
-                'No free IP is available in '
-                . $range->name
-                . '.'
+                'No free IP is available in any enabled IP Pool for package zone.'
             );
         }
+
+        /** @var IpRange $range */
+        $range =
+            $allocation['range'];
+
+        $ip =
+            $allocation['ip'];
 
         $rechargeDate =
             $this->parseDate(
@@ -904,6 +902,9 @@ class ClientMigrationSpreadsheetService
                                     12
                                 )
                             ),
+
+                        'zone_id' =>
+                            $package->zone_id,
 
                         'router_id' =>
                             $range

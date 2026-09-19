@@ -30,6 +30,9 @@ class ClientMigrationController extends Controller
             [
                 'packages' =>
                     Package::query()
+                        ->with(
+                            'zone:id,name'
+                        )
                         ->where(
                             'enabled',
                             true
@@ -37,6 +40,7 @@ class ClientMigrationController extends Controller
                         ->orderBy('name')
                         ->get([
                             'id',
+                            'zone_id',
                             'name',
                             'validity_days',
                         ]),
@@ -161,11 +165,52 @@ class ClientMigrationController extends Controller
                     'integer',
                 ],
 
-                'default_ip_range_id' => [
-                    'required',
-                    'integer',
-                ],
             ]);
+
+        $defaultPackage =
+            Package::query()
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->findOrFail(
+                    (int)
+                    $validated[
+                        'default_package_id'
+                    ]
+                );
+
+        if (!$defaultPackage->zone_id) {
+            return back()
+                ->withErrors([
+                    'default_package_id' =>
+                        'Selected package has no Network Zone.',
+                ]);
+        }
+
+        $defaultRange =
+            IpRange::query()
+                ->where(
+                    'zone_id',
+                    $defaultPackage->zone_id
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->whereNotNull(
+                    'router_id'
+                )
+                ->orderBy('id')
+                ->first();
+
+        if (!$defaultRange) {
+            return back()
+                ->withErrors([
+                    'default_package_id' =>
+                        'No enabled IP Pool is available in this package Network Zone.',
+                ]);
+        }
 
         $result =
             $service->import(
@@ -177,9 +222,7 @@ class ClientMigrationController extends Controller
                     'default_package_id'
                 ],
                 (int)
-                $validated[
-                    'default_ip_range_id'
-                ]
+                $defaultRange->id
             );
 
         return back()

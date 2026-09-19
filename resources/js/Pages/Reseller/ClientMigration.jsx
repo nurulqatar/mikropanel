@@ -23,9 +23,6 @@ export default function ClientMigration({
         default_package_id:
             packages[0]?.id
             ?? '',
-        default_ip_range_id:
-            ipRanges[0]?.id
-            ?? '',
     });
 
     const submit = (event) => {
@@ -94,7 +91,7 @@ export default function ClientMigration({
 
                     <Card
                         title="Automatic Network"
-                        text="A free IP is allocated automatically. Active imported clients are picked up by MikroTik sync."
+                        text="The package selects the Network Zone. MikroPanel automatically selects an enabled pool and a free IP in that zone."
                     />
                 </div>
 
@@ -198,48 +195,12 @@ export default function ClientMigration({
                                                 value={pkg.id}
                                             >
                                                 {pkg.name}
+                                                {pkg.zone?.name
+                                                    ? ` · ${pkg.zone.name}`
+                                                    : ''}
                                                 {' · '}
                                                 {pkg.validity_days}
                                                 {' days'}
-                                            </option>
-                                        ),
-                                    )}
-                                </select>
-                            </Field>
-
-                            <Field
-                                label="Default IP Pool"
-                                error={
-                                    errors.default_ip_range_id
-                                }
-                            >
-                                <select
-                                    value={
-                                        data.default_ip_range_id
-                                    }
-                                    onChange={(event) =>
-                                        setData(
-                                            'default_ip_range_id',
-                                            event.target.value,
-                                        )
-                                    }
-                                    className={inputClass}
-                                >
-                                    <option value="">
-                                        Select IP Pool
-                                    </option>
-
-                                    {ipRanges.map(
-                                        (range) => (
-                                            <option
-                                                key={range.id}
-                                                value={range.id}
-                                            >
-                                                {range.name}
-                                                {' · '}
-                                                {range.start_ip}
-                                                {' - '}
-                                                {range.end_ip}
                                             </option>
                                         ),
                                     )}

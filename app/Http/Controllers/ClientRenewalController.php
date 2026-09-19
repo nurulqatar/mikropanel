@@ -182,6 +182,10 @@ class ClientRenewalController extends Controller
                                 $data['package_id']
                             )
                             ->where(
+                                'zone_id',
+                                $lockedClient->zone_id
+                            )
+                            ->where(
                                 'enabled',
                                 true
                             )

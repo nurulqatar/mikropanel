@@ -75,10 +75,14 @@ class ClientController extends Controller
                 ]),
 
             'packages' => Package::query()
+                ->with(
+                    'zone:id,name'
+                )
                 ->where('enabled', true)
                 ->orderBy('name')
                 ->get([
                     'id',
+                    'zone_id',
                     'name',
                     'price',
                     'validity_days',
@@ -266,40 +270,45 @@ class ClientController extends Controller
         }
 
         /*
-         * IP Pool is global.
-         * It is NOT tied to a selected router.
+         * ZONE_PACKAGE_AUTO_IP_V2
+         *
+         * Package defines the MAC Network Zone.
+         * MikroPanel selects an enabled pool and
+         * the first free IP automatically.
          */
-        $range = IpRange::query()
-            ->where(
-                'id',
-                $data['ip_range_id']
-            )
-            ->where(
-                'enabled',
-                true
-            )
-            ->first();
+        unset(
+            $data['ip_range_id']
+        );
 
-        if (!$range) {
+        $package =
+            Package::query()
+                ->where(
+                    'id',
+                    $data['package_id']
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->first();
+
+        if (
+            !$package
+            || !$package->zone_id
+        ) {
             return back()
                 ->withErrors([
-                    'ip_range_id' =>
-                        'Selected IP Pool is not available.',
+                    'package_id' =>
+                        'Selected Package is not available in an active Network Zone.',
                 ])
                 ->withInput();
         }
 
-        /*
-         * CLIENT_ZONE_FROM_POOL_V5
-         *
-         * Panel IP Pool defines the
-         * client's remote MAC zone.
-         */
         $zone =
             NetworkZone::query()
                 ->where(
                     'id',
-                    $range->zone_id
+                    $package->zone_id
                 )
                 ->where(
                     'service_type',
@@ -314,8 +323,8 @@ class ClientController extends Controller
         if (!$zone) {
             return back()
                 ->withErrors([
-                    'ip_range_id' =>
-                        'Selected IP Pool does not belong to an enabled MAC Client zone.',
+                    'package_id' =>
+                        'Selected Package Network Zone is not available.',
                 ])
                 ->withInput();
         }
@@ -344,49 +353,37 @@ class ClientController extends Controller
             ) {
                 return back()
                     ->withErrors([
-                        'ip_range_id' =>
-                            'Additional devices must stay in the primary client zone.',
+                        'package_id' =>
+                            'Additional devices must use a package from the primary client Network Zone.',
                     ])
                     ->withInput();
             }
         }
 
-        $data['zone_id'] =
-            $zone->id;
+        $allocation =
+            $allocator
+                ->allocateForZone(
+                    (int) $zone->id
+                );
 
-
-        $ip = $allocator->allocate(
-            $range
-        );
-
-        if (!$ip) {
-            return back()
-                ->withErrors([
-                    'ip_range_id' =>
-                        'No free IP is available in this IP Pool.',
-                ])
-                ->withInput();
-        }
-
-        $package = Package::query()
-            ->where(
-                'id',
-                $data['package_id']
-            )
-            ->where(
-                'enabled',
-                true
-            )
-            ->first();
-
-        if (!$package) {
+        if (!$allocation) {
             return back()
                 ->withErrors([
                     'package_id' =>
-                        'Selected Package is not available.',
+                        'No free IP is available in any enabled IP Pool for this package Network Zone.',
                 ])
                 ->withInput();
         }
+
+        /** @var IpRange $range */
+        $range =
+            $allocation['range'];
+
+        $ip =
+            $allocation['ip'];
+
+        $data['zone_id'] =
+            $zone->id;
 
         $validityDays =
             (int) $package->validity_days;
@@ -436,8 +433,8 @@ class ClientController extends Controller
         if (!$primaryRouter) {
             return back()
                 ->withErrors([
-                    'ip_range_id' =>
-                        'At least one enabled MikroTik router is required in the selected zone.',
+                    'package_id' =>
+                        'At least one enabled MikroTik router is required in the package Network Zone.',
                 ])
                 ->withInput();
         }
@@ -966,9 +963,14 @@ class ClientController extends Controller
                 ]),
 
             'packages' => Package::query()
+                ->where(
+                    'zone_id',
+                    $client->zone_id
+                )
                 ->orderBy('name')
                 ->get([
                     'id',
+                    'zone_id',
                     'name',
                     'speed_download',
                     'speed_upload',
@@ -1060,6 +1062,8 @@ class ClientController extends Controller
 
         if (
             !$package
+            || (int) $package->zone_id
+                !== (int) $client->zone_id
             || (
                 !$package->enabled
                 && (int) $package->id

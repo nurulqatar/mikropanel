@@ -8,6 +8,49 @@ use Illuminate\Support\Facades\Log;
 
 class IpAllocatorService
 {
+    public function allocateForZone(
+        int $zoneId
+    ): ?array {
+        $ranges =
+            IpRange::query()
+                ->where(
+                    'zone_id',
+                    $zoneId
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->whereNotNull(
+                    'router_id'
+                )
+                ->orderBy('id')
+                ->get();
+
+        foreach ($ranges as $range) {
+            $ip =
+                $this->allocate(
+                    $range
+                );
+
+            if ($ip) {
+                return [
+                    'range' => $range,
+                    'ip' => $ip,
+                ];
+            }
+        }
+
+        Log::warning(
+            'No free IP is available in any enabled pool for zone.',
+            [
+                'zone_id' => $zoneId,
+            ]
+        );
+
+        return null;
+    }
+
     public function allocate(
         IpRange $range
     ): ?string {

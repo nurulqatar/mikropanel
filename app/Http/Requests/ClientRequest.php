@@ -36,7 +36,7 @@ class ClientRequest extends FormRequest
             ],
 
             'ip_range_id' => [
-                'required',
+                'nullable',
                 'integer',
                 'exists:ip_ranges,id',
             ],

@@ -17,7 +17,6 @@ export default function Create({
         errors,
     } = useForm({
         custom_fields: {},
-        ip_range_id: '',
         package_id: '',
         name: '',
         mac_address: '',
@@ -87,47 +86,6 @@ export default function Create({
                     className="space-y-6"
                 >
 
-
-
-                    <section className="rounded-xl bg-white p-6 shadow">
-                        <h2 className="mb-5 text-xl font-bold text-slate-800">
-                            Network Configuration
-                        </h2>
-
-                        <div className="grid gap-5 md:grid-cols-2">
-<Field
-                                label="IP Pool"
-                                error={errors.ip_range_id}
-                            >
-                                <select
-                                    value={data.ip_range_id}
-                                    onChange={(event) =>
-                                        setData(
-                                            'ip_range_id',
-                                            event.target.value,
-                                        )
-                                    }
-                                    className={inputClass}
-                                >
-                                    <option value="">
-                                        Select IP Pool
-                                    </option>
-
-                                    {ipRanges.map(
-                                        (range) => (
-                                            <option
-                                                key={range.id}
-                                                value={range.id}
-                                            >
-                                                {range.name}
-                                            </option>
-                                        ),
-                                    )}
-                                </select>
-                            </Field>
-                        </div>
-                    </section>
-
                     <section className="rounded-xl bg-white p-6 shadow">
                         <h2 className="mb-5 text-xl font-bold text-slate-800">
                             Client Information
@@ -176,6 +134,9 @@ export default function Create({
                                             value={pkg.id}
                                         >
                                             {pkg.name}
+                                            {pkg.zone?.name
+                                                ? ` · ${pkg.zone.name}`
+                                                : ''}
                                         </option>
                                     ))}
                                 </select>

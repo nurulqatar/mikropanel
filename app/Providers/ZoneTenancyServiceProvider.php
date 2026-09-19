@@ -15,6 +15,7 @@ use App\Models\HotspotVoucher;
 use App\Models\Invoice;
 use App\Models\IpRange;
 use App\Models\Payment;
+use App\Models\Package;
 use App\Models\Router;
 use App\Models\User;
 use App\Models\Scopes\HotspotChildZoneScope;
@@ -73,6 +74,37 @@ class ZoneTenancyServiceProvider extends ServiceProvider
                 }
             );
         }
+
+
+        /*
+         * PACKAGE_ZONE_INVARIANT_V1
+         *
+         * A client may only use a package from
+         * the same MAC Network Zone.
+         */
+        Client::creating(
+            function (Client $client): void {
+                $this->assertClientPackageZone(
+                    $client
+                );
+            }
+        );
+
+        Client::updating(
+            function (Client $client): void {
+                $this->assertClientPackageZone(
+                    $client
+                );
+            }
+        );
+
+        Package::updating(
+            function (Package $package): void {
+                $this->protectPackageZoneChange(
+                    $package
+                );
+            }
+        );
 
 
         /*
@@ -662,6 +694,7 @@ class ZoneTenancyServiceProvider extends ServiceProvider
             $model instanceof Router
             || $model instanceof IpRange
             || $model instanceof Client
+            || $model instanceof Package
             || $model instanceof Expense
         ) {
             $type = 'mac';
@@ -750,6 +783,7 @@ class ZoneTenancyServiceProvider extends ServiceProvider
         if (
             $model instanceof IpRange
             || $model instanceof Client
+            || $model instanceof Package
         ) {
             $type = 'mac';
         }
@@ -834,6 +868,88 @@ class ZoneTenancyServiceProvider extends ServiceProvider
         }
     }
 
+    private function assertClientPackageZone(
+        Client $client
+    ): void {
+        if (!$client->package_id) {
+            return;
+        }
+
+        $packageZoneId =
+            DB::table('packages')
+                ->where(
+                    'id',
+                    $client->package_id
+                )
+                ->value(
+                    'zone_id'
+                );
+
+        $clientZoneId =
+            $client->zone_id
+                ? (int) $client->zone_id
+                : null;
+
+        if (
+            !$packageZoneId
+            || !$clientZoneId
+            || (int) $packageZoneId
+                !== $clientZoneId
+        ) {
+            throw
+                ValidationException::withMessages([
+                    'package_id' =>
+                        'Selected package does not belong to this client Network Zone.',
+                ]);
+        }
+    }
+
+    private function protectPackageZoneChange(
+        Package $package
+    ): void {
+        if (
+            !$package->exists
+            || !$package->isDirty(
+                'zone_id'
+            )
+        ) {
+            return;
+        }
+
+        $newZoneId =
+            (int) (
+                $package->zone_id
+                ?? 0
+            );
+
+        if ($newZoneId <= 0) {
+            return;
+        }
+
+        if (
+            DB::table('clients')
+                ->where(
+                    'package_id',
+                    $package->id
+                )
+                ->whereNotNull(
+                    'zone_id'
+                )
+                ->where(
+                    'zone_id',
+                    '!=',
+                    $newZoneId
+                )
+                ->exists()
+        ) {
+            throw
+                ValidationException::withMessages([
+                    'zone_id' =>
+                        'Package Network Zone cannot be changed while clients in another zone use this package.',
+                ]);
+        }
+    }
+
     private function sessionZoneId(): ?int
     {
         if (
@@ -871,6 +987,7 @@ class ZoneTenancyServiceProvider extends ServiceProvider
             Client::class,
             Router::class,
             IpRange::class,
+            Package::class,
             Invoice::class,
             Payment::class,
             ClientRefund::class,

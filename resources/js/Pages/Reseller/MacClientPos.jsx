@@ -1682,7 +1682,6 @@ function CreateClientModal({
         residency_type: '',
         employer: '',
         place_of_birth: '',
-        ip_range_id: '',
         package_id: '',
         name: '',
         mac_address: '',
@@ -1828,52 +1827,6 @@ function CreateClientModal({
                     </Field>
 
                     <Field
-                        label="IP Pool"
-                        error={
-                            form.errors
-                                .ip_range_id
-                        }
-                    >
-                        <select
-                            value={
-                                form.data
-                                    .ip_range_id
-                            }
-                            onChange={(
-                                event,
-                            ) =>
-                                form.setData(
-                                    'ip_range_id',
-                                    event.target
-                                        .value,
-                                )
-                            }
-                            className={inputClass}
-                        >
-                            <option value="">
-                                Select IP Pool
-                            </option>
-
-                            {ipRanges.map(
-                                (range) => (
-                                    <option
-                                        key={
-                                            range.id
-                                        }
-                                        value={
-                                            range.id
-                                        }
-                                    >
-                                        {
-                                            range.name
-                                        }
-                                    </option>
-                                ),
-                            )}
-                        </select>
-                    </Field>
-
-                    <Field
                         label="Package"
                         error={
                             form.errors
@@ -1911,6 +1864,9 @@ function CreateClientModal({
                                         }
                                     >
                                         {pkg.name}
+                                        {pkg.zone_name
+                                            ? ` · ${pkg.zone_name}`
+                                            : ''}
                                         {' · QAR '}
                                         {money(
                                             pkg.price,
@@ -2393,7 +2349,6 @@ function AddDeviceModal({
     const form = useForm({
         parent_client_id: client.id,
         device_label: '',
-        ip_range_id: '',
         package_id: '',
         name: client.name ?? '',
         mac_address: '',
@@ -2496,45 +2451,6 @@ function AddDeviceModal({
                     </Field>
 
                     <Field
-                        label="IP Pool"
-                        error={
-                            form.errors.ip_range_id
-                        }
-                    >
-                        <select
-                            value={
-                                form.data.ip_range_id
-                            }
-                            onChange={(event) =>
-                                form.setData(
-                                    'ip_range_id',
-                                    event.target.value,
-                                )
-                            }
-                            className="w-full rounded-xl border border-slate-300 px-4 py-3"
-                        >
-                            <option value="">
-                                Select IP Pool
-                            </option>
-
-                            {ipRanges.map(
-                                (range) => (
-                                    <option
-                                        key={range.id}
-                                        value={range.id}
-                                    >
-                                        {range.name}
-                                        {' · '}
-                                        {range.start_ip}
-                                        {' - '}
-                                        {range.end_ip}
-                                    </option>
-                                ),
-                            )}
-                        </select>
-                    </Field>
-
-                    <Field
                         label="Package"
                         error={
                             form.errors.package_id
@@ -2556,7 +2472,17 @@ function AddDeviceModal({
                                 Select Package
                             </option>
 
-                            {packages.map(
+                            {packages
+                            .filter(
+                                (pkg) =>
+                                    Number(
+                                        pkg.zone_id
+                                    )
+                                    === Number(
+                                        client.zone_id
+                                    )
+                            )
+                            .map(
                                 (pkg) => (
                                     <option
                                         key={pkg.id}
@@ -2888,7 +2814,17 @@ function RechargeModal({
                         }
                         className={`${inputClass} disabled:bg-slate-100`}
                     >
-                        {packages.map(
+                        {packages
+                            .filter(
+                                (pkg) =>
+                                    Number(
+                                        pkg.zone_id
+                                    )
+                                    === Number(
+                                        client.zone_id
+                                    )
+                            )
+                            .map(
                             (pkg) => (
                                 <option
                                     key={
@@ -3276,7 +3212,17 @@ function EditClientModal({
                             }
                             className={inputClass}
                         >
-                            {packages.map(
+                            {packages
+                            .filter(
+                                (pkg) =>
+                                    Number(
+                                        pkg.zone_id
+                                    )
+                                    === Number(
+                                        client.zone_id
+                                    )
+                            )
+                            .map(
                                 (pkg) => (
                                     <option
                                         key={
