@@ -12,6 +12,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
+            /* SUPER_ADMIN_PANEL_ONLY_MIDDLEWARE_V1 */
+            \App\Http\Middleware\SuperAdminPanelOnly::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\ShareUnifiedFinance::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
