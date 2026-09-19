@@ -29,31 +29,49 @@ class HotspotChildZoneScope implements Scope
         }
 
         /*
-         * Reseller Owner and Manager are all-zone.
-         * Platform admins are handled by their normal
-         * tenant access rules.
+         * HOTSPOT_ACCOUNTING_ZONE_SCOPE_V5
+         *
+         * Owner / Manager:
+         *   Operational Hotspot pages remain all-zone.
+         *
+         * Accounting:
+         *   no explicit zone = all reseller zones.
+         *   explicit zone = only Hotspot data belonging
+         *   to that selected Network Zone.
+         *
+         * Normal Operator remains bound to user.zone_id.
          */
+        if (!$user->reseller_id) {
+            return;
+        }
+
+        $zoneId = null;
+
         if (
-            !$user->reseller_id
-            || $user->isResellerOwner()
+            $user->isResellerOwner()
             || $user->isManager()
         ) {
-            return;
-        }
+            $zoneId =
+                $this->accountingZoneId();
 
-        if (!$user->isOperator()) {
-            return;
-        }
+            if (!$zoneId) {
+                return;
+            }
+        } elseif ($user->isOperator()) {
+            $zoneId =
+                (int) (
+                    $user->zone_id
+                    ?? 0
+                );
 
-        $zoneId =
-            (int) (
-                $user->zone_id
-                ?? 0
-            );
+            if (!$zoneId) {
+                $builder->whereRaw(
+                    '1 = 0'
+                );
 
-        if (!$zoneId) {
-            $builder->whereRaw('1 = 0');
-
+                return;
+            }
+        } else {
             return;
         }
 
@@ -94,4 +112,46 @@ class HotspotChildZoneScope implements Scope
             );
         }
     }
+    private function accountingZoneId(): ?int
+    {
+        if (
+            !app()->bound(
+                'request'
+            )
+        ) {
+            return null;
+        }
+
+        $request =
+            request();
+
+        $routeName =
+            (string) (
+                $request
+                    ->route()
+                    ?->getName()
+                ?? ''
+            );
+
+        if (
+            !str_starts_with(
+                $routeName,
+                'accounting.'
+            )
+        ) {
+            return null;
+        }
+
+        $value =
+            $request
+                ->attributes
+                ->get(
+                    'accounting_zone_id'
+                );
+
+        return $value
+            ? (int) $value
+            : null;
+    }
+
 }

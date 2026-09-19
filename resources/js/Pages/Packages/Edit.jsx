@@ -26,6 +26,7 @@ export default function Edit({ package: pkg, zones = [] }) {
         speed_download: pkg.speed_download ?? '',
         speed_upload: pkg.speed_upload ?? '',
         mikrotik_profile: pkg.mikrotik_profile ?? '',
+        coverage_mode: pkg.coverage_mode ?? 'home_zone',
         enabled: Boolean(pkg.enabled),
     });
 
@@ -57,6 +58,43 @@ export default function Edit({ package: pkg, zones = [] }) {
                     onSubmit={submit}
                     className="space-y-6"
                 >
+
+                            {/* PACKAGE_ROAMING_COVERAGE_UI_V1 */}
+                            <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+                                <label className="block text-sm font-bold text-slate-800">
+                                    Internet Coverage
+                                </label>
+
+                                <select
+                                    value={data.coverage_mode}
+                                    onChange={(event) =>
+                                        setData(
+                                            'coverage_mode',
+                                            event.target.value,
+                                        )
+                                    }
+                                    className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 focus:border-cyan-500 focus:ring-cyan-500"
+                                >
+                                    <option value="home_zone">
+                                        This Zone Only
+                                    </option>
+
+                                    <option value="all_zones">
+                                        All Reseller MAC Zones
+                                    </option>
+                                </select>
+
+                                <p className="mt-2 text-xs leading-5 text-slate-600">
+                                    Billing, payment, refund and accounting remain in the selected package Network Zone. All Zones changes internet access only.
+                                </p>
+
+                                {errors.coverage_mode && (
+                                    <div className="mt-1 text-sm font-semibold text-red-600">
+                                        {errors.coverage_mode}
+                                    </div>
+                                )}
+                            </div>
+
                     <section className="rounded-2xl bg-white p-6 shadow">
                         <h2 className="mb-5 text-xl font-bold text-slate-800">
                             Package Information

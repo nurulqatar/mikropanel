@@ -54,6 +54,15 @@ class ManagerCashController extends Controller
                 'id',
                 'name',
                 'email',
+
+                /*
+                 * MANAGER_CASH_RESELLER_ID_FIX_V1
+                 *
+                 * Period ledger queries below use
+                 * $manager->reseller_id.
+                 */
+                'reseller_id',
+
                 'is_active',
             ]);
 

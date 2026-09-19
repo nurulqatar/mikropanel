@@ -16,6 +16,7 @@ class ClientProvisionService
         protected DhcpLeaseService $dhcpLeaseService,
         protected ArpService $arpService,
         protected QueueService $queueService,
+        protected IpAllocatorService $ipAllocatorService
     ) {
     }
 
@@ -631,13 +632,39 @@ class ClientProvisionService
                 'client_id',
                 $client->id
             )
-            ->with('router')
             ->get();
 
         foreach ($bindings as $binding) {
-            $router = $binding->router;
+            $router =
+                Router::withoutGlobalScopes()
+                    ->find(
+                        $binding->router_id
+                    );
 
             if (!$router) {
+                continue;
+            }
+
+            /*
+             * ROAMING_REMOVE_TENANT_BOUNDARY_V1
+             */
+            if (
+                !$this->sameTenant(
+                    $client,
+                    $router
+                )
+            ) {
+                Log::error(
+                    'Cross-reseller client binding was not touched.',
+                    [
+                        'client_id' =>
+                            $client->id,
+
+                        'router_id' =>
+                            $router->id,
+                    ]
+                );
+
                 continue;
             }
 
@@ -765,6 +792,13 @@ class ClientProvisionService
      * Public entry used by automatic retry
      * command and future RouterController hook.
      */
+    /*
+     * ROAMING_PACKAGE_PROVISION_V1
+     *
+     * Home-zone packages may touch only their own
+     * zone. All-zone packages may touch any enabled
+     * router belonging to the SAME reseller.
+     */
     public function syncClientToRouter(
         Client $client,
         Router $router
@@ -775,29 +809,24 @@ class ClientProvisionService
         ]);
 
         /*
-         * ZONE_ROUTER_BOUNDARY_V5
-         *
-         * MAC client state can only be written
-         * to a MikroTik in the same zone.
+         * Hard tenant boundary.
+         * Never perform a network action across
+         * reseller ownership.
          */
         if (
-            !$client->zone_id
-            || !$router->zone_id
+            !$this->sameTenant(
+                $client,
+                $router
+            )
         ) {
             Log::error(
-                'Zone-bound MikroTik sync rejected because zone information is missing.',
+                'Cross-reseller client/router sync blocked.',
                 [
                     'client_id' =>
                         $client->id,
 
-                    'client_zone_id' =>
-                        $client->zone_id,
-
                     'router_id' =>
                         $router->id,
-
-                    'router_zone_id' =>
-                        $router->zone_id,
                 ]
             );
 
@@ -805,12 +834,60 @@ class ClientProvisionService
         }
 
         if (
-            (int) $client->zone_id
-            !== (int) $router->zone_id
+            !$client->zone_id
+            || !$router->zone_id
         ) {
-            return true;
+            Log::warning(
+                'Client/router zone is missing.',
+                [
+                    'client_id' =>
+                        $client->id,
+
+                    'router_id' =>
+                        $router->id,
+                ]
+            );
+
+            return false;
         }
 
+        /*
+         * A stale roaming binding must be removed
+         * after an all-zone package is changed back
+         * to home-zone.
+         */
+        if (
+            !$this->routerAllowed(
+                $client,
+                $router
+            )
+        ) {
+            $binding =
+                ClientRouterBinding::query()
+                    ->where(
+                        'client_id',
+                        $client->id
+                    )
+                    ->where(
+                        'router_id',
+                        $router->id
+                    )
+                    ->first();
+
+            if (
+                !$binding
+                || $binding->sync_status
+                    === 'removed'
+            ) {
+                return true;
+            }
+
+            return $this->removeFromRouter(
+                $client,
+                $router,
+                $binding
+            );
+        }
 
         if ($client->trashed()) {
             $binding =
@@ -836,10 +913,11 @@ class ClientProvisionService
             );
         }
 
-        $ok = $this->syncOneRouter(
-            $client,
-            $router
-        );
+        $ok =
+            $this->syncOneRouter(
+                $client,
+                $router
+            );
 
         if (
             $ok
@@ -857,35 +935,130 @@ class ClientProvisionService
     private function syncAcrossEnabledRouters(
         Client $client
     ): array {
+        $client->loadMissing([
+            'package',
+            'ipRange',
+        ]);
+
         /*
-         * ZONE_FANOUT_QUERY_V5
+         * ROAMING_ROUTER_FANOUT_V1
          *
-         * Same MAC/IP/state goes to every enabled
-         * MikroTik inside this client's zone.
+         * home_zone:
+         *   only enabled routers in client.zone_id
+         *
+         * all_zones:
+         *   every enabled router of same reseller
+         *
+         * Query deliberately bypasses the logged-in
+         * Operator ZoneScope, then re-applies the
+         * reseller boundary explicitly.
          */
-        /*
-         * TRANSFER_AUTH_INDEPENDENT_FANOUT_V1
-         *
-         * Network convergence follows the CLIENT'S
-         * explicit zone, not the currently logged-in
-         * operator's ZoneScope.
-         *
-         * This is required when a destination operator
-         * completes a transfer or when source state
-         * must be restored after a failed move.
-         */
-        $routers =
+        $query =
             Router::withoutGlobalScopes()
                 ->where(
                     'enabled',
                     true
-                )
-                ->where(
-                    'zone_id',
-                    $client->zone_id
-                )
+                );
+
+        if (
+            $client->reseller_id
+            === null
+        ) {
+            $query->whereNull(
+                'reseller_id'
+            );
+        } else {
+            $query->where(
+                'reseller_id',
+                $client->reseller_id
+            );
+        }
+
+        if (
+            $this->coverageMode(
+                $client
+            ) !== 'all_zones'
+        ) {
+            $query->where(
+                'zone_id',
+                $client->zone_id
+            );
+        }
+
+        $routers =
+            $query
                 ->orderBy('id')
                 ->get();
+
+        $desiredRouterIds =
+            $routers
+                ->pluck('id')
+                ->map(
+                    fn ($id) =>
+                        (int) $id
+                )
+                ->all();
+
+        /*
+         * Remove no-longer-authorized roaming state.
+         */
+        $existingBindings =
+            ClientRouterBinding::query()
+                ->where(
+                    'client_id',
+                    $client->id
+                )
+                ->get();
+
+        foreach (
+            $existingBindings
+            as $binding
+        ) {
+            if (
+                in_array(
+                    (int) $binding->router_id,
+                    $desiredRouterIds,
+                    true
+                )
+                || $binding->sync_status
+                    === 'removed'
+            ) {
+                continue;
+            }
+
+            $router =
+                Router::withoutGlobalScopes()
+                    ->find(
+                        $binding->router_id
+                    );
+
+            if (!$router) {
+                continue;
+            }
+
+            if (
+                !$this->sameTenant(
+                    $client,
+                    $router
+                )
+            ) {
+                $binding->forceFill([
+                    'sync_status' =>
+                        'failed',
+
+                    'last_error' =>
+                        'Cross-reseller stale binding blocked.',
+                ])->save();
+
+                continue;
+            }
+
+            $this->removeFromRouter(
+                $client,
+                $router,
+                $binding
+            );
+        }
 
         $result = [
             'synced' => 0,
@@ -894,7 +1067,7 @@ class ClientProvisionService
 
         foreach ($routers as $router) {
             if (
-                $this->syncOneRouter(
+                $this->syncClientToRouter(
                     $client,
                     $router
                 )
@@ -907,10 +1080,18 @@ class ClientProvisionService
 
         if ($routers->isEmpty()) {
             Log::warning(
-                'Zone client sync found no enabled routers.',
+                'Client sync found no eligible enabled routers.',
                 [
                     'client_id' =>
                         $client->id,
+
+                    'home_zone_id' =>
+                        $client->zone_id,
+
+                    'coverage_mode' =>
+                        $this->coverageMode(
+                            $client
+                        ),
                 ]
             );
         }
@@ -918,13 +1099,6 @@ class ClientProvisionService
         return $result;
     }
 
-    /*
-     * Converge one router to the desired
-     * panel state.
-     *
-     * Same client_code, MAC and GLOBAL IP
-     * are used on every MikroTik.
-     */
     private function syncOneRouter(
         Client $client,
         Router $router
@@ -948,6 +1122,20 @@ class ClientProvisionService
             'sync_status' => 'pending',
             'last_error' => null,
         ])->save();
+
+        /*
+         * Every target zone gets its own local
+         * IP Pool / IP address.
+         */
+        if (
+            !$this->prepareBindingNetwork(
+                $client,
+                $router,
+                $binding
+            )
+        ) {
+            return false;
+        }
 
         try {
             $context = $this->context(
@@ -1124,6 +1312,21 @@ class ClientProvisionService
 
         if ($errors !== []) {
             $binding->forceFill([
+            /*
+             * ROAMING_BINDING_NETWORK_RELEASE_V1
+             *
+             * A removed roaming access mapping no
+             * longer reserves the target-zone IP.
+             */
+            'zone_id' =>
+                null,
+
+            'ip_range_id' =>
+                null,
+
+            'ip_address' =>
+                null,
+
                 'sync_status' =>
                     'failed',
 
@@ -1185,13 +1388,36 @@ class ClientProvisionService
             $source->getRelations()
         );
 
+        $range =
+            $binding->ip_range_id
+                ? \App\Models\IpRange::withoutGlobalScopes()
+                    ->find(
+                        $binding->ip_range_id
+                    )
+                : null;
+
         $context->forceFill([
             /*
-             * Runtime router only.
-             * This clone is NEVER saved.
+             * ROAMING_BINDING_CONTEXT_V1
+             *
+             * Runtime clone only.
+             * Source client keeps the original
+             * billing/home-zone network fields.
              */
+            'zone_id' =>
+                $binding->zone_id
+                ?: $source->zone_id,
+
             'router_id' =>
                 $router->id,
+
+            'ip_range_id' =>
+                $binding->ip_range_id
+                ?: $source->ip_range_id,
+
+            'ip_address' =>
+                $binding->ip_address
+                ?: $source->ip_address,
 
             'mikrotik_lease_id' =>
                 $binding
@@ -1211,17 +1437,282 @@ class ClientProvisionService
             $router
         );
 
+        if ($range) {
+            $context->setRelation(
+                'ipRange',
+                $range
+            );
+        }
+
         return $context;
     }
 
+    private function coverageMode(
+        Client $client
+    ): string {
+        $client->loadMissing(
+            'package'
+        );
+
+        return $client
+            ->package
+            ?->coverage_mode
+            === 'all_zones'
+                ? 'all_zones'
+                : 'home_zone';
+    }
+
+    private function sameTenant(
+        Client $client,
+        Router $router
+    ): bool {
+        $clientTenant =
+            $client->reseller_id
+            === null
+                ? null
+                : (int)
+                    $client
+                        ->reseller_id;
+
+        $routerTenant =
+            $router->reseller_id
+            === null
+                ? null
+                : (int)
+                    $router
+                        ->reseller_id;
+
+        return $clientTenant
+            === $routerTenant;
+    }
+
+    private function routerAllowed(
+        Client $client,
+        Router $router
+    ): bool {
+        if (
+            !$this->sameTenant(
+                $client,
+                $router
+            )
+            || !$client->zone_id
+            || !$router->zone_id
+            || !$router->enabled
+        ) {
+            return false;
+        }
+
+        if (
+            $this->coverageMode(
+                $client
+            ) === 'all_zones'
+        ) {
+            return true;
+        }
+
+        return (int)
+            $client->zone_id
+            === (int)
+                $router->zone_id;
+    }
+
     /*
-     * Keep the old single-router columns
-     * populated for existing monitoring code.
+     * One client uses ONE local IP per Network Zone.
      *
-     * They represent the client's historical
-     * primary router only. Multi-router truth
-     * lives in client_router_bindings.
+     * If the zone has multiple MikroTik routers,
+     * their bindings reuse that same zone-local IP.
      */
+    private function prepareBindingNetwork(
+        Client $client,
+        Router $router,
+        ClientRouterBinding $binding
+    ): bool {
+        $zoneId =
+            (int) (
+                $router->zone_id
+                ?? 0
+            );
+
+        if ($zoneId <= 0) {
+            return $this
+                ->failBindingNetwork(
+                    $binding,
+                    'Target router has no Network Zone.'
+                );
+        }
+
+        /*
+         * Existing valid binding keeps its IP.
+         */
+        if (
+            (int) (
+                $binding->zone_id
+                ?? 0
+            ) === $zoneId
+            && $binding->ip_range_id
+            && $binding->ip_address
+        ) {
+            return true;
+        }
+
+        /*
+         * Home billing zone keeps the original
+         * client IP and IP Pool.
+         */
+        if (
+            (int) $client->zone_id
+            === $zoneId
+        ) {
+            if (
+                !$client->ip_range_id
+                || !$client->ip_address
+            ) {
+                return $this
+                    ->failBindingNetwork(
+                        $binding,
+                        'Home-zone client IP/IP Pool is missing.'
+                    );
+            }
+
+            $binding->forceFill([
+                'zone_id' =>
+                    $zoneId,
+
+                'ip_range_id' =>
+                    $client->ip_range_id,
+
+                'ip_address' =>
+                    $client->ip_address,
+            ])->save();
+
+            return true;
+        }
+
+        /*
+         * Another router in the same target zone
+         * may already own this client's zone-local IP.
+         */
+        $sibling =
+            ClientRouterBinding::query()
+                ->where(
+                    'client_id',
+                    $client->id
+                )
+                ->where(
+                    'zone_id',
+                    $zoneId
+                )
+                ->where(
+                    'id',
+                    '!=',
+                    $binding->id
+                )
+                ->whereNotNull(
+                    'ip_range_id'
+                )
+                ->whereNotNull(
+                    'ip_address'
+                )
+                ->where(
+                    'sync_status',
+                    '!=',
+                    'removed'
+                )
+                ->orderBy('id')
+                ->first();
+
+        if ($sibling) {
+            $binding->forceFill([
+                'zone_id' =>
+                    $zoneId,
+
+                'ip_range_id' =>
+                    $sibling
+                        ->ip_range_id,
+
+                'ip_address' =>
+                    $sibling
+                        ->ip_address,
+            ])->save();
+
+            return true;
+        }
+
+        /*
+         * First router encountered for this target
+         * zone: reserve a fresh IP from that zone.
+         */
+        $allocation =
+            $this
+                ->ipAllocatorService
+                ->allocateForResellerZone(
+                    $client->reseller_id
+                        === null
+                            ? null
+                            : (int)
+                                $client
+                                    ->reseller_id,
+                    $zoneId
+                );
+
+        if (!$allocation) {
+            return $this
+                ->failBindingNetwork(
+                    $binding,
+                    'No enabled IP Pool/free IP is available in target zone.'
+                );
+        }
+
+        $binding->forceFill([
+            'zone_id' =>
+                $zoneId,
+
+            'ip_range_id' =>
+                $allocation[
+                    'range'
+                ]->id,
+
+            'ip_address' =>
+                $allocation[
+                    'ip'
+                ],
+        ])->save();
+
+        return true;
+    }
+
+    private function failBindingNetwork(
+        ClientRouterBinding $binding,
+        string $message
+    ): bool {
+        $binding->forceFill([
+            'sync_status' =>
+                'failed',
+
+            'last_synced_at' =>
+                now(),
+
+            'last_error' =>
+                $message,
+        ])->save();
+
+        Log::warning(
+            'Client roaming network preparation failed.',
+            [
+                'client_id' =>
+                    $binding->client_id,
+
+                'router_id' =>
+                    $binding->router_id,
+
+                'message' =>
+                    $message,
+            ]
+        );
+
+        return false;
+    }
+
     private function syncLegacyPrimaryIds(
         Client $client
     ): void {

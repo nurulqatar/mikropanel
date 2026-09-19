@@ -56,6 +56,18 @@ class PackageRequest extends FormRequest
                 'max:100',
             ],
 
+            /* PACKAGE_ROAMING_COVERAGE_REQUEST_V1 */
+
+            'coverage_mode' => [
+
+                'sometimes',
+
+                'string',
+
+                'in:home_zone,all_zones',
+
+            ],
+
             'enabled' => [
                 'nullable',
                 'boolean',

@@ -16,6 +16,7 @@ class Package extends Model
         'speed_download',
         'speed_upload',
         'mikrotik_profile',
+        'coverage_mode',
         'enabled',
     ];
 
@@ -40,4 +41,17 @@ class Package extends Model
             Client::class
         );
     }
+
+    /*
+     * PACKAGE_ROAMING_COVERAGE_MODEL_V1
+     *
+     * Package zone_id remains the financial /
+     * billing home zone.
+     */
+    public function isAllZoneCoverage(): bool
+    {
+        return $this->coverage_mode
+            === 'all_zones';
+    }
+
 }

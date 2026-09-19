@@ -70,10 +70,52 @@ class ZoneScope implements Scope
          * Accounting's explicit zone filter wins
          * when AccountingController sets one.
          */
+        /*
+         * MANAGER_ACCOUNTING_SCOPE_V4
+         *
+         * Normal operational pages:
+         * Manager still works only in the
+         * currently selected session zone.
+         *
+         * Accounting pages:
+         * - explicit zone => selected zone
+         * - no explicit zone => all reseller zones
+         *
+         * ResellerScope continues to prevent
+         * cross-reseller visibility.
+         */
         if ($user->isManager()) {
+            $routeName =
+                app()->bound('request')
+                    ? (string) (
+                        request()
+                            ->route()
+                            ?->getName()
+                        ?? ''
+                    )
+                    : '';
+
+            if (
+                str_starts_with(
+                    $routeName,
+                    'accounting.'
+                )
+            ) {
+                $zoneId =
+                    $this->accountingZoneId();
+
+                if ($zoneId) {
+                    $builder->where(
+                        $column,
+                        $zoneId
+                    );
+                }
+
+                return;
+            }
+
             $zoneId =
-                $this->accountingZoneId()
-                ?: $this->sessionZoneId();
+                $this->sessionZoneId();
 
             if (!$zoneId) {
                 $builder->whereRaw(

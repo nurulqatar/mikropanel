@@ -30,14 +30,7 @@ class RouterClientSyncService
             'failed' => 0,
         ];
 
-        Client::query()
-                /*
-                 * ROUTER_ZONE_CLIENT_FILTER_V3
-                 */
-                ->where(
-                    'zone_id',
-                    $router->zone_id
-                )
+        $this->eligibleClients($router)
             ->orderBy('id')
             ->chunkById(
                 50,
@@ -108,14 +101,7 @@ class RouterClientSyncService
             'failed' => 0,
         ];
 
-        Client::query()
-                /*
-                 * ROUTER_ZONE_CLIENT_FILTER_V3
-                 */
-                ->where(
-                    'zone_id',
-                    $router->zone_id
-                )
+        $this->eligibleClients($router)
             ->orderBy('id')
             ->chunkById(
                 100,
@@ -149,6 +135,80 @@ class RouterClientSyncService
             );
 
         return $result;
+    }
+
+    /*
+     * ROAMING_ROUTER_CLIENT_ELIGIBILITY_V1
+     *
+     * A router processes:
+     * 1. Home-zone clients.
+     * 2. Same-reseller all-zone package clients.
+     * 3. Existing bindings that may now need cleanup.
+     *
+     * Tenant boundary is explicit because this
+     * scheduler must not depend on web-session scope.
+     */
+    private function eligibleClients(
+        Router $router
+    ) {
+        $query =
+            Client::withoutGlobalScopes()
+                ->whereNull(
+                    'clients.deleted_at'
+                );
+
+        if (
+            $router->reseller_id
+            === null
+        ) {
+            $query->whereNull(
+                'clients.reseller_id'
+            );
+        } else {
+            $query->where(
+                'clients.reseller_id',
+                $router->reseller_id
+            );
+        }
+
+        return $query->where(
+            function ($query) use (
+                $router
+            ): void {
+                $query
+                    ->where(
+                        'clients.zone_id',
+                        $router->zone_id
+                    )
+                    ->orWhereHas(
+                        'package',
+                        function (
+                            $packageQuery
+                        ): void {
+                            $packageQuery
+                                ->withoutGlobalScopes()
+                                ->where(
+                                    'coverage_mode',
+                                    'all_zones'
+                                );
+                        }
+                    )
+                    ->orWhereHas(
+                        'routerBindings',
+                        function (
+                            $bindingQuery
+                        ) use (
+                            $router
+                        ): void {
+                            $bindingQuery
+                                ->where(
+                                    'router_id',
+                                    $router->id
+                                );
+                        }
+                    );
+            }
+        );
     }
 
     public function emptyResult(): array

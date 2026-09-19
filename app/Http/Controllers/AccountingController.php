@@ -157,6 +157,18 @@ class AccountingController extends Controller
                 );
 
         $expenseQuery = Expense::query()
+            /*
+             * ACCOUNTING_REJECTED_EXPENSE_EXCLUSION_V5
+             *
+             * Rejected expense requests remain audit
+             * history but are not business cash expense.
+             */
+
+            ->where(
+                'approval_status',
+                '!=',
+                'rejected'
+            )
             ->whereBetween('expense_date', [
                 $startDate,
                 $endDate,
@@ -605,6 +617,11 @@ class AccountingController extends Controller
         string $endDate
     ): Collection {
         return Expense::query()
+            ->where(
+                'approval_status',
+                '!=',
+                'rejected'
+            )
             ->whereBetween('expense_date', [
                 $startDate,
                 $endDate,
@@ -772,6 +789,11 @@ class AccountingController extends Controller
         string $endDate
     ): array {
         return Expense::query()
+            ->where(
+                'approval_status',
+                '!=',
+                'rejected'
+            )
             ->selectRaw(
                 '
                     category,
@@ -921,6 +943,11 @@ class AccountingController extends Controller
 
         $expenses =
             Expense::query()
+            ->where(
+                'approval_status',
+                '!=',
+                'rejected'
+            )
                 ->selectRaw(
                     "
                         DATE_FORMAT(
@@ -1576,7 +1603,17 @@ class AccountingController extends Controller
          * Normal operator uses the assigned zone
          * through the existing ZoneScope.
          */
-        if ($user->isOperator()) {
+        /*
+         * ACCOUNTING_MANAGER_ROLE_FIX_V4
+         *
+         * Manager uses operator as the base role,
+         * but must not inherit normal Operator
+         * single-zone Accounting restrictions.
+         */
+        if (
+            $user->isOperator()
+            && !$user->isManager()
+        ) {
             return;
         }
 
@@ -1653,6 +1690,7 @@ class AccountingController extends Controller
                 $user
                 && $user->reseller_id
                 && $user->isOperator()
+                && !$user->isManager()
             );
 
         $canChoose =
@@ -1770,6 +1808,7 @@ class AccountingController extends Controller
             $user
             && $user->reseller_id
             && $user->isOperator()
+            && !$user->isManager()
         ) {
             $today =
                 Carbon::today(
