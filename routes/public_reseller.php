@@ -69,6 +69,19 @@ Route::get(
     'website.privacy'
 );
 
+/*
+ * PUBLIC_LOGIN_CENTER_V2
+ */
+Route::get(
+    '/login-center',
+    [
+        PublicWebsiteController::class,
+        'loginCenter',
+    ]
+)->name(
+    'website.login-center'
+);
+
 Route::middleware([
     'auth',
     'active.panel.user',

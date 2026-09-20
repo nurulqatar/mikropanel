@@ -232,6 +232,8 @@ export default function Home({
     brand = 'MikroPanel',
     site = {},
     plans = [],
+
+    compliancePlans = [],
 }) {
     return (
         <div className="min-h-screen bg-slate-950 text-white">
@@ -921,6 +923,73 @@ export default function Home({
                         />
                     </div>
 
+                    <div className="mt-10">
+                        <div className="flex flex-wrap items-end justify-between gap-4">
+                            <div>
+                                <div className="text-sm font-black uppercase tracking-[0.18em] text-violet-300">
+                                    Current Service Plans
+                                </div>
+
+                                <h3 className="mt-2 text-3xl font-black">
+                                    Pricing managed by Super Admin
+                                </h3>
+                            </div>
+
+                            <Link
+                                href={route(
+                                    'website.login-center',
+                                )}
+                                className="rounded-xl border border-white/15 px-5 py-3 font-black text-white hover:bg-white/5"
+                            >
+                                View All Panel Logins
+                            </Link>
+                        </div>
+
+                        <div className="mt-6 grid gap-4 lg:grid-cols-3">
+                            {compliancePlans.map(
+                                (plan) => (
+                                    <div
+                                        key={plan.id}
+                                        className="rounded-2xl border border-white/10 bg-white/[0.04] p-5"
+                                    >
+                                        <div className="text-xs font-black uppercase tracking-[0.16em] text-violet-300">
+                                            {plan.service_type}
+                                        </div>
+
+                                        <div className="mt-2 text-xl font-black">
+                                            {plan.name}
+                                        </div>
+
+                                        <div className="mt-3 font-black text-cyan-300">
+                                            {plan.call_for_price
+                                                ? 'Call for Price'
+                                                : `QAR ${Number(
+                                                      plan.monthly_price,
+                                                  ).toLocaleString(
+                                                      undefined,
+                                                      {
+                                                          maximumFractionDigits: 2,
+                                                      },
+                                                  )} / month`}
+                                        </div>
+
+                                        {plan.description && (
+                                            <p className="mt-3 text-sm leading-6 text-slate-400">
+                                                {plan.description}
+                                            </p>
+                                        )}
+                                    </div>
+                                ),
+                            )}
+
+                            {!compliancePlans.length && (
+                                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 text-sm text-slate-300 lg:col-span-3">
+                                    Compliance plan pricing is controlled by Super Admin. Contact the platform administrator for current availability.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
                     <div className="mt-10 grid gap-6 lg:grid-cols-2">
                         <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-7">
                             <h3 className="text-2xl font-black">Two Filtering Modes</h3>
@@ -952,11 +1021,95 @@ export default function Home({
                         <Link href={route('compliance.login')} className="rounded-xl bg-cyan-400 px-6 py-3 font-black text-slate-950">Compliance Login</Link>
                         <Link href={route('login')} className="rounded-xl border border-white/15 px-6 py-3 font-black text-white">Company Login</Link>
                         <Link href={route('hotel.login')} className="rounded-xl border border-white/15 px-6 py-3 font-black text-white">Hotel Login</Link>
+                        <Link href={route('website.login-center')} className="rounded-xl border border-violet-300/30 bg-violet-400/10 px-6 py-3 font-black text-violet-100">All Panel Logins</Link>
                     </div>
                 </div>
             </section>
 
 
+
+                {/* PUBLIC_ALL_PANEL_LOGIN_CENTER_V2 */}
+                <section
+                    id="portal-access"
+                    className="border-y border-white/10 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 py-20"
+                >
+                    <div className="mx-auto max-w-7xl px-5">
+                        <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
+                            <div>
+                                <div className="text-sm font-black uppercase tracking-[0.2em] text-cyan-300">
+                                    Services & Login Portals
+                                </div>
+
+                                <h2 className="mt-3 text-4xl font-black tracking-tight">
+                                    Company, Hotel and Compliance — one website, one login directory
+                                </h2>
+
+                                <p className="mt-4 max-w-4xl text-lg leading-8 text-slate-400">
+                                    View the platform services and open the correct customer or administration login without searching for separate URLs.
+                                </p>
+                            </div>
+
+                            <Link
+                                href={route(
+                                    'website.login-center',
+                                )}
+                                className="rounded-2xl bg-cyan-400 px-7 py-4 text-center font-black text-slate-950"
+                            >
+                                Open All Panel Logins
+                            </Link>
+                        </div>
+
+                        <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                            {[
+                                {
+                                    title: 'Company / ISP',
+                                    path: '/login',
+                                    text: 'MAC clients, Hotspot, zones, staff, billing and reports.',
+                                },
+                                {
+                                    title: 'Super Admin',
+                                    path: '/login',
+                                    text: 'Platform administration uses the main secure login and role-based redirect.',
+                                },
+                                {
+                                    title: 'Hotel Hotspot',
+                                    path: '/hotel/login',
+                                    text: 'Dedicated Hotel guest Wi-Fi, vouchers, sessions and operations.',
+                                },
+                                {
+                                    title: 'Network Compliance',
+                                    path: '/compliance/login',
+                                    text: 'Standalone Compliance customers use the dedicated Compliance login.',
+                                },
+                            ].map(
+                                (item) => (
+                                    <div
+                                        key={item.title}
+                                        className="rounded-3xl border border-white/10 bg-white/[0.04] p-6"
+                                    >
+                                        <div className="text-xl font-black">
+                                            {item.title}
+                                        </div>
+
+                                        <code className="mt-3 block text-xs text-cyan-300">
+                                            {item.path}
+                                        </code>
+
+                                        <p className="mt-3 text-sm leading-6 text-slate-400">
+                                            {item.text}
+                                        </p>
+                                    </div>
+                                ),
+                            )}
+                        </div>
+
+                        <div className="mt-6 rounded-2xl border border-violet-300/20 bg-violet-400/[0.06] p-5 text-sm leading-6 text-slate-300">
+                            Existing Company Compliance add-on: <code className="text-violet-200">/reseller/compliance</code>
+                            {' · '}
+                            Existing Hotel Compliance add-on: <code className="text-violet-200">/hotel/compliance</code>
+                        </div>
+                    </div>
+                </section>
 
                 <section
                     id="plans"
@@ -1138,8 +1291,12 @@ export default function Home({
                         <Link href={route('website.privacy')}>
                             Privacy
                         </Link>
-                        <Link href={route('login')}>
-                            Panel Login
+                        <Link
+                            href={route(
+                                'website.login-center',
+                            )}
+                        >
+                            All Panel Logins
                         </Link>
                     </div>
                 </div>

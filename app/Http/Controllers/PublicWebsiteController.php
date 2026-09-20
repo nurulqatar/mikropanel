@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\ResellerPlan;
 use App\Models\Setting;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -28,6 +30,9 @@ class PublicWebsiteController extends Controller
 
                 'plans' =>
                     $this->plans(),
+
+                'compliancePlans' =>
+                    $this->compliancePlans(),
             ]
         );
     }
@@ -84,6 +89,97 @@ class PublicWebsiteController extends Controller
                     ],
             ]
         );
+    }
+
+    /*
+     * PUBLIC_LOGIN_CENTER_V2
+     */
+    public function loginCenter(): Response
+    {
+        $site =
+            $this->site();
+
+        return Inertia::render(
+            'Public/LoginCenter',
+            [
+                'brand' =>
+                    $site[
+                        'website_name'
+                    ],
+
+                'site' =>
+                    $site,
+
+                'compliancePlans' =>
+                    $this->compliancePlans(),
+            ]
+        );
+    }
+
+    private function compliancePlans(): array
+    {
+        if (
+            !Schema::hasTable(
+                'compliance_plans'
+            )
+        ) {
+            return [];
+        }
+
+        return DB::table(
+            'compliance_plans'
+        )
+            ->where(
+                'enabled',
+                true
+            )
+            ->orderBy(
+                'service_type'
+            )
+            ->orderBy(
+                'id'
+            )
+            ->get([
+                'id',
+                'name',
+                'code',
+                'service_type',
+                'description',
+                'monthly_price',
+                'call_for_price',
+            ])
+            ->map(
+                fn ($plan): array => [
+                    'id' =>
+                        (int) $plan->id,
+
+                    'name' =>
+                        $plan->name,
+
+                    'code' =>
+                        $plan->code,
+
+                    'service_type' =>
+                        $plan
+                            ->service_type,
+
+                    'description' =>
+                        $plan
+                            ->description,
+
+                    'monthly_price' =>
+                        (float)
+                        $plan
+                            ->monthly_price,
+
+                    'call_for_price' =>
+                        (bool)
+                        $plan
+                            ->call_for_price,
+                ]
+            )
+            ->values()
+            ->all();
     }
 
     private function plans(): array
