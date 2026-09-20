@@ -42,6 +42,14 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        /*
+         * HOTEL_HOTSPOT_AUTH_GUARD_V1
+         */
+        'hotel' => [
+            'driver' => 'session',
+            'provider' => 'hotel_users',
+        ],
     ],
 
     /*
@@ -65,6 +73,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+
+        'hotel_users' => [
+            'driver' => 'eloquent',
+            'model' => \App\Models\Hotel\HotelUser::class,
         ],
 
         // 'users' => [
