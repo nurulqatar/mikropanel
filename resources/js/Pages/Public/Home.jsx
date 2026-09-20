@@ -75,6 +75,159 @@ const money = (value) =>
         },
     );
 
+
+/*
+ * HOTEL_HOTSPOT_PUBLIC_DETAILS_V1
+ *
+ * Public marketing content reflects the
+ * Hotel Hotspot capabilities already present
+ * in MikroPanel.
+ */
+const hotelHotspotFeatures = [
+    {
+        title: 'Dedicated Hotel Management',
+        text: 'Hotels receive a separate login and operational workspace instead of sharing the normal Company panel. Hotel administrators can manage their own Wi-Fi operation from one focused dashboard.',
+    },
+    {
+        title: 'Receptionist & Staff Access',
+        text: 'Create receptionist and hotel staff accounts with controlled permissions so front-desk teams can handle guest Wi-Fi tasks without receiving unrestricted administrative access.',
+    },
+    {
+        title: 'Guest & Stay Management',
+        text: 'Keep guest records, room or stay information, check-in and checkout-linked Wi-Fi access together so internet access follows the guest stay instead of being managed separately.',
+    },
+    {
+        title: 'Guest Wi-Fi Vouchers',
+        text: 'Create guest vouchers linked to Wi-Fi profiles and stays. Voucher lifecycle can follow checkout time, reducing the need for staff to manually remember when guest access should end.',
+    },
+    {
+        title: 'Automatic Checkout Expiry',
+        text: 'When a guest stay reaches checkout, MikroPanel can expire the related Hotel Hotspot voucher and queue MikroTik cleanup automatically.',
+    },
+    {
+        title: 'Multi-Router Voucher Sync',
+        text: 'A hotel can operate multiple supported MikroTik Hotspot routers while MikroPanel keeps hotel vouchers synchronized across the enabled router set.',
+    },
+    {
+        title: 'MikroTik Router Management',
+        text: 'Add Hotel MikroTik routers, test connectivity, apply router quotas and generate Hotspot setup information from the Hotel management system.',
+    },
+    {
+        title: 'Automatic Sync & Recovery',
+        text: 'Queued voucher synchronization, retry handling, stale-job protection, failed-sync recovery, router backfill and periodic reconciliation help keep the panel and RouterOS state aligned.',
+    },
+    {
+        title: 'Live Connected Guests',
+        text: 'Hotel telemetry can track active Hotspot sessions so staff can see connected users and current guest network activity from the Hotel panel.',
+    },
+    {
+        title: 'Usage & Session History',
+        text: 'Track session history, reconnect activity, per-guest usage, per-router usage and accumulated voucher traffic for operational visibility.',
+    },
+    {
+        title: 'Reports & CSV Export',
+        text: 'Hotel reporting includes usage information and downloadable CSV data so management can review activity outside the dashboard when required.',
+    },
+    {
+        title: '184-Language Guest Portal',
+        text: 'The Hotel guest portal includes a global language catalog with 184 supported language entries, helping international properties provide a more accessible Wi-Fi experience.',
+    },
+    {
+        title: 'Hotel Branding',
+        text: 'Use hotel-specific branding and logo settings so the Hotel Wi-Fi experience can reflect the property identity rather than a generic network page.',
+    },
+    {
+        title: 'Wi-Fi Profiles',
+        text: 'Create Hotel Wi-Fi profiles for different guest access requirements and use those profiles when generating or managing vouchers.',
+    },
+    {
+        title: 'Billing & Subscription Control',
+        text: 'Hotel commercial management supports subscription billing, renewal workflows, invoice records and Hotel service lifecycle management.',
+    },
+    {
+        title: 'Manual Payments',
+        text: 'Record Hotel subscription payments manually today while maintaining invoice and payment history inside the platform.',
+    },
+    {
+        title: 'Automatic Invoice Operations',
+        text: 'Commercial maintenance can support scheduled invoice operations and subscription state handling without requiring daily manual administration.',
+    },
+    {
+        title: 'Suspend & Reactivate',
+        text: 'Hotel service access can follow subscription status, including suspension and reactivation workflows controlled from the platform.',
+    },
+    {
+        title: 'Advanced Voucher Control',
+        text: 'Hotel staff can manage voucher state and authorized network access while the backend coordinates the required MikroTik synchronization.',
+    },
+    {
+        title: 'Live Session Disconnect',
+        text: 'Authorized Hotel operations can terminate an active guest Hotspot session when access must be stopped immediately.',
+    },
+    {
+        title: 'Router & Sync Alerts',
+        text: 'Operational alerts can surface router and voucher synchronization problems so staff are not required to discover failures only after a guest reports an issue.',
+    },
+    {
+        title: 'Hotel Notifications',
+        text: 'Hotel-specific notifications provide a central place for important operational events and service information.',
+    },
+    {
+        title: 'Audit History',
+        text: 'Important Hotel operations can be recorded in an audit trail, with audit CSV export available for management and accountability.',
+    },
+    {
+        title: 'Safer RouterOS Ownership',
+        text: 'Voucher synchronization uses ownership-aware RouterOS handling to reduce the risk of changing an unrelated manually created Hotspot user with the same username.',
+    },
+];
+
+const hotelHotspotBenefits = [
+    'Faster guest Wi-Fi onboarding at reception',
+    'Automatic checkout-linked access expiry',
+    'One dashboard for guests, vouchers, routers and usage',
+    'Controlled receptionist and staff permissions',
+    'Multi-router operation for larger properties',
+    'Hotel-branded guest Wi-Fi experience',
+    'International guest portal language support',
+    'Usage, session and management reporting',
+    'Subscription, invoice and payment administration',
+    'Alerts, audit history and operational visibility',
+];
+
+const hotelHotspotWorkflow = [
+    {
+        step: '01',
+        title: 'Create Hotel',
+        text: 'Super Admin creates the Hotel account, selects the Hotel plan and activates the required subscription.',
+    },
+    {
+        step: '02',
+        title: 'Configure Hotel',
+        text: 'Hotel administrator signs in, adds branding, staff permissions and Wi-Fi profiles for the property.',
+    },
+    {
+        step: '03',
+        title: 'Connect MikroTik',
+        text: 'Add the Hotel MikroTik router or routers, verify connectivity and configure the Hotel Hotspot environment.',
+    },
+    {
+        step: '04',
+        title: 'Register Guest',
+        text: 'Reception records the guest and stay details, including the expected checkout period.',
+    },
+    {
+        step: '05',
+        title: 'Issue Wi-Fi Access',
+        text: 'Create the guest voucher and let MikroPanel queue synchronization to the appropriate Hotel routers.',
+    },
+    {
+        step: '06',
+        title: 'Monitor & Close',
+        text: 'Track sessions and usage during the stay. At checkout, access can expire and RouterOS cleanup is handled through the maintenance workflow.',
+    },
+];
+
 export default function Home({
     brand = 'MikroPanel',
     site = {},
@@ -87,7 +240,7 @@ export default function Home({
             >
                 <meta
                     name="description"
-                    content="Professional MikroTik client management, Hotspot, billing, accounting, reseller operations and Network Zone platform."
+                    content="Professional MikroTik ISP, Company and Hotel Hotspot management platform with guest Wi-Fi vouchers, MikroTik automation, billing, live usage, reports and multi-router control."
                 />
             </Head>
 
@@ -113,6 +266,9 @@ export default function Home({
                     <nav className="hidden items-center gap-7 text-sm font-semibold text-slate-300 lg:flex">
                         <a href="#features">
                             Features
+                        </a>
+                        <a href="#hotel-hotspot">
+                            Hotel Hotspot
                         </a>
                         <a href="#plans">
                             Pricing
@@ -362,6 +518,338 @@ export default function Home({
                         </div>
                     </div>
                 </section>
+
+                {/* HOTEL_HOTSPOT_PUBLIC_DETAILS_V1 */}
+                <section
+                    id="hotel-hotspot"
+                    className="relative overflow-hidden border-y border-white/10 bg-slate-900/60 py-24"
+                >
+                    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                        <div className="absolute -left-32 top-16 h-80 w-80 rounded-full bg-cyan-500/10 blur-3xl" />
+                        <div className="absolute -right-32 bottom-0 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
+                    </div>
+
+                    <div className="relative mx-auto max-w-7xl px-5">
+                        <SectionTitle
+                            eyebrow="Hotel Hotspot"
+                            title="Complete guest Wi-Fi management for hotels"
+                            text="Manage Hotel Wi-Fi as a complete operational service — from Hotel administration and receptionist access to guest stays, vouchers, MikroTik routers, live sessions, reporting, billing and automatic expiry."
+                        />
+
+                        <div className="mt-12 grid gap-6 lg:grid-cols-[1.25fr_.75fr]">
+                            <div className="rounded-[2rem] border border-cyan-400/20 bg-gradient-to-br from-cyan-400/10 via-white/[0.04] to-emerald-400/10 p-7 md:p-10">
+                                <div className="inline-flex rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-cyan-200">
+                                    Built for hospitality operations
+                                </div>
+
+                                <h3 className="mt-6 max-w-3xl text-3xl font-black leading-tight md:text-5xl">
+                                    Guest Internet from check-in
+                                    to checkout — managed from
+                                    one Hotel panel.
+                                </h3>
+
+                                <p className="mt-6 max-w-3xl text-base leading-8 text-slate-300 md:text-lg">
+                                    MikroPanel Hotel Hotspot combines
+                                    guest management, stay-based Wi-Fi
+                                    vouchers, MikroTik synchronization,
+                                    live network visibility and commercial
+                                    controls in one dedicated Hotel
+                                    management system.
+                                </p>
+
+                                <div className="mt-8 flex flex-wrap gap-3">
+                                    {[
+                                        'Guest & Stay Management',
+                                        'MikroTik Integration',
+                                        'Multi-Router Sync',
+                                        'Live Sessions',
+                                        'Usage Reports',
+                                        'Hotel Billing',
+                                        '184-Language Portal',
+                                        'Staff Permissions',
+                                    ].map((item) => (
+                                        <span
+                                            key={item}
+                                            className="rounded-full border border-white/10 bg-slate-950/60 px-4 py-2 text-sm font-bold text-slate-200"
+                                        >
+                                            {item}
+                                        </span>
+                                    ))}
+                                </div>
+
+                                <div className="mt-9 flex flex-wrap gap-3">
+                                    <Link
+                                        href={route('hotel.login')}
+                                        className="rounded-xl bg-cyan-400 px-6 py-3.5 font-black text-slate-950 transition hover:bg-cyan-300"
+                                    >
+                                        Hotel Login
+                                    </Link>
+
+                                    <a
+                                        href="#plans"
+                                        className="rounded-xl border border-white/15 bg-white/5 px-6 py-3.5 font-black text-white transition hover:bg-white/10"
+                                    >
+                                        View Company Plans
+                                    </a>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+                                <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
+                                    <div className="text-sm font-black uppercase tracking-[0.18em] text-emerald-300">
+                                        Guest Experience
+                                    </div>
+                                    <div className="mt-3 text-2xl font-black">
+                                        Simple access for every stay
+                                    </div>
+                                    <p className="mt-3 leading-7 text-slate-400">
+                                        Reception can manage guest Wi-Fi
+                                        around the actual Hotel stay instead
+                                        of maintaining separate network notes
+                                        and manual expiry lists.
+                                    </p>
+                                </div>
+
+                                <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
+                                    <div className="text-sm font-black uppercase tracking-[0.18em] text-cyan-300">
+                                        Network Operations
+                                    </div>
+                                    <div className="mt-3 text-2xl font-black">
+                                        MikroTik automation behind the scenes
+                                    </div>
+                                    <p className="mt-3 leading-7 text-slate-400">
+                                        Router synchronization, voucher
+                                        provisioning, session telemetry,
+                                        retries and reconciliation reduce
+                                        repetitive RouterOS administration.
+                                    </p>
+                                </div>
+
+                                <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
+                                    <div className="text-sm font-black uppercase tracking-[0.18em] text-violet-300">
+                                        Management
+                                    </div>
+                                    <div className="mt-3 text-2xl font-black">
+                                        Visibility beyond voucher creation
+                                    </div>
+                                    <p className="mt-3 leading-7 text-slate-400">
+                                        Billing, payments, alerts, audit
+                                        records, live sessions and usage
+                                        reports give Hotel management a
+                                        clearer operational picture.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-20">
+                            <div className="max-w-3xl">
+                                <div className="text-sm font-black uppercase tracking-[0.2em] text-cyan-300">
+                                    Complete Feature Set
+                                </div>
+
+                                <h3 className="mt-3 text-3xl font-black md:text-4xl">
+                                    Everything needed to operate Hotel guest Wi-Fi
+                                </h3>
+
+                                <p className="mt-4 leading-7 text-slate-400">
+                                    The Hotel Hotspot module is separated
+                                    from ordinary Company operations while
+                                    still using MikroPanel as the central
+                                    management platform.
+                                </p>
+                            </div>
+
+                            <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                                {hotelHotspotFeatures.map(
+                                    (feature, index) => (
+                                        <div
+                                            key={feature.title}
+                                            className="group rounded-3xl border border-white/10 bg-white/[0.04] p-6 transition hover:-translate-y-1 hover:border-cyan-400/30 hover:bg-white/[0.06]"
+                                        >
+                                            <div className="flex items-start gap-4">
+                                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-cyan-400/10 text-sm font-black text-cyan-300">
+                                                    {String(
+                                                        index + 1,
+                                                    ).padStart(
+                                                        2,
+                                                        '0',
+                                                    )}
+                                                </div>
+
+                                                <div>
+                                                    <h4 className="text-lg font-black">
+                                                        {feature.title}
+                                                    </h4>
+
+                                                    <p className="mt-2 text-sm leading-7 text-slate-400">
+                                                        {feature.text}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ),
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="mt-20 grid gap-8 lg:grid-cols-2">
+                            <div className="rounded-[2rem] border border-emerald-400/20 bg-emerald-400/[0.06] p-7 md:p-9">
+                                <div className="text-sm font-black uppercase tracking-[0.2em] text-emerald-300">
+                                    Benefits
+                                </div>
+
+                                <h3 className="mt-3 text-3xl font-black">
+                                    Why Hotel teams benefit from MikroPanel
+                                </h3>
+
+                                <div className="mt-7 grid gap-3 sm:grid-cols-2">
+                                    {hotelHotspotBenefits.map(
+                                        (item) => (
+                                            <div
+                                                key={item}
+                                                className="flex gap-3 rounded-2xl bg-slate-950/40 p-4"
+                                            >
+                                                <span className="mt-0.5 text-emerald-300">
+                                                    ✓
+                                                </span>
+
+                                                <span className="text-sm font-semibold leading-6 text-slate-200">
+                                                    {item}
+                                                </span>
+                                            </div>
+                                        ),
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="rounded-[2rem] border border-white/10 bg-slate-950/60 p-7 md:p-9">
+                                <div className="text-sm font-black uppercase tracking-[0.2em] text-cyan-300">
+                                    Suitable For
+                                </div>
+
+                                <h3 className="mt-3 text-3xl font-black">
+                                    From small properties to multi-router Hotels
+                                </h3>
+
+                                <p className="mt-4 leading-7 text-slate-400">
+                                    The Hotel module can support properties
+                                    that need controlled guest Wi-Fi without
+                                    forcing reception staff to manage raw
+                                    MikroTik configuration directly.
+                                </p>
+
+                                <div className="mt-7 space-y-4">
+                                    {[
+                                        [
+                                            'Hotels & Resorts',
+                                            'Guest Wi-Fi tied to stays, rooms and checkout periods.',
+                                        ],
+                                        [
+                                            'Hotel Apartments',
+                                            'Manage temporary resident internet access with staff-controlled vouchers.',
+                                        ],
+                                        [
+                                            'Hostels & Guest Houses',
+                                            'Simplify short-stay Wi-Fi credentials and expiry management.',
+                                        ],
+                                        [
+                                            'Multi-Building Properties',
+                                            'Use multiple Hotel MikroTik routers while maintaining centralized voucher operations.',
+                                        ],
+                                    ].map(([title, text]) => (
+                                        <div
+                                            key={title}
+                                            className="rounded-2xl border border-white/10 p-5"
+                                        >
+                                            <div className="font-black">
+                                                {title}
+                                            </div>
+                                            <div className="mt-1 text-sm leading-6 text-slate-400">
+                                                {text}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-20">
+                            <div className="text-center">
+                                <div className="text-sm font-black uppercase tracking-[0.2em] text-cyan-300">
+                                    Hotel Workflow
+                                </div>
+
+                                <h3 className="mt-3 text-3xl font-black md:text-4xl">
+                                    From Hotel setup to guest checkout
+                                </h3>
+                            </div>
+
+                            <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                                {hotelHotspotWorkflow.map(
+                                    (item) => (
+                                        <div
+                                            key={item.step}
+                                            className="rounded-3xl border border-white/10 bg-white/[0.04] p-6"
+                                        >
+                                            <div className="text-3xl font-black text-cyan-300">
+                                                {item.step}
+                                            </div>
+
+                                            <h4 className="mt-4 text-xl font-black">
+                                                {item.title}
+                                            </h4>
+
+                                            <p className="mt-3 text-sm leading-7 text-slate-400">
+                                                {item.text}
+                                            </p>
+                                        </div>
+                                    ),
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="mt-20 overflow-hidden rounded-[2rem] border border-cyan-400/20 bg-gradient-to-r from-cyan-400/10 via-slate-950 to-emerald-400/10 p-8 md:p-12">
+                            <div className="grid items-center gap-8 lg:grid-cols-[1fr_auto]">
+                                <div>
+                                    <div className="text-sm font-black uppercase tracking-[0.2em] text-cyan-300">
+                                        Hotel Hotspot Platform
+                                    </div>
+
+                                    <h3 className="mt-3 text-3xl font-black md:text-4xl">
+                                        Give reception an easier Wi-Fi workflow.
+                                        Give management better control.
+                                    </h3>
+
+                                    <p className="mt-4 max-w-3xl leading-7 text-slate-300">
+                                        Guest access, Hotel staff, MikroTik
+                                        routers, voucher automation, usage,
+                                        reports and commercial operations can
+                                        be managed from one dedicated Hotel
+                                        Hotspot system.
+                                    </p>
+                                </div>
+
+                                <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
+                                    <Link
+                                        href={route('hotel.login')}
+                                        className="rounded-xl bg-cyan-400 px-7 py-3.5 text-center font-black text-slate-950 hover:bg-cyan-300"
+                                    >
+                                        Hotel Login
+                                    </Link>
+
+                                    <a
+                                        href="#plans"
+                                        className="rounded-xl border border-white/15 px-7 py-3.5 text-center font-black text-white hover:bg-white/10"
+                                    >
+                                        Explore Plans
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
 
                 <section
                     id="plans"
