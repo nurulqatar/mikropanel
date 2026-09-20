@@ -70,6 +70,19 @@ Route::get(
 );
 
 /*
+ * PUBLIC_SERVICES_PAGE_V4
+ */
+Route::get(
+    '/services',
+    [
+        PublicWebsiteController::class,
+        'services',
+    ]
+)->name(
+    'website.services'
+);
+
+/*
  * PUBLIC_LOGIN_CENTER_V2
  */
 Route::get(

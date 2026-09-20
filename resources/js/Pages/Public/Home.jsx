@@ -19,8 +19,8 @@ const services = [
         ],
         loginRoute: 'login',
         loginLabel: 'Company Login',
-        secondaryHref: '#company-plans',
-        secondaryLabel: 'View Company Plans',
+        secondaryHref: '/services#company',
+        secondaryLabel: 'Learn More',
     },
     {
         key: 'hotel',
@@ -37,8 +37,8 @@ const services = [
         ],
         loginRoute: 'hotel.login',
         loginLabel: 'Hotel Login',
-        secondaryHref: '#contact',
-        secondaryLabel: 'Ask About Hotel Service',
+        secondaryHref: '/services#hotel',
+        secondaryLabel: 'Learn More',
     },
     {
         key: 'compliance',
@@ -55,8 +55,8 @@ const services = [
         ],
         loginRoute: 'compliance.login',
         loginLabel: 'Compliance Login',
-        secondaryHref: '#compliance-plans',
-        secondaryLabel: 'View Compliance Plans',
+        secondaryHref: '/services#compliance',
+        secondaryLabel: 'Learn More',
     },
 ];
 
@@ -142,12 +142,14 @@ export default function Home({
                     </Link>
 
                     <nav className="hidden items-center gap-6 text-sm font-bold text-slate-600 lg:flex">
-                        <a
-                            href="#services"
+                        <Link
+                            href={route(
+                                'website.services',
+                            )}
                             className="hover:text-slate-950"
                         >
                             Services
-                        </a>
+                        </Link>
 
                         <a
                             href="#company-plans"

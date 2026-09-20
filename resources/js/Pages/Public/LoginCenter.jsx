@@ -54,14 +54,25 @@ export default function LoginCenter({
                         {websiteName}
                     </Link>
 
-                    <Link
-                        href={route(
-                            'website.home',
-                        )}
-                        className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-black text-slate-700"
-                    >
-                        Back to Website
-                    </Link>
+                    <div className="flex items-center gap-2">
+                        <Link
+                            href={route(
+                                'website.services',
+                            )}
+                            className="rounded-xl px-4 py-2 text-sm font-black text-slate-600"
+                        >
+                            Services
+                        </Link>
+
+                        <Link
+                            href={route(
+                                'website.home',
+                            )}
+                            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-black text-slate-700"
+                        >
+                            Back to Website
+                        </Link>
+                    </div>
                 </div>
             </header>
 

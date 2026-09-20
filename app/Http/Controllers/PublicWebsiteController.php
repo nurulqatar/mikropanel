@@ -182,6 +182,34 @@ class PublicWebsiteController extends Controller
             ->all();
     }
 
+    /*
+     * PUBLIC_SERVICES_PAGE_V4
+     */
+    public function services(): Response
+    {
+        $site =
+            $this->site();
+
+        return Inertia::render(
+            'Public/Services',
+            [
+                'brand' =>
+                    $site[
+                        'website_name'
+                    ],
+
+                'site' =>
+                    $site,
+
+                'plans' =>
+                    $this->plans(),
+
+                'compliancePlans' =>
+                    $this->compliancePlans(),
+            ]
+        );
+    }
+
     private function plans(): array
     {
         return ResellerPlan::query()
