@@ -2,6 +2,7 @@ import HotelCommercialMenu from '@/Components/SuperAdmin/HotelCommercialMenu';
 import { Link, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 
+// SUPERADMIN_GROUPED_MENU_V2
 const navigation = [
     {
         label: 'Dashboard',
@@ -9,61 +10,6 @@ const navigation = [
         route: 'superadmin.dashboard',
         match: '/super-admin',
         exact: true,
-    },
-    {
-        label: 'Resellers',
-        short: 'RS',
-        route: 'superadmin.resellers.index',
-        match: '/super-admin/resellers',
-    },
-    {
-        label: 'Website Settings',
-        short: 'WS',
-        route: 'superadmin.website-settings.index',
-        match: '/super-admin/website-settings',
-    },
-    {
-        label: 'Reseller Plans',
-        short: 'PL',
-        route: 'superadmin.plans.index',
-        match: '/super-admin/reseller-plans',
-    },
-    {
-        label: 'Wallet',
-        short: 'WL',
-        route: 'superadmin.wallet.index',
-        match: '/super-admin/wallet',
-    },
-    {
-        label: 'Recharges',
-        short: 'RC',
-        route: 'superadmin.recharges.index',
-        match: '/super-admin/recharges',
-    },
-    {
-        label: 'Reports',
-        short: 'RP',
-        route: 'superadmin.reports.index',
-        match: '/super-admin/reports',
-    },
-    {
-        label: 'Notifications',
-        short: 'NT',
-        route: 'superadmin.notifications.index',
-        match: '/super-admin/notifications',
-    },
-    {
-        label: 'Audit Log',
-        short: 'AU',
-        route: 'superadmin.audit.index',
-        match: '/super-admin/audit',
-    },
-    // SUPERADMIN_COMPLIANCE_MENU_V1
-    {
-        label: 'Network Compliance',
-        short: 'NC',
-        route: 'superadmin.compliance.dashboard',
-        match: '/super-admin/compliance',
     },
 ];
 
@@ -110,41 +56,164 @@ function SidebarContent({ url, closeMenu }) {
                 </div>
             </div>
 
-            <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-5">
-                {navigation.map((item) => {
-                    const selected = active(item);
+            <nav className="flex-1 space-y-2 overflow-y-auto px-3 pb-5">
+                    {navigation.map((item) => {
+                        const selected = active(item);
 
-                    return (
-                        <Link
-                            key={item.route}
-                            href={route(item.route)}
-                            onClick={closeMenu}
-                            className={[
-                                'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition',
-                                selected
-                                    ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-950/20'
-                                    : 'text-slate-300 hover:bg-slate-800 hover:text-white',
-                            ].join(' ')}
-                        >
-                            <span
+                        return (
+                            <Link
+                                key={item.route}
+                                href={route(item.route)}
+                                onClick={closeMenu}
                                 className={[
-                                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-black tracking-wide',
+                                    'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition',
                                     selected
-                                        ? 'bg-white/15 text-white'
-                                        : 'bg-slate-800 text-slate-400 group-hover:bg-slate-700 group-hover:text-white',
+                                        ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-950/20'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
                                 ].join(' ')}
                             >
-                                {item.short}
-                            </span>
+                                <span
+                                    className={[
+                                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-black tracking-wide',
+                                        selected
+                                            ? 'bg-white/15 text-white'
+                                            : 'bg-slate-800 text-slate-400 group-hover:bg-slate-700 group-hover:text-white',
+                                    ].join(' ')}
+                                >
+                                    {item.short}
+                                </span>
 
-                            <span>{item.label}</span>
-                        </Link>
-                    );
-                })}
+                                <span>
+                                    {item.label}
+                                </span>
+                            </Link>
+                        );
+                    })}
 
-                    {/* HOTEL_HOTSPOT_SUPERADMIN_MENU_V1 */}
+                    {/* MAC_CLIENT_HOTSPOT_GROUP_V2 */}
                     <details
-                        className="mt-3 rounded-xl border border-emerald-900/50 bg-emerald-950/20"
+                        className="rounded-xl border border-cyan-900/50 bg-cyan-950/20"
+                        open={
+                            (url || '').startsWith(
+                                '/super-admin/resellers',
+                            )
+                            || (url || '').startsWith(
+                                '/super-admin/reseller-plans',
+                            )
+                            || (url || '').startsWith(
+                                '/super-admin/registration-requests',
+                            )
+                            || (url || '').startsWith(
+                                '/super-admin/wallet',
+                            )
+                            || (url || '').startsWith(
+                                '/super-admin/recharges',
+                            )
+                        }
+                    >
+                        <summary className="cursor-pointer list-none rounded-xl px-4 py-3 text-sm font-black text-cyan-300 hover:bg-cyan-950/40">
+                            <span className="flex items-center justify-between gap-3">
+                                <span>
+                                    MAC Client & Hotspot
+                                </span>
+
+                                <span>
+                                    ▾
+                                </span>
+                            </span>
+                        </summary>
+
+                        <div className="space-y-1 px-2 pb-2">
+                            <Link
+                                href={route(
+                                    'superadmin.resellers.index',
+                                )}
+                                onClick={closeMenu}
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.resellers.*',
+                                    )
+                                        ? 'bg-cyan-600 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
+                            >
+                                Companies / Resellers
+                            </Link>
+
+                            <Link
+                                href={route(
+                                    'superadmin.plans.index',
+                                )}
+                                onClick={closeMenu}
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.plans.*',
+                                    )
+                                        ? 'bg-cyan-600 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
+                            >
+                                Plans
+                            </Link>
+
+                            <Link
+                                href={route(
+                                    'superadmin.registrations.index',
+                                )}
+                                onClick={closeMenu}
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.registrations.*',
+                                    )
+                                        ? 'bg-cyan-600 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
+                            >
+                                Registration Requests
+                            </Link>
+
+                            <Link
+                                href={route(
+                                    'superadmin.wallet.index',
+                                )}
+                                onClick={closeMenu}
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.wallet.*',
+                                    )
+                                        ? 'bg-cyan-600 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
+                            >
+                                Wallet
+                            </Link>
+
+                            <Link
+                                href={route(
+                                    'superadmin.recharges.index',
+                                )}
+                                onClick={closeMenu}
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.recharges.*',
+                                    )
+                                        ? 'bg-cyan-600 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
+                            >
+                                Recharges
+                            </Link>
+                        </div>
+                    </details>
+
+                    {/* HOTEL_HOTSPOT_SUPERADMIN_MENU_V2 */}
+                    <details
+                        className="rounded-xl border border-emerald-900/50 bg-emerald-950/20"
                         open={(url || '').startsWith(
                             '/super-admin/hotel-hotspot',
                         )}
@@ -167,7 +236,14 @@ function SidebarContent({ url, closeMenu }) {
                                     'superadmin.hotel.dashboard',
                                 )}
                                 onClick={closeMenu}
-                                className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.hotel.dashboard',
+                                    )
+                                        ? 'bg-emerald-600 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
                             >
                                 Dashboard
                             </Link>
@@ -177,7 +253,14 @@ function SidebarContent({ url, closeMenu }) {
                                     'superadmin.hotel.hotels.index',
                                 )}
                                 onClick={closeMenu}
-                                className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.hotel.hotels.*',
+                                    )
+                                        ? 'bg-emerald-600 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
                             >
                                 Hotels
                             </Link>
@@ -187,29 +270,194 @@ function SidebarContent({ url, closeMenu }) {
                                     'superadmin.hotel.plans.index',
                                 )}
                                 onClick={closeMenu}
-                                className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.hotel.plans.*',
+                                    )
+                                        ? 'bg-emerald-600 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
                             >
                                 Hotel Plans
+                            </Link>
+
+                            <Link
+                                href={route(
+                                    'superadmin.hotel.commercial.index',
+                                )}
+                                onClick={closeMenu}
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.hotel.commercial.*',
+                                    )
+                                        ? 'bg-emerald-600 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
+                            >
+                                Billing & Operations
                             </Link>
                         </div>
                     </details>
 
-                    <a
-                        href={route(
-                            'superadmin.registrations.index',
+                    {/* NETWORK_COMPLIANCE_GROUP_V2 */}
+                    <details
+                        className="rounded-xl border border-violet-900/50 bg-violet-950/20"
+                        open={(url || '').startsWith(
+                            '/super-admin/compliance',
                         )}
-                        className={`block rounded-xl px-4 py-3 text-sm font-bold transition ${
-                            route().current(
-                                'superadmin.registrations.*',
-                            )
-                                ? 'bg-violet-600 text-white shadow'
-                                : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                        }`}
                     >
-                        Registration Requests
-                    </a>
+                        <summary className="cursor-pointer list-none rounded-xl px-4 py-3 text-sm font-black text-violet-300 hover:bg-violet-950/40">
+                            <span className="flex items-center justify-between gap-3">
+                                <span>
+                                    Network Compliance
+                                </span>
 
-</nav>
+                                <span>
+                                    ▾
+                                </span>
+                            </span>
+                        </summary>
+
+                        <div className="space-y-1 px-2 pb-2">
+                            <a
+                                href={`${route(
+                                    'superadmin.compliance.dashboard',
+                                )}#compliance-dashboard`}
+                                onClick={closeMenu}
+                                className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+                            >
+                                Dashboard
+                            </a>
+
+                            <a
+                                href={`${route(
+                                    'superadmin.compliance.dashboard',
+                                )}#compliance-plans`}
+                                onClick={closeMenu}
+                                className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+                            >
+                                Plans
+                            </a>
+
+                            <a
+                                href={`${route(
+                                    'superadmin.compliance.dashboard',
+                                )}#compliance-rent-service`}
+                                onClick={closeMenu}
+                                className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+                            >
+                                Rent Service
+                            </a>
+
+                            <a
+                                href={`${route(
+                                    'superadmin.compliance.dashboard',
+                                )}#compliance-rental-customers`}
+                                onClick={closeMenu}
+                                className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+                            >
+                                Rental Customers
+                            </a>
+
+                            <a
+                                href={`${route(
+                                    'superadmin.compliance.dashboard',
+                                )}#compliance-organizations`}
+                                onClick={closeMenu}
+                                className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+                            >
+                                Organizations / Login
+                            </a>
+                        </div>
+                    </details>
+
+                    {/* SYSTEM_ADMIN_GROUP_V2 */}
+                    <details className="rounded-xl border border-slate-700 bg-slate-900/40">
+                        <summary className="cursor-pointer list-none rounded-xl px-4 py-3 text-sm font-black text-slate-300 hover:bg-slate-800">
+                            <span className="flex items-center justify-between gap-3">
+                                <span>
+                                    System
+                                </span>
+
+                                <span>
+                                    ▾
+                                </span>
+                            </span>
+                        </summary>
+
+                        <div className="space-y-1 px-2 pb-2">
+                            <Link
+                                href={route(
+                                    'superadmin.website-settings.index',
+                                )}
+                                onClick={closeMenu}
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.website-settings.*',
+                                    )
+                                        ? 'bg-slate-700 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
+                            >
+                                Website Settings
+                            </Link>
+
+                            <Link
+                                href={route(
+                                    'superadmin.reports.index',
+                                )}
+                                onClick={closeMenu}
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.reports.*',
+                                    )
+                                        ? 'bg-slate-700 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
+                            >
+                                Reports
+                            </Link>
+
+                            <Link
+                                href={route(
+                                    'superadmin.notifications.index',
+                                )}
+                                onClick={closeMenu}
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.notifications.*',
+                                    )
+                                        ? 'bg-slate-700 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
+                            >
+                                Notifications
+                            </Link>
+
+                            <Link
+                                href={route(
+                                    'superadmin.audit.index',
+                                )}
+                                onClick={closeMenu}
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.audit.*',
+                                    )
+                                        ? 'bg-slate-700 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
+                            >
+                                Audit Log
+                            </Link>
+                        </div>
+                    </details>
+                </nav>
 
             <div className="border-t border-slate-800 p-4">
                 <div className="rounded-xl bg-slate-800/70 px-3 py-3">

@@ -339,6 +339,8 @@ Route::middleware([
             Route::put('/plans/{plan}', [SuperAdminComplianceDashboardController::class, 'updatePlan'])->name('plans.update');
             Route::post('/rentals/standalone', [SuperAdminComplianceDashboardController::class, 'rentStandalone'])->name('rentals.standalone');
             Route::post('/rentals/addon', [SuperAdminComplianceDashboardController::class, 'rentAddon'])->name('rentals.addon');
+            /* COMPLIANCE_RENTAL_PLAN_CHANGE_V2 */
+            Route::put('/rentals/{rental}/plan', [SuperAdminComplianceDashboardController::class, 'changeRentalPlan'])->name('rentals.change-plan');
             Route::post('/rentals/{rental}/renew', [SuperAdminComplianceDashboardController::class, 'renewRental'])->name('rentals.renew');
             Route::post('/rentals/{rental}/suspend', [SuperAdminComplianceDashboardController::class, 'suspendRental'])->name('rentals.suspend');
             Route::post('/rentals/{rental}/reactivate', [SuperAdminComplianceDashboardController::class, 'reactivateRental'])->name('rentals.reactivate');

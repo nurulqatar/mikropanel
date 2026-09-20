@@ -22,7 +22,7 @@ export default function Dashboard({
             <Head title="Network Compliance" />
 
             <div className="space-y-8">
-                <section className="rounded-3xl bg-slate-950 p-7 text-white">
+                <section id="compliance-dashboard" className="scroll-mt-24 rounded-3xl bg-slate-950 p-7 text-white">
                     <div className="text-sm font-black uppercase tracking-[0.2em] text-cyan-300">
                         Commercial Rental Control
                     </div>
@@ -43,7 +43,10 @@ export default function Dashboard({
                     </div>
                 </section>
 
-                <section>
+                <section
+                    id="compliance-plans"
+                    className="scroll-mt-24"
+                >
                     <h2 className="text-2xl font-black">
                         Plans & Price
                     </h2>
@@ -58,7 +61,10 @@ export default function Dashboard({
                     </div>
                 </section>
 
-                <div className="grid gap-7 xl:grid-cols-2">
+                <div
+                    id="compliance-rent-service"
+                    className="scroll-mt-24 grid gap-7 xl:grid-cols-2"
+                >
                     <StandaloneForm plans={plans} />
                     <AddonForm
                         plans={plans}
@@ -67,9 +73,18 @@ export default function Dashboard({
                     />
                 </div>
 
-                <RentalTable rentals={rentals} />
+                <RentalTable
+                    rentals={rentals}
+                    plans={plans}
+                />
 
-                <PasswordReset organizations={organizations} />
+                <OrganizationDirectory
+                    organizations={organizations}
+                />
+
+                <PasswordReset
+                    organizations={organizations}
+                />
 
                 <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-sm leading-6 text-amber-950">
                     <strong>Pending Hardware is normal:</strong>{' '}
@@ -546,9 +561,13 @@ function AddonForm({
     );
 }
 
-function RentalTable({ rentals }) {
+// COMPLIANCE_RENTAL_PLAN_CHANGE_UI_V2
+function RentalTable({
+    rentals,
+    plans,
+}) {
     return (
-        <section className="rounded-3xl border bg-white p-6">
+        <section id="compliance-rental-customers" className="scroll-mt-24 rounded-3xl border bg-white p-6">
             <h2 className="text-2xl font-black">
                 Rental Customers
             </h2>
@@ -632,6 +651,7 @@ function RentalTable({ rentals }) {
                                 <td className="px-3 py-4">
                                     <RentalActions
                                         item={item}
+                                        plans={plans}
                                     />
                                 </td>
                             </tr>
@@ -654,7 +674,10 @@ function RentalTable({ rentals }) {
     );
 }
 
-function RentalActions({ item }) {
+function RentalActions({
+    item,
+    plans,
+}) {
     const renew = useForm({
         days: 30,
         amount: Number(item.amount ?? 0),
@@ -663,8 +686,90 @@ function RentalActions({ item }) {
         payment_reference: '',
     });
 
+    const enabledPlans = plans.filter(
+        (plan) => Boolean(plan.enabled),
+    );
+
+    const planChange = useForm({
+        plan_id:
+            item.plan_id
+            ?? enabledPlans[0]?.id
+            ?? '',
+    });
+
+    const samePlan =
+        String(planChange.data.plan_id)
+        === String(item.plan_id);
+
     return (
         <div className="min-w-52 space-y-2">
+            <div className="rounded-xl border border-violet-200 bg-violet-50 p-2">
+                <label className="text-[11px] font-black uppercase tracking-wide text-violet-700">
+                    Change Plan
+                </label>
+
+                <select
+                    value={
+                        planChange.data.plan_id
+                    }
+                    onChange={(e) =>
+                        planChange.setData(
+                            'plan_id',
+                            e.target.value,
+                        )
+                    }
+                    className="mt-1 w-full rounded-lg border border-violet-200 bg-white px-2 py-2 text-sm"
+                >
+                    {enabledPlans.map(
+                        (plan) => (
+                            <option
+                                key={plan.id}
+                                value={plan.id}
+                            >
+                                {plan.name}
+                            </option>
+                        ),
+                    )}
+                </select>
+
+                <button
+                    type="button"
+                    disabled={
+                        samePlan
+                        || planChange.processing
+                        || !planChange.data.plan_id
+                    }
+                    onClick={() =>
+                        planChange.put(
+                            route(
+                                'superadmin.compliance.rentals.change-plan',
+                                item.id,
+                            ),
+                            {
+                                preserveScroll: true,
+                            },
+                        )
+                    }
+                    className="mt-2 w-full rounded-lg bg-violet-600 px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                    {planChange.processing
+                        ? 'Changing...'
+                        : 'Change Plan'}
+                </button>
+
+                <p className="mt-2 text-[11px] leading-4 text-violet-800">
+                    Keeps current amount, payment status and expiry. Network-side configuration is not pushed automatically.
+                </p>
+
+                {(planChange.errors.plan_id
+                    || planChange.errors.rental_plan) && (
+                    <p className="mt-2 text-xs font-bold text-red-600">
+                        {planChange.errors.plan_id
+                            || planChange.errors.rental_plan}
+                    </p>
+                )}
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
                 <input
                     type="number"
@@ -745,6 +850,102 @@ function RentalActions({ item }) {
                 </button>
             )}
         </div>
+    );
+}
+
+function OrganizationDirectory({
+    organizations,
+}) {
+    return (
+        <section
+            id="compliance-organizations"
+            className="scroll-mt-24 rounded-3xl border bg-white p-6"
+        >
+            <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                    <h2 className="text-2xl font-black">
+                        Organizations & Login Management
+                    </h2>
+
+                    <p className="mt-2 text-sm text-slate-500">
+                        Compliance organizations linked to standalone, Company or Hotel service.
+                    </p>
+                </div>
+
+                <div className="rounded-full bg-slate-100 px-4 py-2 text-xs font-black uppercase text-slate-600">
+                    {organizations.length} organizations
+                </div>
+            </div>
+
+            <div className="mt-5 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                    <thead className="text-left text-xs uppercase text-slate-400">
+                        <tr>
+                            <th className="px-3 py-3">
+                                Organization
+                            </th>
+
+                            <th className="px-3 py-3">
+                                Type
+                            </th>
+
+                            <th className="px-3 py-3">
+                                Contact
+                            </th>
+
+                            <th className="px-3 py-3">
+                                Status
+                            </th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {organizations.map(
+                            (item) => (
+                                <tr
+                                    key={item.id}
+                                    className="border-t"
+                                >
+                                    <td className="px-3 py-4">
+                                        <div className="font-black">
+                                            {item.name}
+                                        </div>
+
+                                        <div className="text-xs text-slate-500">
+                                            {item.code}
+                                        </div>
+                                    </td>
+
+                                    <td className="px-3 py-4 capitalize">
+                                        {item.account_type}
+                                    </td>
+
+                                    <td className="px-3 py-4">
+                                        {item.contact_email
+                                            || '—'}
+                                    </td>
+
+                                    <td className="px-3 py-4 uppercase">
+                                        {item.status}
+                                    </td>
+                                </tr>
+                            ),
+                        )}
+
+                        {!organizations.length && (
+                            <tr>
+                                <td
+                                    colSpan="4"
+                                    className="px-3 py-10 text-center text-slate-400"
+                                >
+                                    No Compliance organization yet.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </section>
     );
 }
 

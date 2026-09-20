@@ -352,6 +352,40 @@ class DashboardController extends Controller
         );
     }
 
+    /*
+     * COMPLIANCE_RENTAL_PLAN_CHANGE_V2
+     */
+    public function changeRentalPlan(
+        Request $request,
+        int $rental,
+        ComplianceRentalService $service
+    ): RedirectResponse {
+        $data = $request->validate([
+            'plan_id' => [
+                'required',
+                'integer',
+                'exists:compliance_plans,id',
+            ],
+        ]);
+
+        try {
+            $service->changePlan(
+                $rental,
+                (int) $data['plan_id']
+            );
+        } catch (Throwable $e) {
+            return back()->withErrors([
+                'rental_plan' =>
+                    $e->getMessage(),
+            ]);
+        }
+
+        return back()->with(
+            'success',
+            'Compliance rental plan changed.'
+        );
+    }
+
     public function renewRental(
         Request $request,
         int $rental,

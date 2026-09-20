@@ -281,6 +281,182 @@ class ComplianceRentalService
         );
     }
 
+    /*
+     * COMPLIANCE_RENTAL_PLAN_CHANGE_V2
+     *
+     * Changes commercial entitlement only.
+     * Existing amount, payment status and expiry are preserved.
+     * No RouterOS / collector / storage write is performed here.
+     */
+    public function changePlan(
+        int $rentalId,
+        int $planId
+    ): void {
+        DB::transaction(
+            function () use (
+                $rentalId,
+                $planId
+            ): void {
+                $rental = DB::table(
+                    'compliance_rentals'
+                )
+                    ->lockForUpdate()
+                    ->find($rentalId);
+
+                if (!$rental) {
+                    throw new RuntimeException(
+                        'Rental not found.'
+                    );
+                }
+
+                if (
+                    !in_array(
+                        $rental->status,
+                        [
+                            'active',
+                            'suspended',
+                        ],
+                        true
+                    )
+                ) {
+                    throw new RuntimeException(
+                        'Only active or suspended rentals can change plan.'
+                    );
+                }
+
+                if (!$rental->subscription_id) {
+                    throw new RuntimeException(
+                        'Rental has no linked subscription.'
+                    );
+                }
+
+                $subscription = DB::table(
+                    'compliance_subscriptions'
+                )
+                    ->lockForUpdate()
+                    ->find(
+                        $rental->subscription_id
+                    );
+
+                if (
+                    !$subscription
+                    || (int) $subscription->organization_id
+                        !== (int) $rental->organization_id
+                ) {
+                    throw new RuntimeException(
+                        'Linked Compliance subscription is invalid.'
+                    );
+                }
+
+                $plan = DB::table(
+                    'compliance_plans'
+                )
+                    ->where(
+                        'id',
+                        $planId
+                    )
+                    ->where(
+                        'enabled',
+                        true
+                    )
+                    ->first();
+
+                if (!$plan) {
+                    throw new RuntimeException(
+                        'Enabled Compliance plan not found.'
+                    );
+                }
+
+                [
+                    $logging,
+                    $filtering,
+                ] = $this->flags(
+                    $plan->service_type
+                );
+
+                DB::table(
+                    'compliance_rentals'
+                )
+                    ->where(
+                        'id',
+                        $rentalId
+                    )
+                    ->update([
+                        'plan_id' =>
+                            $planId,
+
+                        'deployment_status' =>
+                            'pending_hardware',
+
+                        'updated_at' =>
+                            now(),
+                    ]);
+
+                DB::table(
+                    'compliance_subscriptions'
+                )
+                    ->where(
+                        'id',
+                        $rental->subscription_id
+                    )
+                    ->update([
+                        'plan_id' =>
+                            $planId,
+
+                        'logging_enabled' =>
+                            $logging,
+
+                        'filtering_enabled' =>
+                            $filtering,
+
+                        'updated_at' =>
+                            now(),
+                    ]);
+
+                if (
+                    $rental->source_type
+                    && $rental->source_id
+                ) {
+                    DB::table(
+                        'compliance_access_grants'
+                    )
+                        ->where(
+                            'organization_id',
+                            $rental->organization_id
+                        )
+                        ->where(
+                            'source_type',
+                            $rental->source_type
+                        )
+                        ->where(
+                            'source_id',
+                            $rental->source_id
+                        )
+                        ->update([
+                            'logging_enabled' =>
+                                $logging,
+
+                            'filtering_enabled' =>
+                                $filtering,
+
+                            'is_active' =>
+                                $rental->status
+                                === 'active',
+
+                            'updated_at' =>
+                                now(),
+                        ]);
+                }
+
+                /*
+                 * Intentionally no MikroTik / RouterOS action.
+                 * Existing deployed filtering policy is not
+                 * silently removed by a commercial plan change.
+                 */
+            }
+        );
+    }
+
     public function renew(
         int $rentalId,
         array $data
