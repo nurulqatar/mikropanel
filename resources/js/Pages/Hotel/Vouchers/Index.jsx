@@ -44,6 +44,7 @@ export default function Index({
                                 <Th>Expiry</Th>
                                 <Th>Status</Th>
                                 <Th>Source</Th>
+                                <Th>Router Sync</Th>
                                 <Th>Action</Th>
                             </tr>
                         </thead>
@@ -98,6 +99,14 @@ export default function Index({
                                         </Td>
 
                                         <Td>
+                                            {
+                                                routerSyncLabel(
+                                                    voucher,
+                                                )
+                                            }
+                                        </Td>
+
+                                        <Td>
                                             <a
                                                 href={route(
                                                     'hotel.vouchers.print',
@@ -118,7 +127,7 @@ export default function Index({
                                 0 && (
                                 <tr>
                                     <td
-                                        colSpan="7"
+                                        colSpan="8"
                                         className="p-10 text-center text-slate-400"
                                     >
                                         No vouchers created yet.
@@ -131,6 +140,34 @@ export default function Index({
             </div>
         </HotelLayout>
     );
+}
+
+function routerSyncLabel(voucher) {
+    const syncs =
+        voucher.router_syncs ?? [];
+
+    if (syncs.length === 0) {
+        return 'No router sync';
+    }
+
+    const failed =
+        syncs.filter(
+            (sync) =>
+                sync.status === 'failed',
+        ).length;
+
+    if (failed > 0) {
+        return `${failed} failed / ${syncs.length}`;
+    }
+
+    const completed =
+        syncs.filter(
+            (sync) =>
+                sync.status === 'synced' ||
+                sync.status === 'expired',
+        ).length;
+
+    return `${completed}/${syncs.length} synced`;
 }
 
 function Th({ children }) {

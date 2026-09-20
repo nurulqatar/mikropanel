@@ -2,8 +2,10 @@
 
 namespace App\Models\Hotel;
 
+use App\Jobs\Hotel\SyncHotelVoucherToRouters;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class HotelVoucher extends Model
@@ -55,6 +57,20 @@ class HotelVoucher extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::created(
+            function (
+                HotelVoucher $voucher
+            ): void {
+                SyncHotelVoucherToRouters::dispatch(
+                    $voucher->id,
+                    'upsert'
+                )->afterCommit();
+            }
+        );
+    }
+
     public function hotel(): BelongsTo
     {
         return $this->belongsTo(
@@ -75,6 +91,14 @@ class HotelVoucher extends Model
         return $this->belongsTo(
             HotelWifiProfile::class,
             'hotel_wifi_profile_id'
+        );
+    }
+
+    public function routerSyncs(): HasMany
+    {
+        return $this->hasMany(
+            HotelVoucherRouterSync::class,
+            'hotel_voucher_id'
         );
     }
 }

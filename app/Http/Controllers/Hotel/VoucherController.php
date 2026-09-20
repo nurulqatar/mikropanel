@@ -32,6 +32,7 @@ class VoucherController extends Controller
                         ->with([
                             'stay.guest',
                             'profile',
+                            'routerSyncs.router',
                         ])
                         ->where(
                             'hotel_id',
