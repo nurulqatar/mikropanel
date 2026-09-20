@@ -14,14 +14,6 @@ export default function Dashboard({
     return (
         <SuperAdminLayout title="Super Admin">
             <Head title="Super Admin" />
-            {/* SUPERADMIN_COMPLIANCE_ACCESS_V1 */}
-            <a
-                href={route('superadmin.compliance.dashboard')}
-                className="mb-6 block rounded-2xl border border-cyan-200 bg-cyan-50 p-5 transition hover:border-cyan-400"
-            >
-                <div className="font-black text-slate-900">Network Compliance</div>
-                <div className="mt-1 text-sm text-slate-600">Plans, customers & subscriptions</div>
-            </a>
 
 
             <div className="space-y-6">

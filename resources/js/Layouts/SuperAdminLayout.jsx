@@ -58,6 +58,13 @@ const navigation = [
         route: 'superadmin.audit.index',
         match: '/super-admin/audit',
     },
+    // SUPERADMIN_COMPLIANCE_MENU_V1
+    {
+        label: 'Network Compliance',
+        short: 'NC',
+        route: 'superadmin.compliance.dashboard',
+        match: '/super-admin/compliance',
+    },
 ];
 
 function SidebarContent({ url, closeMenu }) {
