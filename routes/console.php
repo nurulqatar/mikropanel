@@ -160,3 +160,10 @@ Schedule::command(
         'Asia/Qatar'
     )
     ->withoutOverlapping(5);
+
+/* NETWORK_COMPLIANCE_IDENTITY_SYNC_V1 */
+\Illuminate\Support\Facades\Schedule::command(
+    'compliance:sync-identities'
+)
+    ->everyMinute()
+    ->withoutOverlapping();

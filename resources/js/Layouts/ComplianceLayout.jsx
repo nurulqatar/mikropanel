@@ -1,8 +1,4 @@
-import {
-    Link,
-    router,
-    usePage,
-} from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 
 export default function ComplianceLayout({
     title = 'Network Compliance',
@@ -11,18 +7,12 @@ export default function ComplianceLayout({
     const page = usePage();
 
     const menu = [
-        [
-            'Dashboard',
-            'compliance.dashboard',
-        ],
-        [
-            'Networks',
-            'compliance.networks.index',
-        ],
-        [
-            'Routers',
-            'compliance.routers.index',
-        ],
+        ['Dashboard', 'compliance.dashboard'],
+        ['Networks', 'compliance.networks.index'],
+        ['Routers', 'compliance.routers.index'],
+        ['Collectors', 'compliance.collectors.index'],
+        ['Investigation', 'compliance.investigation.index'],
+        ['Filtering', 'compliance.filtering.index'],
     ];
 
     return (
@@ -33,43 +23,30 @@ export default function ComplianceLayout({
                         <div className="text-xl font-black">
                             Network Compliance
                         </div>
-
                         <div className="text-xs text-slate-400">
                             Logging & Filtering
                         </div>
                     </div>
 
                     <nav className="flex flex-wrap gap-2">
-                        {menu.map(
-                            ([label, name]) => (
-                                <Link
-                                    key={name}
-                                    href={route(
-                                        name,
-                                    )}
-                                    className={`rounded-xl px-4 py-2 text-sm font-bold ${
-                                        route().current(
-                                            name,
-                                        )
-                                            ? 'bg-cyan-400 text-slate-950'
-                                            : 'bg-white/5 text-slate-300 hover:bg-white/10'
-                                    }`}
-                                >
-                                    {label}
-                                </Link>
-                            ),
-                        )}
+                        {menu.map(([label, name]) => (
+                            <Link
+                                key={name}
+                                href={route(name)}
+                                className={`rounded-xl px-4 py-2 text-sm font-bold ${
+                                    route().current(name)
+                                        ? 'bg-cyan-400 text-slate-950'
+                                        : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                                }`}
+                            >
+                                {label}
+                            </Link>
+                        ))}
 
                         <button
                             type="button"
-                            onClick={() =>
-                                router.post(
-                                    route(
-                                        'compliance.logout',
-                                    ),
-                                )
-                            }
-                            className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 hover:bg-white/10"
+                            onClick={() => router.post(route('compliance.logout'))}
+                            className="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold"
                         >
                             Logout
                         </button>
@@ -78,16 +55,17 @@ export default function ComplianceLayout({
             </header>
 
             <main className="mx-auto max-w-7xl px-5 py-8">
-                <h1 className="mb-7 text-3xl font-black">
-                    {title}
-                </h1>
+                <h1 className="mb-7 text-3xl font-black">{title}</h1>
 
                 {page.props.flash?.success && (
                     <div className="mb-6 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 p-4 text-emerald-200">
-                        {
-                            page.props.flash
-                                .success
-                        }
+                        {page.props.flash.success}
+                    </div>
+                )}
+
+                {page.props.flash?.error && (
+                    <div className="mb-6 rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-rose-200">
+                        {page.props.flash.error}
                     </div>
                 )}
 

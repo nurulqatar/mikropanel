@@ -48,6 +48,10 @@ export default function Index({
 
     return (
         <ComplianceLayout title="Router & Gateway Onboarding">
+            {/* COMPLIANCE_ROUTER_RUNTIME_V1 */}
+            <div className="mb-6 rounded-3xl border border-cyan-400/20 bg-cyan-400/[0.06] p-5 text-sm text-slate-300">
+                After adding a MikroTik router, use the Compliance API routes to test capability, save WAN interface and configure the collector. Full controls are also available from the Filtering and Collectors pages.
+            </div>
             <Head title="Compliance Routers" />
 
             <div className="rounded-3xl border border-cyan-400/20 bg-cyan-400/[0.06] p-6">
