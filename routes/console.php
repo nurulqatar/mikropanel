@@ -174,3 +174,9 @@ Schedule::command(
 )
     ->hourly()
     ->withoutOverlapping();
+/* NETWORK_COMPLIANCE_RENTAL_MAINTENANCE_V1 */
+\Illuminate\Support\Facades\Schedule::command(
+    'compliance:rental-maintain'
+)
+    ->hourly()
+    ->withoutOverlapping();

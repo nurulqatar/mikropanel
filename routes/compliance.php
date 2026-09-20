@@ -334,6 +334,15 @@ Route::middleware([
             )->name(
                 'grants.store'
             );
+
+            /* NETWORK_COMPLIANCE_COMMERCIAL_RENTAL_V1 */
+            Route::put('/plans/{plan}', [SuperAdminComplianceDashboardController::class, 'updatePlan'])->name('plans.update');
+            Route::post('/rentals/standalone', [SuperAdminComplianceDashboardController::class, 'rentStandalone'])->name('rentals.standalone');
+            Route::post('/rentals/addon', [SuperAdminComplianceDashboardController::class, 'rentAddon'])->name('rentals.addon');
+            Route::post('/rentals/{rental}/renew', [SuperAdminComplianceDashboardController::class, 'renewRental'])->name('rentals.renew');
+            Route::post('/rentals/{rental}/suspend', [SuperAdminComplianceDashboardController::class, 'suspendRental'])->name('rentals.suspend');
+            Route::post('/rentals/{rental}/reactivate', [SuperAdminComplianceDashboardController::class, 'reactivateRental'])->name('rentals.reactivate');
+            Route::post('/organizations/{organization}/reset-password', [SuperAdminComplianceDashboardController::class, 'resetPassword'])->name('organizations.reset-password');
         }
     );
 
