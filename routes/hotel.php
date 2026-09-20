@@ -332,6 +332,29 @@ Route::prefix('hotel')
             );
 
             /*
+             * HOTEL_HOTSPOT_REPORTING_V4
+             */
+            Route::get(
+                'reports',
+                [
+                    \App\Http\Controllers\Hotel\ReportController::class,
+                    'index',
+                ]
+            )->name(
+                'reports.index'
+            );
+
+            Route::get(
+                'reports/export.csv',
+                [
+                    \App\Http\Controllers\Hotel\ReportController::class,
+                    'csv',
+                ]
+            )->name(
+                'reports.csv'
+            );
+
+            /*
              * HOTEL_MIKROTIK_ROUTES_V1
              */
             Route::get(

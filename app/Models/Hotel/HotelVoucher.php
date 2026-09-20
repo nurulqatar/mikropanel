@@ -94,6 +94,14 @@ class HotelVoucher extends Model
         );
     }
 
+    public function hotspotSessions(): HasMany
+    {
+        return $this->hasMany(
+            HotelHotspotSession::class,
+            'hotel_voucher_id'
+        );
+    }
+
     public function routerSyncs(): HasMany
     {
         return $this->hasMany(

@@ -38,7 +38,7 @@ LANGUAGES
     )
 );
 
-return [
+$config = [
     'languages' =>
         $languages,
 
@@ -70,3 +70,15 @@ return [
         'id',
     ],
 ];
+
+/*
+ * HOTEL_PORTAL_ALL_LANGUAGES_DEFAULT_V4
+ */
+$config['default_enabled_locales'] =
+    array_values(
+        array_keys(
+            $config['languages'] ?? []
+        )
+    );
+
+return $config;
