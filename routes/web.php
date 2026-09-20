@@ -1011,3 +1011,5 @@ Route::middleware([
             );
         }
     );
+
+require __DIR__.'/compliance.php';
