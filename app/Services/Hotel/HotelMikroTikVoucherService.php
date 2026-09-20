@@ -16,8 +16,21 @@ class HotelMikroTikVoucherService
         HotelVoucher $voucher
     ): array {
         if (
-            $voucher->expires_at
-            && $voucher->expires_at->lte(now())
+            $voucher->trashed()
+            || in_array(
+                $voucher->status,
+                [
+                    'expired',
+                    'revoked',
+                ],
+                true
+            )
+            || (
+                $voucher->expires_at
+                && $voucher
+                    ->expires_at
+                    ->lte(now())
+            )
         ) {
             return $this->expire(
                 $router,
@@ -36,6 +49,27 @@ class HotelMikroTikVoucherService
                     $client,
                     $voucher->username
                 );
+
+            /*
+             * HOTEL_ROUTEROS_OWNERSHIP_GUARD_V1
+             *
+             * Never overwrite a manually created
+             * RouterOS user that only happens to
+             * use the same username.
+             */
+            if (
+                $existing
+                && !$this->ownsUser(
+                    $existing,
+                    $voucher
+                )
+            ) {
+                return $this->collision(
+                    'upsert',
+                    $router,
+                    $voucher
+                );
+            }
 
             $fields =
                 $this->userFields(
@@ -108,6 +142,20 @@ class HotelMikroTikVoucherService
                             $voucher->username
                         );
 
+                    if (
+                        $created
+                        && !$this->ownsUser(
+                            $created,
+                            $voucher
+                        )
+                    ) {
+                        return $this->collision(
+                            'upsert',
+                            $router,
+                            $voucher
+                        );
+                    }
+
                     $routerUserId =
                         isset(
                             $created['.id']
@@ -161,16 +209,30 @@ class HotelMikroTikVoucherService
                     $router
                 );
 
-            $this->disconnectActiveSessions(
-                $client,
-                $voucher->username
-            );
-
             $existing =
                 $this->findUser(
                     $client,
                     $voucher->username
                 );
+
+            /*
+             * A foreign/manual username collision
+             * must not result in session, cookie,
+             * or user deletion.
+             */
+            if (
+                $existing
+                && !$this->ownsUser(
+                    $existing,
+                    $voucher
+                )
+            ) {
+                return $this->collision(
+                    'expire',
+                    $router,
+                    $voucher
+                );
+            }
 
             $routerUserId =
                 isset(
@@ -179,6 +241,19 @@ class HotelMikroTikVoucherService
                     ? (string)
                         $existing['.id']
                     : null;
+
+            $this->disconnectActiveSessions(
+                $client,
+                $voucher->username
+            );
+
+            /*
+             * HOTEL_HOTSPOT_COOKIE_CLEANUP_V1
+             */
+            $this->removeCookies(
+                $client,
+                $voucher->username
+            );
 
             if ($routerUserId) {
                 $query =
@@ -245,7 +320,7 @@ class HotelMikroTikVoucherService
                 ?? 0
             );
 
-        $fields = [
+        return [
             'server' =>
                 $router
                     ->hotspot_server_name,
@@ -276,8 +351,6 @@ class HotelMikroTikVoucherService
                         )
                     : '0',
         ];
-
-        return $fields;
     }
 
     private function comment(
@@ -293,14 +366,69 @@ class HotelMikroTikVoucherService
             ?? 'none';
 
         return mb_substr(
-            'MikroPanel Hotel Voucher #'
-            . $voucher->id
+            $this->ownershipPrefix(
+                $voucher
+            )
             . ' expires='
             . $expires
             . ' UTC',
             0,
             255
         );
+    }
+
+    private function ownershipPrefix(
+        HotelVoucher $voucher
+    ): string {
+        return
+            'MikroPanel Hotel Voucher #'
+            . $voucher->id;
+    }
+
+    private function ownsUser(
+        array $user,
+        HotelVoucher $voucher
+    ): bool {
+        $comment =
+            trim(
+                (string) (
+                    $user['comment']
+                    ?? ''
+                )
+            );
+
+        return str_starts_with(
+            $comment,
+            $this->ownershipPrefix(
+                $voucher
+            )
+        );
+    }
+
+    private function collision(
+        string $operation,
+        HotelRouter $router,
+        HotelVoucher $voucher
+    ): array {
+        return [
+            'success' =>
+                false,
+
+            'operation' =>
+                $operation,
+
+            'router_user_id' =>
+                null,
+
+            'message' =>
+                'Safety collision on router '
+                . $router->name
+                . ': Hotspot username "'
+                . $voucher->username
+                . '" already exists but is not owned by MikroPanel Hotel Voucher #'
+                . $voucher->id
+                . '. No RouterOS user/session/cookie was changed.',
+        ];
     }
 
     private function findUser(
@@ -373,10 +501,55 @@ class HotelMikroTikVoucherService
         }
     }
 
+    private function removeCookies(
+        Client $client,
+        string $username
+    ): void {
+        $query =
+            new Query(
+                '/ip/hotspot/cookie/print'
+            );
+
+        $query->where(
+            'user',
+            $username
+        );
+
+        $rows =
+            $client
+                ->query($query)
+                ->read();
+
+        foreach ($rows as $row) {
+            $id =
+                $row['.id']
+                ?? null;
+
+            if (!$id) {
+                continue;
+            }
+
+            $remove =
+                new Query(
+                    '/ip/hotspot/cookie/remove'
+                );
+
+            $remove->equal(
+                '.id',
+                (string)
+                $id
+            );
+
+            $client
+                ->query($remove)
+                ->read();
+        }
+    }
+
     private function client(
         HotelRouter $router
     ): Client {
-        $config =
+        return new Client(
             new Config([
                 'host' =>
                     $router->host,
@@ -405,10 +578,7 @@ class HotelMikroTikVoucherService
 
                 'delay' =>
                     0,
-            ]);
-
-        return new Client(
-            $config
+            ])
         );
     }
 
@@ -423,7 +593,8 @@ class HotelMikroTikVoucherService
             );
 
         if ($message === '') {
-            return 'MikroTik voucher synchronization failed.';
+            return
+                'MikroTik voucher synchronization failed.';
         }
 
         $password =

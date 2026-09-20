@@ -5,13 +5,18 @@ namespace App\Jobs\Hotel;
 use App\Models\Hotel\HotelVoucher;
 use App\Services\Hotel\HotelVoucherSyncService;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
+use Throwable;
 
-class SyncHotelVoucherToRouters implements ShouldQueue
+class SyncHotelVoucherToRouters implements
+    ShouldQueue,
+    ShouldBeUnique
 {
     use Dispatchable;
     use InteractsWithQueue;
@@ -22,6 +27,8 @@ class SyncHotelVoucherToRouters implements ShouldQueue
 
     public int $timeout = 120;
 
+    public int $uniqueFor = 300;
+
     public function __construct(
         public int $voucherId,
         public string $operation = 'auto'
@@ -29,6 +36,13 @@ class SyncHotelVoucherToRouters implements ShouldQueue
         $this->onQueue(
             'hotel-hotspot'
         );
+    }
+
+    public function uniqueId(): string
+    {
+        return $this->voucherId
+            . ':'
+            . $this->operation;
     }
 
     public function backoff(): array
@@ -86,5 +100,24 @@ class SyncHotelVoucherToRouters implements ShouldQueue
                 . ' router(s) failed.'
             );
         }
+    }
+
+    public function failed(
+        ?Throwable $exception
+    ): void {
+        Log::error(
+            'Hotel voucher router sync exhausted retries.',
+            [
+                'voucher_id' =>
+                    $this->voucherId,
+
+                'operation' =>
+                    $this->operation,
+
+                'message' =>
+                    $exception
+                        ?->getMessage(),
+            ]
+        );
     }
 }

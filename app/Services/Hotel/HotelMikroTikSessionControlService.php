@@ -16,10 +16,17 @@ class HotelMikroTikSessionControlService
         HotelVoucher $voucher
     ): array {
         $result = [
-            'routers' => 0,
-            'disconnected' => 0,
-            'failures' => 0,
-            'errors' => [],
+            'routers' =>
+                0,
+
+            'disconnected' =>
+                0,
+
+            'failures' =>
+                0,
+
+            'errors' =>
+                [],
         ];
 
         $routers =
@@ -43,6 +50,40 @@ class HotelMikroTikSessionControlService
                     $this->client(
                         $router
                     );
+
+                $user =
+                    $this->findUser(
+                        $client,
+                        $voucher->username
+                    );
+
+                /*
+                 * Never kick a session belonging
+                 * to a foreign/manual username.
+                 */
+                if (
+                    $user
+                    && !$this->ownsUser(
+                        $user,
+                        $voucher
+                    )
+                ) {
+                    $result[
+                        'failures'
+                    ]++;
+
+                    $result[
+                        'errors'
+                    ][] = [
+                        'router_id' =>
+                            $router->id,
+
+                        'message' =>
+                            'Safety collision: username is not owned by this Hotel voucher.',
+                    ];
+
+                    continue;
+                }
 
                 $query =
                     new Query(
@@ -111,9 +152,13 @@ class HotelMikroTikSessionControlService
                             now(),
                     ]);
             } catch (Throwable $e) {
-                $result['failures']++;
+                $result[
+                    'failures'
+                ]++;
 
-                $result['errors'][] = [
+                $result[
+                    'errors'
+                ][] = [
                     'router_id' =>
                         $router->id,
 
@@ -127,6 +172,50 @@ class HotelMikroTikSessionControlService
         }
 
         return $result;
+    }
+
+    private function findUser(
+        Client $client,
+        string $username
+    ): ?array {
+        $query =
+            new Query(
+                '/ip/hotspot/user/print'
+            );
+
+        $query->where(
+            'name',
+            $username
+        );
+
+        $rows =
+            $client
+                ->query($query)
+                ->read();
+
+        return isset($rows[0])
+            && is_array($rows[0])
+                ? $rows[0]
+                : null;
+    }
+
+    private function ownsUser(
+        array $user,
+        HotelVoucher $voucher
+    ): bool {
+        $comment =
+            trim(
+                (string) (
+                    $user['comment']
+                    ?? ''
+                )
+            );
+
+        return str_starts_with(
+            $comment,
+            'MikroPanel Hotel Voucher #'
+            . $voucher->id
+        );
     }
 
     private function client(

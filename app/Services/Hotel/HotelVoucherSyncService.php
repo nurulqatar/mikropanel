@@ -95,12 +95,14 @@ class HotelVoucherSyncService
             try {
                 $result =
                     $operation === 'expire'
-                        ? $this->mikrotik
+                        ? $this
+                            ->mikrotik
                             ->expire(
                                 $router,
                                 $voucher
                             )
-                        : $this->mikrotik
+                        : $this
+                            ->mikrotik
                             ->upsert(
                                 $router,
                                 $voucher
@@ -115,9 +117,10 @@ class HotelVoucherSyncService
                 if ($success) {
                     $sync->forceFill([
                         'status' =>
-                            $operation === 'expire'
-                                ? 'expired'
-                                : 'synced',
+                            $operation
+                                === 'expire'
+                                    ? 'expired'
+                                    : 'synced',
 
                         'router_user_id' =>
                             $result[
@@ -127,24 +130,31 @@ class HotelVoucherSyncService
                                 ->router_user_id,
 
                         'synced_at' =>
-                            $operation === 'upsert'
-                                ? now()
-                                : $sync->synced_at,
+                            $operation
+                                === 'upsert'
+                                    ? now()
+                                    : $sync
+                                        ->synced_at,
 
                         'expired_at' =>
-                            $operation === 'expire'
-                                ? now()
-                                : null,
+                            $operation
+                                === 'expire'
+                                    ? now()
+                                    : null,
 
                         'last_error' =>
                             null,
                     ])->save();
 
-                    $summary['success']++;
+                    $summary[
+                        'success'
+                    ]++;
                 } else {
                     $message =
                         (string) (
-                            $result['message']
+                            $result[
+                                'message'
+                            ]
                             ?? 'Unknown MikroTik synchronization error.'
                         );
 
@@ -160,19 +170,24 @@ class HotelVoucherSyncService
                             ),
                     ])->save();
 
-                    $summary['failed']++;
+                    $summary[
+                        'failed'
+                    ]++;
                 }
 
-                $summary['routers'][] = [
+                $summary[
+                    'routers'
+                ][] = [
                     'router_id' =>
                         $router->id,
 
                     'status' =>
                         $success
                             ? (
-                                $operation === 'expire'
-                                    ? 'expired'
-                                    : 'synced'
+                                $operation
+                                    === 'expire'
+                                        ? 'expired'
+                                        : 'synced'
                             )
                             : 'failed',
                 ];
@@ -189,9 +204,13 @@ class HotelVoucherSyncService
                         ),
                 ])->save();
 
-                $summary['failed']++;
+                $summary[
+                    'failed'
+                ]++;
 
-                $summary['routers'][] = [
+                $summary[
+                    'routers'
+                ][] = [
                     'router_id' =>
                         $router->id,
 
@@ -208,23 +227,34 @@ class HotelVoucherSyncService
         HotelVoucher $voucher,
         string $operation
     ): string {
+        /*
+         * HOTEL_STALE_JOB_SAFETY_V1
+         *
+         * An old queued "upsert" must never
+         * reactivate a voucher that has since
+         * been revoked/deleted/expired.
+         */
         if (
-            in_array(
-                $operation,
+            $voucher->trashed()
+            || in_array(
+                $voucher->status,
                 [
-                    'upsert',
-                    'expire',
+                    'expired',
+                    'revoked',
                 ],
                 true
             )
+            || (
+                $voucher->expires_at
+                && $voucher
+                    ->expires_at
+                    ->lte(now())
+            )
         ) {
-            return $operation;
+            return 'expire';
         }
 
-        if (
-            $voucher->expires_at
-            && $voucher->expires_at->lte(now())
-        ) {
+        if ($operation === 'expire') {
             return 'expire';
         }
 
