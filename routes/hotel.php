@@ -4,6 +4,7 @@ use App\Http\Controllers\Hotel\AuthController;
 use App\Http\Controllers\Hotel\DashboardController;
 use App\Http\Controllers\Hotel\GuestController;
 use App\Http\Controllers\Hotel\PortalController;
+use App\Http\Controllers\Hotel\RouterController;
 use App\Http\Controllers\Hotel\SettingsController;
 use App\Http\Controllers\Hotel\StaffController;
 use App\Http\Controllers\Hotel\VoucherController;
@@ -328,6 +329,59 @@ Route::prefix('hotel')
                 ]
             )->name(
                 'vouchers.print'
+            );
+
+            /*
+             * HOTEL_MIKROTIK_ROUTES_V1
+             */
+            Route::get(
+                'routers',
+                [
+                    RouterController::class,
+                    'index',
+                ]
+            )->name(
+                'routers.index'
+            );
+
+            Route::post(
+                'routers',
+                [
+                    RouterController::class,
+                    'store',
+                ]
+            )->name(
+                'routers.store'
+            );
+
+            Route::put(
+                'routers/{router}',
+                [
+                    RouterController::class,
+                    'update',
+                ]
+            )->name(
+                'routers.update'
+            );
+
+            Route::delete(
+                'routers/{router}',
+                [
+                    RouterController::class,
+                    'destroy',
+                ]
+            )->name(
+                'routers.destroy'
+            );
+
+            Route::post(
+                'routers/{router}/test',
+                [
+                    RouterController::class,
+                    'test',
+                ]
+            )->name(
+                'routers.test'
             );
 
             Route::get(

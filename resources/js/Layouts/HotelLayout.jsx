@@ -34,6 +34,13 @@ const navigation = [
         ],
     },
     {
+        label: 'MikroTik Routers',
+        short: 'MT',
+        route: 'hotel.routers.index',
+        match: '/hotel/routers',
+        adminOnly: true,
+    },
+    {
         label: 'Receptionists',
         short: 'ST',
         route: 'hotel.staff.index',
