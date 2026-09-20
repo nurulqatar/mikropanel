@@ -960,3 +960,8 @@ Route::get(
 require __DIR__.'/manager_cash.php';
 
 require __DIR__.'/public_reseller.php';
+
+/*
+ * HOTEL_HOTSPOT_ROUTE_INCLUDE_V1
+ */
+require __DIR__.'/hotel.php';

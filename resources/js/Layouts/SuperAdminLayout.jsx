@@ -134,6 +134,58 @@ function SidebarContent({ url, closeMenu }) {
                     );
                 })}
 
+                    {/* HOTEL_HOTSPOT_SUPERADMIN_MENU_V1 */}
+                    <details
+                        className="mt-3 rounded-xl border border-emerald-900/50 bg-emerald-950/20"
+                        open={(url || '').startsWith(
+                            '/super-admin/hotel-hotspot',
+                        )}
+                    >
+                        <summary className="cursor-pointer list-none rounded-xl px-4 py-3 text-sm font-black text-emerald-300 hover:bg-emerald-950/40">
+                            <span className="flex items-center justify-between gap-3">
+                                <span>
+                                    Hotel Hotspot
+                                </span>
+
+                                <span>
+                                    ▾
+                                </span>
+                            </span>
+                        </summary>
+
+                        <div className="space-y-1 px-2 pb-2">
+                            <Link
+                                href={route(
+                                    'superadmin.hotel.dashboard',
+                                )}
+                                onClick={closeMenu}
+                                className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"
+                            >
+                                Dashboard
+                            </Link>
+
+                            <Link
+                                href={route(
+                                    'superadmin.hotel.hotels.index',
+                                )}
+                                onClick={closeMenu}
+                                className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"
+                            >
+                                Hotels
+                            </Link>
+
+                            <Link
+                                href={route(
+                                    'superadmin.hotel.plans.index',
+                                )}
+                                onClick={closeMenu}
+                                className="block rounded-lg px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800 hover:text-white"
+                            >
+                                Hotel Plans
+                            </Link>
+                        </div>
+                    </details>
+
                     <a
                         href={route(
                             'superadmin.registrations.index',
