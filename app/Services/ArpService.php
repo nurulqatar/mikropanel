@@ -250,26 +250,193 @@ class ArpService
         );
     }
 
+    /*
+     * ROUTEROS_ARP_ID_RECOVERY_V2
+     *
+     * Prefer the MikroPanel comment, then safely
+     * recover a static entry by exact IP + MAC.
+     *
+     * Dynamic ARP rows are never adopted and
+     * foreign manual entries are never modified.
+     */
     private function findId(
         RouterClient $api,
         Client $client
     ): ?string {
-        $rows = $api->query(
-            (new Query('/ip/arp/print'))
-                ->where(
-                    'comment',
-                    $client->client_code
+        $code =
+            trim(
+                (string)
+                $client->client_code
+            );
+
+        if ($code !== '') {
+            $rows =
+                $api->query(
+                    (new Query(
+                        '/ip/arp/print'
+                    ))
+                        ->where(
+                            'comment',
+                            $code
+                        )
+                )->read();
+
+            foreach ($rows as $row) {
+                if (
+                    trim(
+                        (string) (
+                            $row['comment']
+                            ?? ''
+                        )
+                    ) === $code
+                    && !empty(
+                        $row['.id']
+                    )
+                ) {
+                    return (string)
+                        $row['.id'];
+                }
+            }
+        }
+
+        $address =
+            trim(
+                (string)
+                $client->ip_address
+            );
+
+        $wantedMac =
+            strtoupper(
+                trim(
+                    (string)
+                    $client->mac_address
                 )
-        )->read();
+            );
+
+        if (
+            $address === ''
+            || $wantedMac === ''
+        ) {
+            return null;
+        }
+
+        $rows =
+            $api->query(
+                (new Query(
+                    '/ip/arp/print'
+                ))
+                    ->where(
+                        'address',
+                        $address
+                    )
+            )->read();
+
+        $staticCollision =
+            false;
 
         foreach ($rows as $row) {
             if (
-                ($row['comment'] ?? null)
-                    === $client->client_code
+                trim(
+                    (string) (
+                        $row['address']
+                        ?? ''
+                    )
+                ) !== $address
             ) {
-                return $row['.id']
-                    ?? null;
+                continue;
             }
+
+            $dynamic =
+                strtolower(
+                    trim(
+                        (string) (
+                            $row['dynamic']
+                            ?? 'false'
+                        )
+                    )
+                );
+
+            if (
+                in_array(
+                    $dynamic,
+                    [
+                        'true',
+                        'yes',
+                        '1',
+                    ],
+                    true
+                )
+            ) {
+                continue;
+            }
+
+            $rowMac =
+                strtoupper(
+                    trim(
+                        (string) (
+                            $row['mac-address']
+                            ?? ''
+                        )
+                    )
+                );
+
+            if (
+                $rowMac !== ''
+                && $rowMac
+                    !== $wantedMac
+            ) {
+                $staticCollision =
+                    true;
+
+                continue;
+            }
+
+            if (
+                $rowMac
+                !== $wantedMac
+            ) {
+                continue;
+            }
+
+            $comment =
+                trim(
+                    (string) (
+                        $row['comment']
+                        ?? ''
+                    )
+                );
+
+            if (
+                $comment !== ''
+                && $comment !== $code
+            ) {
+                throw new RuntimeException(
+                    'ARP ownership collision: '
+                    . $address
+                    . ' / '
+                    . $wantedMac
+                    . ' already exists with foreign comment "'
+                    . $comment
+                    . '".'
+                );
+            }
+
+            if (
+                !empty(
+                    $row['.id']
+                )
+            ) {
+                return (string)
+                    $row['.id'];
+            }
+        }
+
+        if ($staticCollision) {
+            throw new RuntimeException(
+                'ARP IP collision: '
+                . $address
+                . ' already exists as a static entry with another MAC address.'
+            );
         }
 
         return null;

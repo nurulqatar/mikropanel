@@ -252,28 +252,174 @@ class DhcpLeaseService
         );
     }
 
+    /*
+     * ROUTEROS_DHCP_ID_RECOVERY_V2
+     *
+     * RouterOS filtering by comment is not
+     * reliable enough to be the only identity
+     * check after an add operation.
+     *
+     * Ownership order:
+     * 1. Exact MikroPanel client comment.
+     * 2. Exact IP + MAC with empty/same comment.
+     *
+     * Never adopt a foreign lease with another
+     * non-empty comment or another MAC.
+     */
     private function findId(
         RouterClient $api,
         Client $client
     ): ?string {
-        $rows = $api->query(
-            (new Query(
-                '/ip/dhcp-server/lease/print'
-            ))
-                ->where(
-                    'comment',
-                    $client->client_code
+        $code =
+            trim(
+                (string)
+                $client->client_code
+            );
+
+        if ($code !== '') {
+            $rows =
+                $api->query(
+                    (new Query(
+                        '/ip/dhcp-server/lease/print'
+                    ))
+                        ->where(
+                            'comment',
+                            $code
+                        )
+                )->read();
+
+            foreach ($rows as $row) {
+                if (
+                    trim(
+                        (string) (
+                            $row['comment']
+                            ?? ''
+                        )
+                    ) === $code
+                    && !empty(
+                        $row['.id']
+                    )
+                ) {
+                    return (string)
+                        $row['.id'];
+                }
+            }
+        }
+
+        $address =
+            trim(
+                (string)
+                $client->ip_address
+            );
+
+        $wantedMac =
+            strtoupper(
+                trim(
+                    (string)
+                    $client->mac_address
                 )
-        )->read();
+            );
+
+        if (
+            $address === ''
+            || $wantedMac === ''
+        ) {
+            return null;
+        }
+
+        $rows =
+            $api->query(
+                (new Query(
+                    '/ip/dhcp-server/lease/print'
+                ))
+                    ->where(
+                        'address',
+                        $address
+                    )
+            )->read();
+
+        $ipCollision =
+            false;
 
         foreach ($rows as $row) {
             if (
-                ($row['comment'] ?? null)
-                    === $client->client_code
+                trim(
+                    (string) (
+                        $row['address']
+                        ?? ''
+                    )
+                ) !== $address
             ) {
-                return $row['.id']
-                    ?? null;
+                continue;
             }
+
+            $rowMac =
+                strtoupper(
+                    trim(
+                        (string) (
+                            $row['mac-address']
+                            ?? ''
+                        )
+                    )
+                );
+
+            if (
+                $rowMac !== ''
+                && $rowMac
+                    !== $wantedMac
+            ) {
+                $ipCollision =
+                    true;
+
+                continue;
+            }
+
+            if (
+                $rowMac
+                !== $wantedMac
+            ) {
+                continue;
+            }
+
+            $comment =
+                trim(
+                    (string) (
+                        $row['comment']
+                        ?? ''
+                    )
+                );
+
+            if (
+                $comment !== ''
+                && $comment !== $code
+            ) {
+                throw new RuntimeException(
+                    'DHCP ownership collision: '
+                    . $address
+                    . ' / '
+                    . $wantedMac
+                    . ' already exists with foreign comment "'
+                    . $comment
+                    . '".'
+                );
+            }
+
+            if (
+                !empty(
+                    $row['.id']
+                )
+            ) {
+                return (string)
+                    $row['.id'];
+            }
+        }
+
+        if ($ipCollision) {
+            throw new RuntimeException(
+                'DHCP IP collision: '
+                . $address
+                . ' already exists with another MAC address.'
+            );
         }
 
         return null;
