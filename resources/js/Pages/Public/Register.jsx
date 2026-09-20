@@ -89,9 +89,12 @@ export default function Register({
                                 </h1>
 
                                 <div className="mt-5 text-4xl font-black">
-                                    {Number(current.price) <= 0
+                                    {current.is_free_trial
                                         ? 'FREE'
-                                        : `QAR ${money(current.price)}`}
+                                        : current.is_unlimited
+                                          && Number(current.price) <= 0
+                                          ? 'Call for Price'
+                                          : `QAR ${money(current.price)}`}
                                 </div>
 
                                 <div className="mt-2 text-slate-400">

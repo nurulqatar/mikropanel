@@ -600,9 +600,12 @@ function PlanCard({
 
             <div className="mt-5 flex items-end gap-2">
                 <span className="text-4xl font-black">
-                    {Number(plan.price) <= 0
+                    {plan.is_free_trial
                         ? 'FREE'
-                        : `QAR ${money(plan.price)}`}
+                        : plan.is_unlimited
+                          && Number(plan.price) <= 0
+                          ? 'Call for Price'
+                          : `QAR ${money(plan.price)}`}
                 </span>
             </div>
 
