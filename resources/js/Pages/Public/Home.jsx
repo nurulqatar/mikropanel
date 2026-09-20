@@ -106,16 +106,9 @@ export default function Home({
 
     return (
         <div className="min-h-screen bg-white text-slate-900">
-            <Head>
-                <title>
-                    {websiteName} - Network Management Services
-                </title>
-
-                <meta
-                    name="description"
-                    content="Company ISP management, Hotel Hotspot guest Wi-Fi and Network Compliance logging and filtering from one professional platform."
-                />
-            </Head>
+            <Head
+                title={`${websiteName} - Network Management Services`}
+            />
 
             <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
                 <div className="mx-auto flex max-w-7xl items-center justify-between gap-5 px-5 py-4">
