@@ -251,7 +251,10 @@ class HotelController extends Controller
                                     . ' Guest WiFi',
 
                                 'enabled_locales' =>
-                                    ['en'],
+                                    config(
+                                        'hotel_portal.default_enabled_languages',
+                                        ['en']
+                                    ),
 
                                 'created_by' =>
                                     $request

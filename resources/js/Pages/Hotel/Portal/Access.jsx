@@ -1,4 +1,10 @@
 import {
+    directionForLocale,
+} from '@/Hotel/portalCatalog';
+import {
+    createTranslator,
+} from '@/Hotel/portalI18n';
+import {
     Head,
     Link,
 } from '@inertiajs/react';
@@ -7,29 +13,38 @@ export default function Access({
     hotel,
     locale,
 }) {
+    const t =
+        createTranslator(
+            locale,
+            hotel.portal_translations,
+        );
+
     return (
-        <div className="flex min-h-screen items-center justify-center bg-slate-950 p-5">
+        <div
+            dir={directionForLocale(
+                locale,
+            )}
+            className="flex min-h-screen items-center justify-center bg-slate-950 p-5"
+        >
             <Head title={hotel.name} />
 
             <div className="w-full max-w-xl rounded-[2rem] bg-white p-8 shadow-2xl">
                 {hotel.logo_url && (
                     <img
-                        src={
-                            hotel.logo_url
-                        }
-                        alt={
-                            hotel.name
-                        }
+                        src={hotel.logo_url}
+                        alt={hotel.name}
                         className="mx-auto h-20 max-w-48 object-contain"
                     />
                 )}
 
                 <h1 className="mt-5 text-center text-3xl font-black">
-                    Guest WiFi
+                    {t('guestWifi')}
                 </h1>
 
                 <p className="mt-2 text-center text-slate-500">
-                    Choose how you want to continue.
+                    {t(
+                        'chooseContinue',
+                    )}
                 </p>
 
                 <div className="mt-8 grid gap-4">
@@ -39,13 +54,20 @@ export default function Access({
                             {
                                 hotel:
                                     hotel.slug,
+
                                 lang:
                                     locale,
                             },
                         )}
-                        className="rounded-2xl bg-emerald-600 p-5 text-center text-lg font-black text-white"
+                        style={{
+                            backgroundColor:
+                                hotel.primary_color,
+                        }}
+                        className="rounded-2xl p-5 text-center text-lg font-black text-white shadow-lg"
                     >
-                        New Guest Registration
+                        {t(
+                            'newGuestRegistration',
+                        )}
                     </Link>
 
                     <Link
@@ -54,13 +76,16 @@ export default function Access({
                             {
                                 hotel:
                                     hotel.slug,
+
                                 lang:
                                     locale,
                             },
                         )}
                         className="rounded-2xl bg-slate-900 p-5 text-center text-lg font-black text-white"
                     >
-                        Existing Guest Login
+                        {t(
+                            'existingGuestLogin',
+                        )}
                     </Link>
                 </div>
             </div>

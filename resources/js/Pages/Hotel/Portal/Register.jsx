@@ -1,23 +1,48 @@
 import {
+    countryOptions,
+    directionForLocale,
+} from '@/Hotel/portalCatalog';
+import {
+    createTranslator,
+} from '@/Hotel/portalI18n';
+import {
     Head,
     Link,
     useForm,
 } from '@inertiajs/react';
+import {
+    useMemo,
+} from 'react';
 
 const inputClass =
-    'w-full rounded-xl border-slate-300';
+    'w-full rounded-xl border-slate-300 px-3 py-2.5';
 
 export default function Register({
     hotel,
     locale,
 }) {
+    const t =
+        createTranslator(
+            locale,
+            hotel.portal_translations,
+        );
+
+    const countries =
+        useMemo(
+            () =>
+                countryOptions(
+                    locale,
+                ),
+            [locale],
+        );
+
     const form =
         useForm({
             room_number: '',
             check_in_date: '',
             check_out_date: '',
-            phone: '',
             phone_country: '',
+            phone: '',
             name: '',
             identity_type:
                 'passport',
@@ -30,8 +55,17 @@ export default function Register({
         });
 
     return (
-        <div className="min-h-screen bg-slate-100 p-4 md:p-8">
-            <Head title="Guest WiFi Registration" />
+        <div
+            dir={directionForLocale(
+                locale,
+            )}
+            className="min-h-screen bg-slate-100 p-4 md:p-8"
+        >
+            <Head
+                title={t(
+                    'guestRegistration',
+                )}
+            />
 
             <div className="mx-auto max-w-3xl rounded-[2rem] bg-white p-6 shadow-xl md:p-8">
                 <div className="text-center">
@@ -48,7 +82,9 @@ export default function Register({
                     )}
 
                     <h1 className="mt-4 text-2xl font-black">
-                        Guest WiFi Registration
+                        {t(
+                            'guestRegistration',
+                        )}
                     </h1>
 
                     <p className="mt-1 text-slate-500">
@@ -57,8 +93,8 @@ export default function Register({
                 </div>
 
                 <form
-                    onSubmit={(e) => {
-                        e.preventDefault();
+                    onSubmit={(event) => {
+                        event.preventDefault();
 
                         form.post(
                             route(
@@ -77,7 +113,9 @@ export default function Register({
                 >
                     <div className="grid gap-5 md:grid-cols-2">
                         <Input
-                            label="Room Number"
+                            label={t(
+                                'roomNumber',
+                            )}
                             value={
                                 form.data
                                     .room_number
@@ -91,7 +129,9 @@ export default function Register({
                         />
 
                         <Input
-                            label="Guest Name"
+                            label={t(
+                                'guestName',
+                            )}
                             value={
                                 form.data.name
                             }
@@ -104,7 +144,9 @@ export default function Register({
                         />
 
                         <Input
-                            label="Hotel Check-in Date"
+                            label={t(
+                                'checkInDate',
+                            )}
                             type="date"
                             value={
                                 form.data
@@ -119,7 +161,9 @@ export default function Register({
                         />
 
                         <Input
-                            label="Hotel Check-out Date"
+                            label={t(
+                                'checkOutDate',
+                            )}
                             type="date"
                             value={
                                 form.data
@@ -133,8 +177,59 @@ export default function Register({
                             }
                         />
 
+                        <label>
+                            <div className="mb-1 text-sm font-black">
+                                {t(
+                                    'phoneCountry',
+                                )}
+                            </div>
+
+                            <select
+                                value={
+                                    form.data
+                                        .phone_country
+                                }
+                                onChange={(e) =>
+                                    form.setData(
+                                        'phone_country',
+                                        e.target.value,
+                                    )
+                                }
+                                className={
+                                    inputClass
+                                }
+                            >
+                                <option value="">
+                                    {t(
+                                        'selectCountry',
+                                    )}
+                                </option>
+
+                                {countries.map(
+                                    (
+                                        country,
+                                    ) => (
+                                        <option
+                                            key={
+                                                country.code
+                                            }
+                                            value={
+                                                country.code
+                                            }
+                                        >
+                                            {
+                                                country.name
+                                            }
+                                        </option>
+                                    ),
+                                )}
+                            </select>
+                        </label>
+
                         <Input
-                            label="Mobile Number"
+                            label={t(
+                                'mobileNumber',
+                            )}
                             placeholder="+974..."
                             value={
                                 form.data.phone
@@ -147,23 +242,60 @@ export default function Register({
                             }
                         />
 
-                        <Input
-                            label="Nationality"
-                            value={
-                                form.data
-                                    .nationality
-                            }
-                            onChange={(v) =>
-                                form.setData(
+                        <label>
+                            <div className="mb-1 text-sm font-black">
+                                {t(
                                     'nationality',
-                                    v,
-                                )
-                            }
-                        />
+                                )}
+                            </div>
+
+                            <select
+                                value={
+                                    form.data
+                                        .nationality
+                                }
+                                onChange={(e) =>
+                                    form.setData(
+                                        'nationality',
+                                        e.target.value,
+                                    )
+                                }
+                                className={
+                                    inputClass
+                                }
+                            >
+                                <option value="">
+                                    {t(
+                                        'selectCountry',
+                                    )}
+                                </option>
+
+                                {countries.map(
+                                    (
+                                        country,
+                                    ) => (
+                                        <option
+                                            key={
+                                                country.code
+                                            }
+                                            value={
+                                                country.code
+                                            }
+                                        >
+                                            {
+                                                country.name
+                                            }
+                                        </option>
+                                    ),
+                                )}
+                            </select>
+                        </label>
 
                         <label>
                             <div className="mb-1 text-sm font-black">
-                                Identification Type
+                                {t(
+                                    'identificationType',
+                                )}
                             </div>
 
                             <select
@@ -182,17 +314,23 @@ export default function Register({
                                 }
                             >
                                 <option value="passport">
-                                    Passport
+                                    {t(
+                                        'passport',
+                                    )}
                                 </option>
 
                                 <option value="qid">
-                                    Qatar ID
+                                    {t(
+                                        'qid',
+                                    )}
                                 </option>
                             </select>
                         </label>
 
                         <Input
-                            label="Identification Number"
+                            label={t(
+                                'identificationNumber',
+                            )}
                             value={
                                 form.data
                                     .identity_number
@@ -208,11 +346,13 @@ export default function Register({
 
                     {(hotel.terms_text
                         || hotel.privacy_text) && (
-                        <div className="mt-6 max-h-44 overflow-y-auto rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                        <div className="mt-6 max-h-48 overflow-y-auto rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
                             {hotel.terms_text && (
                                 <>
                                     <strong>
-                                        Terms & Conditions
+                                        {t(
+                                            'termsConditions',
+                                        )}
                                     </strong>
 
                                     <p className="mt-2 whitespace-pre-line">
@@ -225,8 +365,10 @@ export default function Register({
 
                             {hotel.privacy_text && (
                                 <>
-                                    <strong className="mt-4 block">
-                                        Privacy Notice
+                                    <strong className="mt-5 block">
+                                        {t(
+                                            'privacyNotice',
+                                        )}
                                     </strong>
 
                                     <p className="mt-2 whitespace-pre-line">
@@ -256,8 +398,9 @@ export default function Register({
                         />
 
                         <span className="text-sm font-semibold">
-                            I accept the Hotel WiFi
-                            Terms & Privacy Notice.
+                            {t(
+                                'acceptTerms',
+                            )}
                         </span>
                     </label>
 
@@ -293,9 +436,11 @@ export default function Register({
                             backgroundColor:
                                 hotel.primary_color,
                         }}
-                        className="mt-6 w-full rounded-xl px-6 py-3 font-black text-white disabled:opacity-50"
+                        className="mt-6 w-full rounded-xl px-6 py-3.5 font-black text-white shadow-lg disabled:opacity-50"
                     >
-                        Register & Get Voucher
+                        {t(
+                            'registerGetVoucher',
+                        )}
                     </button>
                 </form>
 
@@ -305,13 +450,14 @@ export default function Register({
                         {
                             hotel:
                                 hotel.slug,
+
                             lang:
                                 locale,
                         },
                     )}
                     className="mt-5 block text-center font-bold text-slate-500"
                 >
-                    Back
+                    {t('back')}
                 </Link>
             </div>
         </div>

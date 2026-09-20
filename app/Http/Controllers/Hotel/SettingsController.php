@@ -8,6 +8,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -73,11 +74,21 @@ class SettingsController extends Controller
                         $hotel->default_locale,
 
                     'enabled_locales' =>
-                        implode(
-                            ',',
+                        $hotel
+                            ->enabled_locales
+                        ?? config(
+                            'hotel_portal.default_enabled_languages',
+                            ['en']
+                        ),
+
+                    'portal_translations_json' =>
+                        json_encode(
                             $hotel
-                                ->enabled_locales
-                            ?? ['en']
+                                ->portal_translations
+                            ?? new \stdClass(),
+                            JSON_PRETTY_PRINT
+                            | JSON_UNESCAPED_UNICODE
+                            | JSON_UNESCAPED_SLASHES
                         ),
 
                     'terms_text' =>
@@ -188,14 +199,36 @@ class SettingsController extends Controller
                 'default_locale' => [
                     'required',
                     'string',
-                    'max:20',
-                    'regex:/^[A-Za-z0-9_-]+$/',
+                    Rule::in(
+                        config(
+                            'hotel_portal.languages',
+                            ['en']
+                        )
+                    ),
                 ],
 
                 'enabled_locales' => [
+                    'required',
+                    'array',
+                    'min:1',
+                ],
+
+                'enabled_locales.*' => [
+                    'required',
+                    'string',
+                    Rule::in(
+                        config(
+                            'hotel_portal.languages',
+                            ['en']
+                        )
+                    ),
+                ],
+
+                'portal_translations_json' => [
                     'nullable',
                     'string',
-                    'max:5000',
+                    'max:200000',
+                    'json',
                 ],
 
                 'terms_text' => [
@@ -225,26 +258,67 @@ class SettingsController extends Controller
                 ],
             ]);
 
+        $supportedLanguages =
+            config(
+                'hotel_portal.languages',
+                ['en']
+            );
+
         $locales =
             collect(
-                preg_split(
-                    '/[\s,]+/',
-                    $data[
-                        'enabled_locales'
-                    ]
-                    ?? ''
-                )
-                ?: []
+                $data[
+                    'enabled_locales'
+                ]
             )
                 ->map(
                     fn ($item) =>
-                        trim(
-                            $item
+                        strtolower(
+                            trim(
+                                (string)
+                                $item
+                            )
                         )
                 )
-                ->filter()
+                ->filter(
+                    fn ($item) =>
+                        in_array(
+                            $item,
+                            $supportedLanguages,
+                            true
+                        )
+                )
                 ->unique()
                 ->values();
+
+        $portalTranslations =
+            [];
+
+        if (
+            !empty(
+                $data[
+                    'portal_translations_json'
+                ]
+            )
+        ) {
+            $portalTranslations =
+                json_decode(
+                    $data[
+                        'portal_translations_json'
+                    ],
+                    true,
+                    512,
+                    JSON_THROW_ON_ERROR
+                );
+
+            if (
+                !is_array(
+                    $portalTranslations
+                )
+            ) {
+                $portalTranslations =
+                    [];
+            }
+        }
 
         if (
             !$locales->contains(
@@ -327,6 +401,9 @@ class SettingsController extends Controller
 
             'enabled_locales' =>
                 $locales->all(),
+
+            'portal_translations' =>
+                $portalTranslations,
 
             'terms_text' =>
                 $data[

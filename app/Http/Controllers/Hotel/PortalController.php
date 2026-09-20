@@ -122,8 +122,14 @@ class PortalController extends Controller
     public function voucher(
         Request $request,
         Hotel $hotel,
-        string $token
+        string $token,
+        HotelEntitlementService $entitlements
     ): Response {
+        $this->available(
+            $hotel,
+            $entitlements
+        );
+
         $voucher =
             HotelVoucher::query()
                 ->with([
@@ -150,7 +156,8 @@ class PortalController extends Controller
 
                 'voucher' => [
                     'username' =>
-                        $voucher->username,
+                        $voucher
+                            ->username,
 
                     'expires_at' =>
                         $voucher
@@ -184,8 +191,14 @@ class PortalController extends Controller
 
     public function login(
         Request $request,
-        Hotel $hotel
+        Hotel $hotel,
+        HotelEntitlementService $entitlements
     ): Response {
+        $this->available(
+            $hotel,
+            $entitlements
+        );
+
         return Inertia::render(
             'Hotel/Portal/Login',
             [
@@ -202,8 +215,14 @@ class PortalController extends Controller
 
     public function verify(
         Request $request,
-        Hotel $hotel
+        Hotel $hotel,
+        HotelEntitlementService $entitlements
     ): Response {
+        $this->available(
+            $hotel,
+            $entitlements
+        );
+
         $data =
             $request->validate([
                 'voucher_code' => [
@@ -300,6 +319,12 @@ class PortalController extends Controller
     private function guestData(
         Request $request
     ): array {
+        $supportedLanguages =
+            config(
+                'hotel_portal.languages',
+                ['en']
+            );
+
         $data =
             $request->validate([
                 'room_number' => [
@@ -328,7 +353,8 @@ class PortalController extends Controller
                 'phone_country' => [
                     'nullable',
                     'string',
-                    'max:10',
+                    'size:2',
+                    'regex:/^[A-Z]{2}$/',
                 ],
 
                 'name' => [
@@ -354,13 +380,16 @@ class PortalController extends Controller
                 'nationality' => [
                     'required',
                     'string',
-                    'max:120',
+                    'size:2',
+                    'regex:/^[A-Z]{2}$/',
                 ],
 
                 'preferred_locale' => [
                     'nullable',
                     'string',
-                    'max:20',
+                    Rule::in(
+                        $supportedLanguages
+                    ),
                 ],
 
                 'terms_accepted' => [
@@ -371,10 +400,36 @@ class PortalController extends Controller
         $data[
             'preferred_locale'
         ] =
-            $data[
-                'preferred_locale'
-            ]
-            ?? 'en';
+            strtolower(
+                $data[
+                    'preferred_locale'
+                ]
+                ?? 'en'
+            );
+
+        $data[
+            'phone_country'
+        ] =
+            isset(
+                $data[
+                    'phone_country'
+                ]
+            )
+                ? strtoupper(
+                    $data[
+                        'phone_country'
+                    ]
+                )
+                : null;
+
+        $data[
+            'nationality'
+        ] =
+            strtoupper(
+                $data[
+                    'nationality'
+                ]
+            );
 
         return $data;
     }
@@ -403,28 +458,64 @@ class PortalController extends Controller
         Request $request,
         Hotel $hotel
     ): array {
+        $supportedLanguages =
+            config(
+                'hotel_portal.languages',
+                ['en']
+            );
+
+        $enabledLanguages =
+            $hotel
+                ->enabled_locales;
+
+        if (
+            !is_array(
+                $enabledLanguages
+            )
+            || $enabledLanguages
+                === []
+        ) {
+            $enabledLanguages =
+                config(
+                    'hotel_portal.default_enabled_languages',
+                    ['en']
+                );
+        }
+
         $languages =
-            $hotel->enabled_locales
-            ?: [
-                'en',
-                'ar',
-                'bn',
-                'hi',
-                'ur',
-                'ne',
-                'tl',
-                'zh',
-                'fr',
-                'es',
-            ];
+            array_values(
+                array_unique(
+                    array_intersect(
+                        array_map(
+                            static fn (
+                                $locale
+                            ) =>
+                                strtolower(
+                                    trim(
+                                        (string)
+                                        $locale
+                                    )
+                                ),
+                            $enabledLanguages
+                        ),
+                        $supportedLanguages
+                    )
+                )
+            );
+
+        if ($languages === []) {
+            $languages = ['en'];
+        }
 
         $locale =
-            (string)
-            $request->query(
-                'lang',
-                $hotel
-                    ->default_locale
-                ?: 'en'
+            strtolower(
+                (string)
+                $request->query(
+                    'lang',
+                    $hotel
+                        ->default_locale
+                    ?: 'en'
+                )
             );
 
         if (
@@ -434,10 +525,24 @@ class PortalController extends Controller
                 true
             )
         ) {
+            $defaultLocale =
+                strtolower(
+                    (string)
+                    (
+                        $hotel
+                            ->default_locale
+                        ?: 'en'
+                    )
+                );
+
             $locale =
-                $hotel
-                    ->default_locale
-                ?: 'en';
+                in_array(
+                    $defaultLocale,
+                    $languages,
+                    true
+                )
+                    ? $defaultLocale
+                    : $languages[0];
         }
 
         return [
@@ -463,7 +568,8 @@ class PortalController extends Controller
                     $hotel->email,
 
                 'whatsapp' =>
-                    $hotel->whatsapp,
+                    $hotel
+                        ->whatsapp,
 
                 'address' =>
                     $hotel->address,
@@ -484,6 +590,11 @@ class PortalController extends Controller
                     $hotel
                         ->privacy_text,
 
+                'portal_translations' =>
+                    $hotel
+                        ->portal_translations
+                    ?? [],
+
                 'logo_url' =>
                     $this->storageUrl(
                         $hotel
@@ -501,9 +612,7 @@ class PortalController extends Controller
                 $locale,
 
             'languages' =>
-                array_values(
-                    $languages
-                ),
+                $languages,
         ];
     }
 
@@ -512,17 +621,19 @@ class PortalController extends Controller
     ): ?string {
         if (
             !$path
-            || !Storage::disk('public')
-                ->exists(
-                    $path
-                )
+            || !Storage::disk(
+                'public'
+            )->exists(
+                $path
+            )
         ) {
             return null;
         }
 
-        return Storage::disk('public')
-            ->url(
-                $path
-            );
+        return Storage::disk(
+            'public'
+        )->url(
+            $path
+        );
     }
 }

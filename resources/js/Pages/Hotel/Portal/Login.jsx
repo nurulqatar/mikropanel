@@ -1,4 +1,10 @@
 import {
+    directionForLocale,
+} from '@/Hotel/portalCatalog';
+import {
+    createTranslator,
+} from '@/Hotel/portalI18n';
+import {
     Head,
     Link,
     useForm,
@@ -9,35 +15,48 @@ export default function Login({
     locale,
     verification = null,
 }) {
+    const t =
+        createTranslator(
+            locale,
+            hotel.portal_translations,
+        );
+
     const form =
         useForm({
             voucher_code: '',
         });
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-slate-950 p-5">
-            <Head title="Guest WiFi Login" />
+        <div
+            dir={directionForLocale(
+                locale,
+            )}
+            className="flex min-h-screen items-center justify-center bg-slate-950 p-5"
+        >
+            <Head
+                title={t(
+                    'guestWifiLogin',
+                )}
+            />
 
             <div className="w-full max-w-md rounded-[2rem] bg-white p-8 shadow-2xl">
                 {hotel.logo_url && (
                     <img
-                        src={
-                            hotel.logo_url
-                        }
-                        alt={
-                            hotel.name
-                        }
+                        src={hotel.logo_url}
+                        alt={hotel.name}
                         className="mx-auto h-20 max-w-48 object-contain"
                     />
                 )}
 
                 <h1 className="mt-5 text-center text-3xl font-black">
-                    Guest WiFi Login
+                    {t(
+                        'guestWifiLogin',
+                    )}
                 </h1>
 
                 <form
-                    onSubmit={(e) => {
-                        e.preventDefault();
+                    onSubmit={(event) => {
+                        event.preventDefault();
 
                         form.post(
                             route(
@@ -45,6 +64,7 @@ export default function Login({
                                 {
                                     hotel:
                                         hotel.slug,
+
                                     lang:
                                         locale,
                                 },
@@ -54,10 +74,13 @@ export default function Login({
                     className="mt-7"
                 >
                     <label className="text-sm font-black">
-                        Voucher Code
+                        {t(
+                            'voucherCode',
+                        )}
                     </label>
 
                     <input
+                        dir="ltr"
                         value={
                             form.data
                                 .voucher_code
@@ -81,28 +104,37 @@ export default function Login({
                         }}
                         className="mt-5 w-full rounded-xl px-6 py-3 font-black text-white"
                     >
-                        Verify Voucher
+                        {t(
+                            'verifyVoucher',
+                        )}
                     </button>
                 </form>
 
                 {verification?.valid && (
                     <div className="mt-5 rounded-xl bg-emerald-50 p-4 text-center text-emerald-700">
                         <div className="font-black">
-                            Voucher Valid
+                            {t(
+                                'voucherValid',
+                            )}
                         </div>
 
                         <div className="mt-1 text-sm">
                             {
                                 verification.guest_name
                             }
-                            {' · Room '}
+                            {' · '}
+                            {t('room')}
+                            {' '}
                             {
                                 verification.room_number
                             }
                         </div>
 
                         <div className="mt-1 text-xs">
-                            Valid until{' '}
+                            {t(
+                                'validUntil',
+                            )}
+                            {' '}
                             {
                                 verification.expires_at
                             }
@@ -113,7 +145,9 @@ export default function Login({
                 {verification
                     && !verification.valid && (
                     <div className="mt-5 rounded-xl bg-red-50 p-4 text-center font-bold text-red-700">
-                        Invalid or expired voucher.
+                        {t(
+                            'invalidVoucher',
+                        )}
                     </div>
                 )}
 
@@ -123,13 +157,14 @@ export default function Login({
                         {
                             hotel:
                                 hotel.slug,
+
                             lang:
                                 locale,
                         },
                     )}
                     className="mt-6 block text-center font-bold text-slate-500"
                 >
-                    Back
+                    {t('back')}
                 </Link>
             </div>
         </div>

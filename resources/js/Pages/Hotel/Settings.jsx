@@ -1,3 +1,4 @@
+import { languageOptions } from '@/Hotel/portalCatalog';
 import HotelLayout from '@/Layouts/HotelLayout';
 import {
     Head,
@@ -64,7 +65,11 @@ export default function Settings({
 
             enabled_locales:
                 settings.enabled_locales
-                ?? 'en',
+                ?? ['en'],
+
+            portal_translations_json:
+                settings.portal_translations_json
+                ?? '{}',
 
             terms_text:
                 settings.terms_text
@@ -306,33 +311,125 @@ export default function Settings({
                             }
                         />
 
-                        <Input
-                            label="Default Language Code"
-                            value={
-                                form.data
-                                    .default_locale
-                            }
-                            onChange={(v) =>
-                                form.setData(
-                                    'default_locale',
-                                    v,
-                                )
-                            }
-                        />
+                        <label>
+                            <div className="mb-1 text-sm font-bold">
+                                Default Guest Language
+                            </div>
 
-                        <Input
-                            label="Enabled Language Codes"
-                            value={
-                                form.data
-                                    .enabled_locales
-                            }
-                            onChange={(v) =>
-                                form.setData(
-                                    'enabled_locales',
-                                    v,
-                                )
-                            }
-                        />
+                            <select
+                                value={
+                                    form.data
+                                        .default_locale
+                                }
+                                onChange={(e) =>
+                                    form.setData(
+                                        'default_locale',
+                                        e.target.value,
+                                    )
+                                }
+                                className="w-full rounded-xl border-slate-300"
+                            >
+                                {languageOptions(
+                                    'en',
+                                ).map(
+                                    (language) => (
+                                        <option
+                                            key={
+                                                language.code
+                                            }
+                                            value={
+                                                language.code
+                                            }
+                                        >
+                                            {language.name}
+                                            {' ('}
+                                            {language.code}
+                                            {')'}
+                                        </option>
+                                    ),
+                                )}
+                            </select>
+                        </label>
+
+                        <label className="md:col-span-2">
+                            <div className="mb-1 text-sm font-bold">
+                                Guest Portal Languages
+                            </div>
+
+                            <select
+                                multiple
+                                size="12"
+                                value={
+                                    form.data
+                                        .enabled_locales
+                                }
+                                onChange={(e) =>
+                                    form.setData(
+                                        'enabled_locales',
+                                        Array.from(
+                                            e.target
+                                                .selectedOptions,
+                                        ).map(
+                                            (option) =>
+                                                option.value,
+                                        ),
+                                    )
+                                }
+                                className="w-full rounded-xl border-slate-300"
+                            >
+                                {languageOptions(
+                                    'en',
+                                ).map(
+                                    (language) => (
+                                        <option
+                                            key={
+                                                language.code
+                                            }
+                                            value={
+                                                language.code
+                                            }
+                                        >
+                                            {language.name}
+                                            {' ('}
+                                            {language.code}
+                                            {')'}
+                                        </option>
+                                    ),
+                                )}
+                            </select>
+
+                            <p className="mt-2 text-xs text-slate-500">
+                                All ISO languages are available.
+                                Hold Ctrl or Cmd to change multiple selections.
+                            </p>
+                        </label>
+
+                        <label className="md:col-span-2">
+                            <div className="mb-1 text-sm font-bold">
+                                Custom Portal Translations
+                            </div>
+
+                            <textarea
+                                rows="12"
+                                value={
+                                    form.data
+                                        .portal_translations_json
+                                }
+                                onChange={(e) =>
+                                    form.setData(
+                                        'portal_translations_json',
+                                        e.target.value,
+                                    )
+                                }
+                                className="w-full rounded-xl border-slate-300 font-mono text-xs"
+                                placeholder='{"de":{"guestWifi":"Gäste-WLAN","go":"Weiter"}}'
+                            />
+
+                            <p className="mt-2 text-xs text-slate-500">
+                                Optional JSON overrides can fully localize
+                                any language or customize Hotel wording.
+                            </p>
+                        </label>
 
                         <label>
                             <div className="mb-1 text-sm font-bold">
