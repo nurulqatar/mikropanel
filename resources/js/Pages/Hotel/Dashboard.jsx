@@ -7,6 +7,7 @@ import {
 
 export default function Dashboard({
     usage = {},
+    stats = {},
 }) {
     const hotelAuth =
         usePage().props.hotelAuth
@@ -41,6 +42,21 @@ export default function Dashboard({
                 )}
 
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <Card
+                        label="Active Guests"
+                        value={
+                            stats.active_stays
+                            ?? 0
+                        }
+                    />
+
+                    <Card
+                        label="Active Vouchers"
+                        value={
+                            stats.active_vouchers
+                            ?? 0
+                        }
+                    />
                     <Card
                         label="Guest Limit"
                         value={

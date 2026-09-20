@@ -13,6 +13,27 @@ const navigation = [
         exact: true,
     },
     {
+        label: 'Guests',
+        short: 'GU',
+        route: 'hotel.guests.index',
+        match: '/hotel/guests',
+        permissions: [
+            'guests.manage',
+            'reports.view',
+        ],
+    },
+    {
+        label: 'Vouchers',
+        short: 'VC',
+        route: 'hotel.vouchers.index',
+        match: '/hotel/vouchers',
+        permissions: [
+            'vouchers.issue',
+            'vouchers.print',
+            'reports.view',
+        ],
+    },
+    {
         label: 'Receptionists',
         short: 'ST',
         route: 'hotel.staff.index',
@@ -52,10 +73,35 @@ function Sidebar({
 
     const items =
         navigation.filter(
-            (item) =>
-                !item.adminOnly
-                || user.role
-                    === 'admin',
+            (item) => {
+                if (
+                    user.role
+                    === 'admin'
+                ) {
+                    return true;
+                }
+
+                if (item.adminOnly) {
+                    return false;
+                }
+
+                if (
+                    !item.permissions
+                ) {
+                    return true;
+                }
+
+                return item.permissions
+                    .some(
+                        (permission) =>
+                            (
+                                user.permissions
+                                ?? []
+                            ).includes(
+                                permission,
+                            ),
+                    );
+            },
         );
 
     const active = (item) =>

@@ -2,8 +2,11 @@
 
 use App\Http\Controllers\Hotel\AuthController;
 use App\Http\Controllers\Hotel\DashboardController;
+use App\Http\Controllers\Hotel\GuestController;
+use App\Http\Controllers\Hotel\PortalController;
 use App\Http\Controllers\Hotel\SettingsController;
 use App\Http\Controllers\Hotel\StaffController;
+use App\Http\Controllers\Hotel\VoucherController;
 use App\Http\Controllers\SuperAdmin\Hotel\DashboardController as SuperAdminHotelDashboardController;
 use App\Http\Controllers\SuperAdmin\Hotel\HotelController;
 use App\Http\Controllers\SuperAdmin\Hotel\PlanController;
@@ -13,12 +16,96 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| HOTEL HOTSPOT PRODUCT
+| Public Hotel Guest WiFi Portal
 |--------------------------------------------------------------------------
-|
-| Hotel Hotspot is intentionally isolated from the existing Company/ISP
-| Hotspot module.
-|
+*/
+
+Route::prefix('wifi/{hotel:slug}')
+    ->name('hotel.portal.')
+    ->group(function (): void {
+        Route::get(
+            '/',
+            [
+                PortalController::class,
+                'welcome',
+            ]
+        )->name(
+            'welcome'
+        );
+
+        Route::get(
+            'access',
+            [
+                PortalController::class,
+                'access',
+            ]
+        )->name(
+            'access'
+        );
+
+        Route::get(
+            'register',
+            [
+                PortalController::class,
+                'register',
+            ]
+        )->name(
+            'register'
+        );
+
+        Route::post(
+            'register',
+            [
+                PortalController::class,
+                'store',
+            ]
+        )
+            ->middleware(
+                'throttle:12,1'
+            )
+            ->name(
+                'register.store'
+            );
+
+        Route::get(
+            'voucher/{token}',
+            [
+                PortalController::class,
+                'voucher',
+            ]
+        )->name(
+            'voucher'
+        );
+
+        Route::get(
+            'login',
+            [
+                PortalController::class,
+                'login',
+            ]
+        )->name(
+            'login'
+        );
+
+        Route::post(
+            'login',
+            [
+                PortalController::class,
+                'verify',
+            ]
+        )
+            ->middleware(
+                'throttle:20,1'
+            )
+            ->name(
+                'login.verify'
+            );
+    });
+
+/*
+|--------------------------------------------------------------------------
+| Super Admin Hotel Hotspot
+|--------------------------------------------------------------------------
 */
 
 Route::middleware([
@@ -139,6 +226,12 @@ Route::middleware([
         );
     });
 
+/*
+|--------------------------------------------------------------------------
+| Hotel Admin / Receptionist
+|--------------------------------------------------------------------------
+*/
+
 Route::prefix('hotel')
     ->name('hotel.')
     ->group(function (): void {
@@ -185,6 +278,56 @@ Route::prefix('hotel')
                 ]
             )->name(
                 'logout'
+            );
+
+            Route::get(
+                'guests',
+                [
+                    GuestController::class,
+                    'index',
+                ]
+            )->name(
+                'guests.index'
+            );
+
+            Route::get(
+                'vouchers',
+                [
+                    VoucherController::class,
+                    'index',
+                ]
+            )->name(
+                'vouchers.index'
+            );
+
+            Route::get(
+                'vouchers/create',
+                [
+                    VoucherController::class,
+                    'create',
+                ]
+            )->name(
+                'vouchers.create'
+            );
+
+            Route::post(
+                'vouchers',
+                [
+                    VoucherController::class,
+                    'store',
+                ]
+            )->name(
+                'vouchers.store'
+            );
+
+            Route::get(
+                'vouchers/{voucher}/print',
+                [
+                    VoucherController::class,
+                    'print',
+                ]
+            )->name(
+                'vouchers.print'
             );
 
             Route::get(

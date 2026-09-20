@@ -4,6 +4,7 @@ namespace App\Services\Hotel;
 
 use App\Models\Hotel\Hotel;
 use App\Models\Hotel\HotelSubscription;
+use App\Models\Hotel\HotelStay;
 use App\Models\Hotel\HotelUser;
 
 class HotelEntitlementService
@@ -51,6 +52,74 @@ class HotelEntitlementService
             && $subscription
                 ->expires_at
                 ->gt($now);
+    }
+
+    /*
+     * HOTEL_GUEST_USAGE_V1
+     */
+    public function guestUsage(
+        Hotel $hotel
+    ): int {
+        $subscription =
+            $this->subscription(
+                $hotel
+            );
+
+        if (!$subscription) {
+            return 0;
+        }
+
+        return HotelStay::query()
+            ->where(
+                'hotel_id',
+                $hotel->id
+            )
+            ->whereBetween(
+                'created_at',
+                [
+                    $subscription
+                        ->starts_at,
+
+                    $subscription
+                        ->expires_at,
+                ]
+            )
+            ->count();
+    }
+
+    public function canRegisterGuest(
+        Hotel $hotel
+    ): bool {
+        $subscription =
+            $this->subscription(
+                $hotel
+            );
+
+        if (
+            !$subscription
+            || !$this->usable(
+                $hotel
+            )
+        ) {
+            return false;
+        }
+
+        if (
+            $subscription
+                ->is_guest_unlimited
+        ) {
+            return true;
+        }
+
+        return $this
+            ->guestUsage(
+                $hotel
+            )
+            < (int) (
+                $subscription
+                    ->guest_limit
+                ?? 0
+            );
     }
 
     public function receptionistUsage(
@@ -114,6 +183,11 @@ class HotelEntitlementService
         return [
             'usable' =>
                 $this->usable(
+                    $hotel
+                ),
+
+            'guest_usage' =>
+                $this->guestUsage(
                     $hotel
                 ),
 

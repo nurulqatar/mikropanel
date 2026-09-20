@@ -77,4 +77,32 @@ class Hotel extends Model
             )
             ->latestOfMany();
     }
+
+    public function wifiProfiles(): HasMany
+    {
+        return $this->hasMany(
+            HotelWifiProfile::class
+        );
+    }
+
+    public function guests(): HasMany
+    {
+        return $this->hasMany(
+            HotelGuest::class
+        );
+    }
+
+    public function stays(): HasMany
+    {
+        return $this->hasMany(
+            HotelStay::class
+        );
+    }
+
+    public function vouchers(): HasMany
+    {
+        return $this->hasMany(
+            HotelVoucher::class
+        );
+    }
 }

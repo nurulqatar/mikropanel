@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Hotel;
 
 use App\Http\Controllers\Controller;
+use App\Models\Hotel\HotelStay;
+use App\Models\Hotel\HotelVoucher;
 use App\Services\Hotel\HotelEntitlementService;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -28,6 +30,45 @@ class DashboardController extends Controller
                         ->snapshot(
                             $hotel
                         ),
+
+                'stats' => [
+                    'active_stays' =>
+                        HotelStay::query()
+                            ->where(
+                                'hotel_id',
+                                $hotel->id
+                            )
+                            ->where(
+                                'status',
+                                'active'
+                            )
+                            ->where(
+                                'check_out_at',
+                                '>',
+                                now()
+                            )
+                            ->count(),
+
+                    'active_vouchers' =>
+                        HotelVoucher::query()
+                            ->where(
+                                'hotel_id',
+                                $hotel->id
+                            )
+                            ->whereIn(
+                                'status',
+                                [
+                                    'unused',
+                                    'active',
+                                ]
+                            )
+                            ->where(
+                                'expires_at',
+                                '>',
+                                now()
+                            )
+                            ->count(),
+                ],
             ]
         );
     }
