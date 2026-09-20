@@ -72,6 +72,15 @@ export default function Dashboard({
     return (
         <AppLayout title={isOwner ? 'Reseller Dashboard' : 'Operator Dashboard'}>
             <Head title={isOwner ? 'Reseller Dashboard' : 'Operator Dashboard'} />
+            {/* RESELLER_COMPLIANCE_ACCESS_V1 */}
+            <a
+                href={route('reseller.compliance.enter')}
+                className="mb-6 block rounded-2xl border border-cyan-200 bg-cyan-50 p-5 transition hover:border-cyan-400"
+            >
+                <div className="font-black text-slate-900">Internet Compliance</div>
+                <div className="mt-1 text-sm text-slate-600">Open Logging / Filtering</div>
+            </a>
+
 
             <div className="space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-4">

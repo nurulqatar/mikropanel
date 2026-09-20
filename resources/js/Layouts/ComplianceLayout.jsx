@@ -13,6 +13,8 @@ export default function ComplianceLayout({
         ['Collectors', 'compliance.collectors.index'],
         ['Investigation', 'compliance.investigation.index'],
         ['Filtering', 'compliance.filtering.index'],
+        ['Storage', 'compliance.storage.index'],
+        ['Retention', 'compliance.retention.index'],
     ];
 
     return (

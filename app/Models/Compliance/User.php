@@ -18,6 +18,9 @@ class User extends Model
         'role',
         'is_active',
         'last_login_at',
+        'source_type',
+        'source_id',
+        'panel_user_id',
     ];
 
     protected $hidden = [

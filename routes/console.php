@@ -167,3 +167,10 @@ Schedule::command(
 )
     ->everyMinute()
     ->withoutOverlapping();
+
+/* NETWORK_COMPLIANCE_RETENTION_MAINTENANCE_V1 */
+\Illuminate\Support\Facades\Schedule::command(
+    'compliance:maintain'
+)
+    ->hourly()
+    ->withoutOverlapping();

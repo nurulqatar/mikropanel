@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Compliance\AuthController;
+use App\Http\Controllers\Compliance\BridgeController;
+use App\Http\Controllers\Compliance\RetentionController;
+use App\Http\Controllers\Compliance\StorageController;
 use App\Http\Controllers\Compliance\CollectorApiController;
 use App\Http\Controllers\Compliance\CollectorController;
 use App\Http\Controllers\Compliance\DashboardController;
@@ -15,6 +18,24 @@ use App\Http\Middleware\Compliance\EnsureComplianceSession;
 use App\Http\Middleware\Compliance\EnsureComplianceSuperAdmin;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| NETWORK_COMPLIANCE_SAME_PANEL_BRIDGE_V1
+|--------------------------------------------------------------------------
+*/
+
+Route::get(
+    '/reseller/compliance',
+    [BridgeController::class, 'reseller']
+)
+    ->middleware('auth')
+    ->name('reseller.compliance.enter');
+
+Route::get(
+    '/hotel/compliance',
+    [BridgeController::class, 'hotel']
+)->name('hotel.compliance.enter');
 
 /*
 |--------------------------------------------------------------------------
@@ -197,6 +218,52 @@ Route::middleware(
             )->name(
                 'routers.configure-logging'
             );
+
+
+            Route::get(
+                '/storage',
+                [StorageController::class, 'index']
+            )->name('storage.index');
+
+            Route::post(
+                '/storage',
+                [StorageController::class, 'store']
+            )->name('storage.store');
+
+            Route::post(
+                '/storage/{storageTarget}/test',
+                [StorageController::class, 'test']
+            )->name('storage.test');
+
+            Route::delete(
+                '/storage/{storageTarget}',
+                [StorageController::class, 'destroy']
+            )->name('storage.destroy');
+
+            Route::get(
+                '/retention',
+                [RetentionController::class, 'index']
+            )->name('retention.index');
+
+            Route::post(
+                '/retention/policy',
+                [RetentionController::class, 'storePolicy']
+            )->name('retention.policy.store');
+
+            Route::post(
+                '/retention/holds',
+                [RetentionController::class, 'storeHold']
+            )->name('retention.holds.store');
+
+            Route::post(
+                '/retention/holds/{hold}/release',
+                [RetentionController::class, 'releaseHold']
+            )->name('retention.holds.release');
+
+            Route::get(
+                '/investigation/csv',
+                [InvestigationController::class, 'csv']
+            )->name('investigation.csv');
         }
     );
 

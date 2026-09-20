@@ -20,6 +20,15 @@ export default function Dashboard({
     return (
         <HotelLayout title="Dashboard">
             <Head title="Hotel Dashboard" />
+            {/* HOTEL_COMPLIANCE_ACCESS_V1 */}
+            <a
+                href={route('hotel.compliance.enter')}
+                className="mb-6 block rounded-2xl border border-cyan-200 bg-cyan-50 p-5 transition hover:border-cyan-400"
+            >
+                <div className="font-black text-slate-900">Internet Compliance</div>
+                <div className="mt-1 text-sm text-slate-600">Open Logging / Filtering</div>
+            </a>
+
 
             <div className="space-y-6">
                 <div>

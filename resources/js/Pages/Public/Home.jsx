@@ -270,6 +270,7 @@ export default function Home({
                         <a href="#hotel-hotspot">
                             Hotel Hotspot
                         </a>
+                        <a href="#network-compliance" className="transition hover:text-white">Network Compliance</a>
                         <a href="#plans">
                             Pricing
                         </a>
@@ -850,6 +851,112 @@ export default function Home({
                     </div>
                 </section>
 
+            {/* NETWORK_COMPLIANCE_PUBLIC_DETAILS_V1 */}
+            <section
+                id="network-compliance"
+                className="border-t border-white/10 bg-slate-950 px-5 py-20 text-white"
+            >
+                <div className="mx-auto max-w-7xl">
+                    <div className="max-w-4xl">
+                        <div className="text-sm font-black uppercase tracking-[0.2em] text-cyan-300">
+                            Network Compliance & Filtering
+                        </div>
+                        <h2 className="mt-4 text-3xl font-black md:text-5xl">
+                            Logging and Filtering — Separate Monthly Services or One Complete Package
+                        </h2>
+                        <p className="mt-5 text-lg leading-8 text-slate-300">
+                            Available to standalone organizations and to activated MikroPanel MAC, Hotspot and Hotel Hotspot customers. Choose Logging only, Filtering only, or both from the same professional platform.
+                        </p>
+                    </div>
+
+                    <div className="mt-10 grid gap-5 lg:grid-cols-3">
+                        <ComplianceServiceCard
+                            title="Compliance Logging"
+                            badge="Independent Service"
+                            text="Searchable network metadata and client attribution for authorized organization networks, with customer-selected external archive storage."
+                            items={[
+                                'Public IP + translated source port + exact-time search',
+                                'IPFIX NAT mapping and destination metadata',
+                                'DHCP / Hotspot identity correlation',
+                                'Device or authenticated-user attribution when source data is available',
+                                'Mounted NAS / NFS archive',
+                                'Amazon S3 and S3-compatible cloud/NAS archive',
+                                'SHA-256 archive integrity records',
+                                'Retention policy and legal hold controls',
+                                'Investigation CSV export and audit trail',
+                            ]}
+                        />
+
+                        <ComplianceServiceCard
+                            title="Network Filtering"
+                            badge="Independent Service"
+                            text="Control Internet destinations on supported organization networks using domain, IP, server, application and protocol policies."
+                            items={[
+                                'Website / domain blocking',
+                                'IP and CIDR blocking',
+                                'Server destination blocking',
+                                'Custom third-party application signatures',
+                                'Application category filtering',
+                                'Protocol / port policies',
+                                'Blocklist mode — allow by default',
+                                'Allowlist / Default-Deny mode — block by default',
+                                'Versioned MikroPanel-owned MikroTik policy deployment',
+                            ]}
+                        />
+
+                        <ComplianceServiceCard
+                            title="Compliance Complete"
+                            badge="Logging + Filtering"
+                            text="Combine attribution, external archives and filtering in one Compliance workspace while keeping both commercial entitlements independent."
+                            items={[
+                                'Standalone Compliance organization and login',
+                                'Same-panel access for activated MAC / Hotspot Company owners',
+                                'Same-panel access for activated Hotel Admins',
+                                'Separate Logging and Filtering subscriptions',
+                                'MikroTik capability testing and guided setup',
+                                'Collector registration with one-time token',
+                                'Central Super Admin plans, organizations and subscriptions',
+                                'Router-owned policy namespace isolation',
+                            ]}
+                        />
+                    </div>
+
+                    <div className="mt-10 grid gap-6 lg:grid-cols-2">
+                        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-7">
+                            <h3 className="text-2xl font-black">Two Filtering Modes</h3>
+                            <div className="mt-5 space-y-4 text-sm leading-6 text-slate-300">
+                                <div className="rounded-2xl bg-slate-900 p-5"><strong className="text-white">Blocklist:</strong> Internet is allowed by default; the company selects what to block.</div>
+                                <div className="rounded-2xl bg-slate-900 p-5"><strong className="text-white">Allowlist / Default-Deny:</strong> the selected network is denied by default; only explicitly approved destinations are allowed.</div>
+                            </div>
+                        </div>
+
+                        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-7">
+                            <h3 className="text-2xl font-black">Standalone or Existing Customer</h3>
+                            <div className="mt-5 space-y-3 text-sm leading-6 text-slate-300">
+                                <p><strong className="text-white">Standalone:</strong> add the organization, network/router, collector and storage target from the Compliance platform.</p>
+                                <p><strong className="text-white">MAC / Hotspot Company:</strong> Super Admin can link the service so the Company owner opens Internet Compliance from the same panel.</p>
+                                <p><strong className="text-white">Hotel Hotspot:</strong> the Hotel Admin can open the linked Compliance workspace from the same Hotel panel.</p>
+                                <p><strong className="text-white">Router support:</strong> MikroTik has automated capability/configuration and filtering deployment. Other registered vendors use guided/agent integration according to their capabilities.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-8 rounded-3xl border border-amber-300/20 bg-amber-300/[0.06] p-6">
+                        <div className="font-black text-amber-200">Privacy & attribution</div>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                            The service is designed for authorized organization networks and metadata logging. HTTPS page contents, messages and passwords are not decrypted or captured by default. Reliable public-IP attribution depends on the network providing the relevant NAT mapping, source port and timestamp; upstream ISP CGNAT may require the ISP&apos;s own mapping records.
+                        </p>
+                    </div>
+
+                    <div className="mt-8 flex flex-wrap gap-3">
+                        <Link href={route('compliance.login')} className="rounded-xl bg-cyan-400 px-6 py-3 font-black text-slate-950">Compliance Login</Link>
+                        <Link href={route('login')} className="rounded-xl border border-white/15 px-6 py-3 font-black text-white">Company Login</Link>
+                        <Link href={route('hotel.login')} className="rounded-xl border border-white/15 px-6 py-3 font-black text-white">Hotel Login</Link>
+                    </div>
+                </div>
+            </section>
+
+
 
                 <section
                     id="plans"
@@ -1235,5 +1342,18 @@ function InfoBox({ title, text }) {
                 {text}
             </p>
         </div>
+    );
+}
+
+function ComplianceServiceCard({ title, badge, text, items }) {
+    return (
+        <article className="rounded-3xl border border-white/10 bg-white/[0.04] p-7">
+            <div className="inline-flex rounded-full bg-cyan-400/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-cyan-300">{badge}</div>
+            <h3 className="mt-4 text-2xl font-black">{title}</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-400">{text}</p>
+            <ul className="mt-5 space-y-2 text-sm text-slate-300">
+                {items.map((item) => <li key={item} className="flex gap-2"><span className="text-cyan-300">✓</span><span>{item}</span></li>)}
+            </ul>
+        </article>
     );
 }

@@ -93,6 +93,12 @@ class AuthController extends Controller
             ->session()
             ->regenerate();
 
+        /* COMPLIANCE_STANDALONE_MASK_CLEAR_V1 */
+        $request->session()->forget([
+            'compliance_service_mask',
+            'compliance_bridge_source',
+        ]);
+
         $request
             ->session()
             ->put([
@@ -155,6 +161,13 @@ class AuthController extends Controller
     public function destroy(
         Request $request
     ): RedirectResponse {
+        $request->session()->forget([
+            'compliance_user_id',
+            'compliance_organization_id',
+            'compliance_service_mask',
+            'compliance_bridge_source',
+        ]);
+
         $request
             ->session()
             ->forget([
