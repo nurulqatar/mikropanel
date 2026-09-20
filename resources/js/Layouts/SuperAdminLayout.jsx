@@ -1,3 +1,4 @@
+import HotelCommercialMenu from '@/Components/SuperAdmin/HotelCommercialMenu';
 import { Link, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 
@@ -313,7 +314,8 @@ export default function SuperAdminLayout({
 
                 <main className="min-h-[calc(100vh-4rem)] p-4 md:p-6">
                     <div className="mx-auto w-full max-w-[1600px]">
-                        {children}
+                        <HotelCommercialMenu />
+                    {children}
                     </div>
                 </main>
             </div>

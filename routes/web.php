@@ -965,3 +965,49 @@ require __DIR__.'/public_reseller.php';
  * HOTEL_HOTSPOT_ROUTE_INCLUDE_V1
  */
 require __DIR__.'/hotel.php';
+
+/*
+ * HOTEL_COMMERCIAL_SUPERADMIN_V1
+ */
+Route::middleware([
+    'auth',
+])
+    ->prefix(
+        'super-admin/hotel-hotspot'
+    )
+    ->name(
+        'superadmin.hotel.'
+    )
+    ->group(
+        function (): void {
+            Route::get(
+                'commercial',
+                [
+                    \App\Http\Controllers\SuperAdmin\Hotel\CommercialController::class,
+                    'index',
+                ]
+            )->name(
+                'commercial.index'
+            );
+
+            Route::post(
+                'commercial/invoices/{invoice}/payment',
+                [
+                    \App\Http\Controllers\SuperAdmin\Hotel\CommercialController::class,
+                    'payment',
+                ]
+            )->name(
+                'commercial.payment'
+            );
+
+            Route::post(
+                'commercial/hotels/{hotel}/renew',
+                [
+                    \App\Http\Controllers\SuperAdmin\Hotel\CommercialController::class,
+                    'renew',
+                ]
+            )->name(
+                'commercial.renew'
+            );
+        }
+    );

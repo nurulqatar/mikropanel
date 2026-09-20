@@ -40,8 +40,32 @@ export default function HotelNetworkMenu() {
             'reports.view',
         );
 
+    const operations =
+        reports
+        || permissions.includes(
+            'vouchers.issue',
+        )
+        || permissions.includes(
+            'routers.manage',
+        );
+
     return (
         <div className="mb-5 flex flex-wrap gap-2">
+            {operations && (
+                <Link
+                    href={route(
+                        'hotel.operations.index',
+                    )}
+                    className={style(
+                        route().current(
+                            'hotel.operations.*',
+                        ),
+                    )}
+                >
+                    Operations
+                </Link>
+            )}
+
             <Link
                 href={route(
                     'hotel.vouchers.index',
@@ -79,7 +103,22 @@ export default function HotelNetworkMenu() {
                         ),
                     )}
                 >
-                    Live Sessions & Reports
+                    Reports
+                </Link>
+            )}
+
+            {reports && (
+                <Link
+                    href={route(
+                        'hotel.billing.index',
+                    )}
+                    className={style(
+                        route().current(
+                            'hotel.billing.*',
+                        ),
+                    )}
+                >
+                    Billing
                 </Link>
             )}
         </div>

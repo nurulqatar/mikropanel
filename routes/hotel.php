@@ -263,6 +263,7 @@ Route::prefix('hotel')
         Route::middleware([
             HotelAuthenticate::class,
             ShareHotelContext::class,
+            \App\Http\Middleware\HotelAuditMutations::class,
         ])->group(function (): void {
             Route::get(
                 '/',
@@ -329,6 +330,89 @@ Route::prefix('hotel')
                 ]
             )->name(
                 'vouchers.print'
+            );
+
+            /*
+             * HOTEL_COMMERCIAL_OPERATIONS_V1
+             */
+            Route::get(
+                'operations',
+                [
+                    \App\Http\Controllers\Hotel\OperationsController::class,
+                    'index',
+                ]
+            )->name(
+                'operations.index'
+            );
+
+            Route::post(
+                'operations/vouchers/{voucher}/revoke',
+                [
+                    \App\Http\Controllers\Hotel\OperationsController::class,
+                    'revoke',
+                ]
+            )->name(
+                'operations.voucher.revoke'
+            );
+
+            Route::post(
+                'operations/vouchers/{voucher}/reactivate',
+                [
+                    \App\Http\Controllers\Hotel\OperationsController::class,
+                    'reactivate',
+                ]
+            )->name(
+                'operations.voucher.reactivate'
+            );
+
+            Route::post(
+                'operations/vouchers/{voucher}/extend',
+                [
+                    \App\Http\Controllers\Hotel\OperationsController::class,
+                    'extend',
+                ]
+            )->name(
+                'operations.voucher.extend'
+            );
+
+            Route::post(
+                'operations/vouchers/{voucher}/disconnect',
+                [
+                    \App\Http\Controllers\Hotel\OperationsController::class,
+                    'disconnect',
+                ]
+            )->name(
+                'operations.voucher.disconnect'
+            );
+
+            Route::post(
+                'operations/notifications/{notification}/read',
+                [
+                    \App\Http\Controllers\Hotel\OperationsController::class,
+                    'readNotification',
+                ]
+            )->name(
+                'operations.notifications.read'
+            );
+
+            Route::get(
+                'operations/audit.csv',
+                [
+                    \App\Http\Controllers\Hotel\OperationsController::class,
+                    'auditCsv',
+                ]
+            )->name(
+                'operations.audit.csv'
+            );
+
+            Route::get(
+                'billing',
+                [
+                    \App\Http\Controllers\Hotel\BillingController::class,
+                    'index',
+                ]
+            )->name(
+                'billing.index'
             );
 
             /*
