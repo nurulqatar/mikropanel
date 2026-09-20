@@ -1013,3 +1013,14 @@ Route::middleware([
     );
 
 require __DIR__.'/compliance.php';
+
+/* RENTAL_CUSTOMER_STATUS_PORTAL_V1 */
+\Illuminate\Support\Facades\Route::get(
+    '/rental/status/{token}',
+    [\App\Http\Controllers\PublicRentalStatusController::class, 'show']
+)->where('token', '[a-f0-9]{64}')->name('rental.status');
+
+\Illuminate\Support\Facades\Route::post(
+    '/rental/status/{token}/ticket',
+    [\App\Http\Controllers\PublicRentalStatusController::class, 'ticket']
+)->where('token', '[a-f0-9]{64}')->middleware('throttle:10,1')->name('rental.status.ticket');

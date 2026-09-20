@@ -11,6 +11,13 @@ const navigation = [
         match: '/super-admin',
         exact: true,
     },
+    // RENTAL_MASTER_MENU_V1
+    {
+        label: 'Rental Management',
+        short: 'RM',
+        route: 'superadmin.rentals.index',
+        match: '/super-admin/rentals',
+    },
 ];
 
 function SidebarContent({ url, closeMenu }) {

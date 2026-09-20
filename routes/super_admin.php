@@ -306,3 +306,23 @@ Route::middleware([
             'resellers.change-plan'
         );
     });
+
+/* RENTAL_MASTER_PLATFORM_V1 */
+\Illuminate\Support\Facades\Route::middleware(['auth'])
+    ->prefix('super-admin/rentals')
+    ->name('superadmin.rentals.')
+    ->group(function (): void {
+        $c = \App\Http\Controllers\SuperAdmin\RentalManagementController::class;
+
+        \Illuminate\Support\Facades\Route::get('/', [$c, 'index'])->name('index');
+        \Illuminate\Support\Facades\Route::post('/sync', [$c, 'sync'])->name('sync');
+        \Illuminate\Support\Facades\Route::get('/export.csv', [$c, 'export'])->name('export');
+        \Illuminate\Support\Facades\Route::get('/invoices/{invoice}/print', [$c, 'printInvoice'])->name('invoices.print');
+        \Illuminate\Support\Facades\Route::post('/invoices/{invoice}/payments', [$c, 'payment'])->name('payments.store');
+        \Illuminate\Support\Facades\Route::put('/tickets/{ticket}', [$c, 'ticketStatus'])->name('tickets.update');
+        \Illuminate\Support\Facades\Route::get('/{contract}', [$c, 'show'])->name('show');
+        \Illuminate\Support\Facades\Route::put('/{contract}', [$c, 'update'])->name('update');
+        \Illuminate\Support\Facades\Route::post('/{contract}/invoices', [$c, 'invoice'])->name('invoices.store');
+        \Illuminate\Support\Facades\Route::post('/{contract}/tickets', [$c, 'ticket'])->name('tickets.store');
+        \Illuminate\Support\Facades\Route::post('/{contract}/cancel', [$c, 'cancel'])->name('cancel');
+    });
