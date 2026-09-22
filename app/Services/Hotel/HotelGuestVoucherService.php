@@ -2,6 +2,7 @@
 
 namespace App\Services\Hotel;
 
+use App\Jobs\Hotel\SyncHotelVoucherToRouters;
 use App\Models\Hotel\Hotel;
 use App\Models\Hotel\HotelGuest;
 use App\Models\Hotel\HotelStay;
@@ -23,7 +24,7 @@ class HotelGuestVoucherService
         string $source = 'portal',
         ?string $ipAddress = null
     ): HotelVoucher {
-        return DB::transaction(
+        $voucher = DB::transaction(
             function () use (
                 $hotel,
                 $data,
@@ -385,6 +386,24 @@ class HotelGuestVoucherService
                     ]);
             }
         );
+
+        /*
+         * HOTEL_VOUCHER_AUTO_SYNC_V1
+         *
+         * Every newly issued Hotel voucher must immediately converge
+         * to all enabled Hotel MikroTik routers. This covers both the
+         * public guest portal and reception/admin issuance because both
+         * paths use this service.
+         *
+         * The database transaction above has already committed before
+         * dispatch, so the queue worker can always load the voucher.
+         */
+        SyncHotelVoucherToRouters::dispatch(
+            $voucher->id,
+            'upsert'
+        );
+
+        return $voucher;
     }
 
     private function generateCode(): string
