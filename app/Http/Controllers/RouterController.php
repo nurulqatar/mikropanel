@@ -10,6 +10,7 @@ use App\Services\MikroTik\MikroTikService;
 use App\Services\RouterClientSyncService;
 use App\Services\RouterStatusService;
 use App\Services\Hotspot\HotspotPortalPackageService;
+use App\Services\Hotspot\HotspotRouterService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Process;
@@ -248,13 +249,15 @@ class RouterController extends Controller
      * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
      *
      * Generates a reseller-branded MikroTik Hotspot
-     * portal ZIP. No RouterOS or database write occurs.
+     * portal ZIP. Download preparation adds only
+     * the MikroPanel walled-garden host to RouterOS.
      */
     public function downloadHotspotPortal(
         Request $request,
         Router $router,
-        HotspotPortalPackageService $packages
-    ): BinaryFileResponse {
+        HotspotPortalPackageService $packages,
+        HotspotRouterService $hotspotRouter
+    ): BinaryFileResponse|RedirectResponse {
         $router->loadMissing([
             'zone:id,reseller_id,service_type',
         ]);
@@ -306,9 +309,47 @@ class RouterController extends Controller
             );
         }
 
+        /*
+         * MAIN_HOTSPOT_PORTAL_WALLED_GARDEN_V1
+         *
+         * The public MAC-reset API must be reachable
+         * before Hotspot authentication.
+         */
+        $portalHost =
+            parse_url(
+                (string)
+                config('app.url'),
+                PHP_URL_HOST
+            );
+
+        if (
+            !is_string($portalHost)
+            || trim($portalHost) === ''
+        ) {
+            return back()->with(
+                'error',
+                'Portal host configuration is invalid.'
+            );
+        }
+
+        try {
+            $hotspotRouter
+                ->ensurePortalHostAccess(
+                    $router,
+                    $portalHost
+                );
+
+        } catch (Throwable $exception) {
+            return back()->with(
+                'error',
+                'Hotspot portal package was not downloaded because the router could not prepare MAC Reset access: '
+                . $exception->getMessage()
+            );
+        }
+
         $package =
-            $packages->build(
-                $resellerId
+            $packages->buildForRouter(
+                $router
             );
 
         return response()

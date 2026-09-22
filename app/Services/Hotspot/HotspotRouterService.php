@@ -890,6 +890,174 @@ class HotspotRouterService
         }
     }
 
+    /*
+     * MAIN_HOTSPOT_PUBLIC_MAC_RESET_V1
+     *
+     * Allow the MikroPanel reset endpoint before
+     * Hotspot authentication.
+     *
+     * RouterOS creates dynamic destination entries
+     * for dst-host in walled-garden ip.
+     */
+    public function ensurePortalHostAccess(
+        Router $router,
+        string $host
+    ): void {
+        $host =
+            strtolower(
+                trim(
+                    $host
+                )
+            );
+
+        if (
+            $host === ''
+            || !preg_match(
+                '/^[a-z0-9.-]+$/',
+                $host
+            )
+        ) {
+            throw new \RuntimeException(
+                'Invalid portal reset host.'
+            );
+        }
+
+        $api =
+            $this->api(
+                $router
+            );
+
+        $existing =
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/walled-garden/ip/print'
+                ))
+                    ->where(
+                        'dst-host',
+                        $host
+                    )
+                    ->equal(
+                        '.proplist',
+                        '.id,dst-host,comment'
+                    )
+            )->read();
+
+        if ($existing !== []) {
+            return;
+        }
+
+        $api->query(
+            (new Query(
+                '/ip/hotspot/walled-garden/ip/add'
+            ))
+                ->equal(
+                    'dst-host',
+                    $host
+                )
+                ->equal(
+                    'action',
+                    'accept'
+                )
+                ->equal(
+                    'comment',
+                    'MikroPanel Portal MAC Reset'
+                )
+        )->read();
+    }
+
+    /*
+     * Clear the RouterOS Hotspot user's permanent
+     * MAC restriction and terminate old sessions.
+     *
+     * No database write is performed here.
+     */
+    public function resetVoucherMac(
+        HotspotVoucher $voucher
+    ): bool {
+        $server =
+            HotspotServer::withoutGlobalScopes()
+                ->find(
+                    $voucher
+                        ->hotspot_server_id
+                );
+
+        if (!$server) {
+            throw new \RuntimeException(
+                'Hotspot server was not found.'
+            );
+        }
+
+        $router =
+            Router::withoutGlobalScopes()
+                ->find(
+                    $server->router_id
+                );
+
+        if (!$router) {
+            throw new \RuntimeException(
+                'Hotspot router was not found.'
+            );
+        }
+
+        $api =
+            $this->api(
+                $router
+            );
+
+        $users =
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/user/print'
+                ))
+                    ->where(
+                        'name',
+                        $voucher->username
+                    )
+                    ->equal(
+                        '.proplist',
+                        '.id,name,mac-address'
+                    )
+            )->read();
+
+        foreach (
+            $users
+            as $user
+        ) {
+            $id =
+                $user['.id']
+                ?? null;
+
+            if (!$id) {
+                continue;
+            }
+
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/user/set'
+                ))
+                    ->equal(
+                        '.id',
+                        $id
+                    )
+                    ->equal(
+                        'mac-address',
+                        '00:00:00:00:00:00'
+                    )
+            )->read();
+        }
+
+        /*
+         * Release the old connected device so the
+         * same voucher may authenticate elsewhere.
+         */
+        $this->disconnectUsername(
+            $api,
+            $voucher->username
+        );
+
+        return $users !== [];
+    }
+
     private function api(
         Router $router
     ): Client {

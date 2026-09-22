@@ -2,6 +2,7 @@
 
 namespace App\Services\Hotspot;
 
+use App\Models\Router;
 use App\Services\CompanyBrandingService;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -16,6 +17,78 @@ class HotspotPortalPackageService
     public function __construct(
         private readonly CompanyBrandingService $branding
     ) {
+    }
+
+    /*
+     * MAIN_HOTSPOT_MAC_RESET_PACKAGE_V1
+     */
+    public function buildForRouter(
+        Router $router
+    ): array {
+        $router->loadMissing(
+            'zone:id,reseller_id'
+        );
+
+        $resellerId =
+            $router->zone
+                ?->reseller_id;
+
+        $branding =
+            $this->branding
+                ->forResellerId(
+                    $resellerId
+                        ? (int) $resellerId
+                        : null,
+                    true
+                );
+
+        $branding[
+            '_hotspot_mac_reset_url'
+        ] =
+            route(
+                'hotspot.portal.mac-reset',
+                [
+                    'router' =>
+                        $router->id,
+
+                    'token' =>
+                        $this->resetToken(
+                            $router
+                        ),
+                ]
+            );
+
+        return $this->buildFromBranding(
+            $branding
+        );
+    }
+
+    public function resetToken(
+        Router $router
+    ): string {
+        $key =
+            (string)
+            config(
+                'app.key'
+            );
+
+        if ($key === '') {
+            throw new RuntimeException(
+                'Application key is unavailable.'
+            );
+        }
+
+        return hash_hmac(
+            'sha256',
+            'main-hotspot-mac-reset|'
+            . $router->id
+            . '|'
+            . (
+                $router->zone_id
+                ?? 0
+            ),
+            $key
+        );
     }
 
     /**
@@ -106,6 +179,16 @@ class HotspotPortalPackageService
 
         $branding['panel_name'] =
             $panelName;
+
+        $macResetUrl =
+            trim(
+                (string) (
+                    $branding[
+                        '_hotspot_mac_reset_url'
+                    ]
+                    ?? ''
+                )
+            );
 
         $source =
             new ZipArchive();
@@ -242,7 +325,8 @@ class HotspotPortalPackageService
                             $contents,
                             $name,
                             $panelName,
-                            $companyName
+                            $companyName,
+                            $macResetUrl
                         );
                 }
 
@@ -322,7 +406,8 @@ class HotspotPortalPackageService
         string $contents,
         string $name,
         string $panelName,
-        string $companyName
+        string $companyName,
+        string $macResetUrl
     ): string {
         $extension =
             strtolower(
@@ -399,9 +484,418 @@ class HotspotPortalPackageService
          * Do not keep one reseller's language preference
          * key branded as another company.
          */
+        $contents =
+            str_replace(
+                'genius_lang',
+                'mikropanel_hotspot_lang',
+                $contents
+            );
+
+        if ($macResetUrl !== '') {
+            if (
+                $name === 'Hotspot/login.html'
+            ) {
+                $contents =
+                    $this->injectMacReset(
+                        $contents,
+                        $macResetUrl
+                    );
+
+            } elseif (
+                $name === 'Hotspot/status.html'
+            ) {
+                $contents =
+                    $this->injectStatusMacReset(
+                        $contents,
+                        $macResetUrl
+                    );
+            }
+        }
+
+        return $contents;
+    }
+
+    /*
+     * MAIN_HOTSPOT_MAC_RESET_PACKAGE_V1
+     */
+    private function injectMacReset(
+        string $contents,
+        string $resetUrl
+    ): string {
+        $safeUrl =
+            htmlspecialchars(
+                $resetUrl,
+                ENT_QUOTES
+                | ENT_SUBSTITUTE,
+                'UTF-8'
+            );
+
+        $pattern =
+            '~<div><strong data-i18n="move_title">'
+            . '.*?</strong>\s*'
+            . '<small data-i18n="move_desc">'
+            . '.*?</small></div>~s';
+
+        $replacement = <<<HTML
+<div>
+  <strong>MAC Reset / Use Voucher on New Device</strong>
+  <small>Enter the same 6-digit Voucher Code above, then tap MAC Reset.</small>
+</div>
+<button
+  class="btn btn-outline-danger"
+  id="mac-reset-btn"
+  type="button"
+  data-reset-url="{$safeUrl}"
+  style="width:100%;margin-top:12px"
+>
+  ↻ MAC Reset / Release Voucher
+</button>
+<div
+  id="mac-reset-result"
+  style="margin-top:10px;font-size:14px;font-weight:700"
+  aria-live="polite"
+></div>
+HTML;
+
+        $contents =
+            preg_replace(
+                $pattern,
+                $replacement,
+                $contents,
+                1,
+                $count
+            );
+
+        if (
+            !is_string($contents)
+            || $count !== 1
+        ) {
+            throw new RuntimeException(
+                'MAC Reset portal section could not be injected.'
+            );
+        }
+
+        $script = <<<'HTML'
+<script>
+(function () {
+  var button = document.getElementById('mac-reset-btn');
+  var input = document.getElementById('voucher');
+  var result = document.getElementById('mac-reset-result');
+
+  if (!button || !input || !result) {
+    return;
+  }
+
+  button.addEventListener('click', async function () {
+    var code = (input.value || '').replace(/\D/g, '').slice(0, 6);
+
+    input.value = code;
+
+    if (!/^[0-9]{6}$/.test(code)) {
+      result.style.color = '#dc2626';
+      result.textContent = 'Enter your 6-digit Voucher Code first.';
+      input.focus();
+      return;
+    }
+
+    var url = button.getAttribute('data-reset-url');
+
+    if (!url) {
+      result.style.color = '#dc2626';
+      result.textContent = 'MAC Reset is unavailable.';
+      return;
+    }
+
+    button.disabled = true;
+    result.style.color = '#475569';
+    result.textContent = 'Resetting voucher MAC...';
+
+    try {
+      var response = await fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+        },
+        body: 'voucher_code=' + encodeURIComponent(code)
+      });
+
+      var data = {};
+
+      try {
+        data = await response.json();
+      } catch (_) {
+        data = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data.message || 'MAC Reset failed. Please try again.'
+        );
+      }
+
+      result.style.color = '#15803d';
+      result.textContent =
+        data.message ||
+        'MAC reset successful. You can now login on the new device.';
+    } catch (error) {
+      result.style.color = '#dc2626';
+      result.textContent =
+        error && error.message
+          ? error.message
+          : 'MAC Reset failed. Please try again.';
+    } finally {
+      button.disabled = false;
+    }
+  });
+})();
+</script>
+HTML;
+
+        if (
+            !str_contains(
+                $contents,
+                '</body>'
+            )
+        ) {
+            throw new RuntimeException(
+                'Portal closing body tag is missing.'
+            );
+        }
+
         return str_replace(
-            'genius_lang',
-            'mikropanel_hotspot_lang',
+            '</body>',
+            $script
+            . "
+</body>",
+            $contents
+        );
+    }
+
+    /*
+     * MAIN_HOTSPOT_STATUS_MAC_RESET_V1
+     *
+     * The logged-in status page must use the same
+     * real backend reset as the login page.
+     */
+    private function injectStatusMacReset(
+        string $contents,
+        string $resetUrl
+    ): string {
+        $safeUrl =
+            htmlspecialchars(
+                $resetUrl,
+                ENT_QUOTES
+                | ENT_SUBSTITUTE,
+                'UTF-8'
+            );
+
+        $oldButton =
+            '<a class="btn btn-outline-danger" '
+            . 'href="$(link-logout)?erase-cookie=on">'
+            . '↻ <span data-i18n="release">'
+            . 'MAC Reset / Release Voucher'
+            . '</span></a>';
+
+        if (
+            !str_contains(
+                $contents,
+                $oldButton
+            )
+        ) {
+            throw new RuntimeException(
+                'Status MAC Reset button was not found.'
+            );
+        }
+
+        $button = <<<HTML
+<button
+  class="btn btn-outline-danger"
+  id="status-mac-reset-btn"
+  type="button"
+  data-reset-url="{$safeUrl}"
+  data-voucher="\$(username)"
+>
+  ↻ MAC Reset / Release Voucher
+</button>
+<div
+  id="status-mac-reset-result"
+  style="margin-top:10px;font-size:14px;font-weight:700"
+  aria-live="polite"
+></div>
+HTML;
+
+        $contents =
+            str_replace(
+                $oldButton,
+                $button,
+                $contents
+            );
+
+        /*
+         * Do not let old portal.js translation describe
+         * this as cookie-only release.
+         */
+        $contents =
+            str_replace(
+                'data-i18n="release_desc"',
+                'data-reset-description="true"',
+                $contents
+            );
+
+        $contents =
+            str_replace(
+                'Log out this device and erase the Hotspot browser cookie so the voucher is ready for another device.',
+                'Clear this voucher MAC binding and disconnect this device so the voucher can be used on another device.',
+                $contents
+            );
+
+        $script = <<<'HTML'
+<script>
+(function () {
+  var button =
+    document.getElementById(
+      'status-mac-reset-btn'
+    );
+
+  var result =
+    document.getElementById(
+      'status-mac-reset-result'
+    );
+
+  if (!button || !result) {
+    return;
+  }
+
+  button.addEventListener(
+    'click',
+    async function () {
+      var code =
+        (
+          button.getAttribute(
+            'data-voucher'
+          )
+          || ''
+        )
+          .replace(/\D/g, '')
+          .slice(0, 6);
+
+      if (!/^[0-9]{6}$/.test(code)) {
+        result.style.color =
+          '#dc2626';
+
+        result.textContent =
+          'Voucher Code is unavailable.';
+
+        return;
+      }
+
+      var url =
+        button.getAttribute(
+          'data-reset-url'
+        );
+
+      if (!url) {
+        result.style.color =
+          '#dc2626';
+
+        result.textContent =
+          'MAC Reset is unavailable.';
+
+        return;
+      }
+
+      button.disabled = true;
+
+      result.style.color =
+        '#475569';
+
+      result.textContent =
+        'Resetting voucher MAC...';
+
+      try {
+        var response =
+          await fetch(
+            url,
+            {
+              method: 'POST',
+              mode: 'cors',
+              credentials: 'omit',
+              headers: {
+                'Accept':
+                  'application/json',
+
+                'Content-Type':
+                  'application/x-www-form-urlencoded;charset=UTF-8'
+              },
+
+              body:
+                'voucher_code='
+                + encodeURIComponent(
+                    code
+                  )
+            }
+          );
+
+        var data = {};
+
+        try {
+          data =
+            await response.json();
+        } catch (_) {
+          data = {};
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            data.message
+            || 'MAC Reset failed. Please try again.'
+          );
+        }
+
+        result.style.color =
+          '#15803d';
+
+        result.textContent =
+          data.message
+          || 'MAC reset successful.';
+
+      } catch (error) {
+        result.style.color =
+          '#dc2626';
+
+        result.textContent =
+          error
+          && error.message
+            ? error.message
+            : 'MAC Reset failed. Please try again.';
+
+      } finally {
+        button.disabled = false;
+      }
+    }
+  );
+})();
+</script>
+HTML;
+
+        if (
+            !str_contains(
+                $contents,
+                '</body>'
+            )
+        ) {
+            throw new RuntimeException(
+                'Status closing body tag is missing.'
+            );
+        }
+
+        return str_replace(
+            '</body>',
+            $script
+            . "\n</body>",
             $contents
         );
     }

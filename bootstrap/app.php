@@ -20,6 +20,18 @@ return Application::configure(basePath: dirname(__DIR__))
                     \App\Http\Middleware\EnforceResellerAccess::class,
 ]);
 
+        /*
+         * MAIN_HOTSPOT_MAC_RESET_CSRF_V1
+         *
+         * Captive portal HTML is served by MikroTik
+         * and therefore has no Laravel CSRF session.
+         */
+        $middleware->validateCsrfTokens(
+            except: [
+                'hotspot-portal/mac-reset/*',
+            ]
+        );
+
         //
     })
     ->withExceptions(function (Exceptions $exceptions): void {

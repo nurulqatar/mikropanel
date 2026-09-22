@@ -11,6 +11,7 @@ use App\Http\Controllers\HotspotVoucherDocumentController;
 use App\Http\Controllers\HotspotVoucherController;
 use Inertia\Inertia;
 use App\Http\Controllers\RouterController;
+use App\Http\Controllers\HotspotPortalActionController;
 use App\Http\Controllers\PackageController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\IpRangeController;
@@ -24,6 +25,36 @@ use App\Http\Controllers\NotificationController;
 /* Public homepage loaded from routes/public_reseller.php */
 
 use App\Http\Controllers\DashboardController;
+
+/*
+ * MAIN_HOTSPOT_PUBLIC_MAC_RESET_V1
+ *
+ * Public captive-portal action.
+ * Protected by router-specific HMAC token
+ * plus application rate limiting.
+ */
+Route::post(
+    'hotspot-portal/mac-reset/{router}/{token}',
+    [
+        HotspotPortalActionController::class,
+        'resetMac',
+    ]
+)
+    ->whereNumber(
+        'router'
+    )
+    ->where(
+        'token',
+        '[a-f0-9]{64}'
+    )
+    ->withoutMiddleware([
+        \App\Http\Middleware\SuperAdminPanelOnly::class,
+        \App\Http\Middleware\ShareUnifiedFinance::class,
+        \App\Http\Middleware\EnforceResellerAccess::class,
+    ])
+    ->name(
+        'hotspot.portal.mac-reset'
+    );
 
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware([
