@@ -372,6 +372,19 @@ function ResellerSidebar({
                     />
                 )}
 
+                {/* RESELLER_DEDICATED_MIKROTIK_VPN_V1 */}
+                {can('routers.view')
+                    && routeExists(
+                        'reseller.mikrotik-vpn.index',
+                    ) && (
+                    <ResellerTopLink
+                        label="MikroTik VPN"
+                        icon="🔐"
+                        routeName="reseller.mikrotik-vpn.index"
+                        active="reseller.mikrotik-vpn.*"
+                    />
+                )}
+
                 {can('routers.view')
                     && routeExists(
                         'routers.index',

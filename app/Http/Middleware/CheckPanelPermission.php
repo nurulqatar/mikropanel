@@ -759,6 +759,21 @@ class CheckPanelPermission
                 '__deny__',
 
             /*
+             * RESELLER_MIKROTIK_VPN_PERMISSION_V1
+             *
+             * VPN page follows Router permissions.
+             */
+            $routeName ===
+                'reseller.mikrotik-vpn.index' =>
+                'routers.view',
+
+            str_starts_with(
+                $routeName,
+                'reseller.mikrotik-vpn.'
+            ) =>
+                'routers.manage',
+
+            /*
              * =================================================
              * ROUTERS
              * =================================================
