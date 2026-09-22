@@ -5,15 +5,22 @@ namespace App\Http\Controllers;
 use App\Models\HotspotBatch;
 use App\Models\HotspotBranding;
 use App\Models\HotspotVoucher;
+use App\Services\CompanyBrandingService;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Endroid\QrCode\QrCode;
-use Endroid\QrCode\Writer\SvgWriter;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
 class HotspotVoucherDocumentController extends Controller
 {
+    /*
+     * HOTSPOT_COMPACT_PRINT_PRICE_V1
+     */
+    public function __construct(
+        private readonly CompanyBrandingService $companyBranding
+    ) {
+    }
+
     public function printVoucher(
         Request $request,
         int $voucher
@@ -183,68 +190,63 @@ class HotspotVoucherDocumentController extends Controller
     private function item(
         HotspotVoucher $voucher
     ): array {
-        $payload =
-            "MikroPanel Hotspot\n"
-            . 'Server: '
-            . (
-                $voucher
-                    ->server
-                    ?->name
-                ?? '-'
-            )
-            . "
-Voucher Code: "
-            . $voucher->username
-            . "\nPlan: "
-            . (
-                $voucher
-                    ->plan
-                    ?->name
-                ?? '-'
+        $voucher->loadMissing([
+            'server',
+            'plan',
+        ]);
+
+        $company =
+            $this->companyBranding
+                ->forResellerId(
+                    $voucher
+                        ->server
+                        ?->reseller_id
+                );
+
+        $companyName =
+            trim(
+                (string) (
+                    $company[
+                        'company_name'
+                    ] ?? ''
+                )
             );
 
-        $qr =
-            QrCode::create(
-                $payload
-            )
-                ->setSize(170)
-                ->setMargin(3);
+        if ($companyName === '') {
+            $companyName =
+                'WiFi Service';
+        }
 
-        $svg =
-            (new SvgWriter())
-                ->write($qr)
-                ->getString();
+        $currency =
+            trim(
+                (string) (
+                    $company[
+                        'currency'
+                    ] ?? 'QAR'
+                )
+            );
 
-        $svg = preg_replace(
-            '/<\?xml.*?\?>/s',
-            '',
-            $svg
-        );
+        if ($currency === '') {
+            $currency = 'QAR';
+        }
 
         return [
+            'company_name' =>
+                $companyName,
+
             'username' =>
-                $voucher
-                    ->username,
-
-            'server' =>
-                $voucher
-                    ->server
-                    ?->name,
-
-            'dns_name' =>
-                $voucher
-                    ->server
-                    ?->dns_name,
-
-            'plan' =>
-                $voucher
-                    ->plan
-                    ?->name,
+                $voucher->username,
 
             'price' =>
-                $voucher
-                    ->plan
-                    ?->price,
+                $voucher->plan
+                    ? (float)
+                        $voucher
+                            ->plan
+                            ->price
+                    : 0,
+
+            'currency' =>
+                $currency,
 
             'validity' =>
                 $voucher->plan
@@ -259,13 +261,11 @@ Voucher Code: "
                     )
                     : '-',
 
-            'rate_limit' =>
+            'dns_name' =>
                 $voucher
-                    ->plan
-                    ?->rate_limit,
-
-            'qr_svg' =>
-                $svg,
+                    ->server
+                    ?->dns_name
+                ?: '-',
         ];
     }
 

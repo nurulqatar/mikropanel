@@ -1,115 +1,130 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
+
 <head>
     <meta charset="utf-8">
 
-    <title>{{ $title }}</title>
+    <title>
+        {{ $title ?? 'Hotspot Vouchers' }}
+    </title>
 
     <style>
         @page {
-            margin: 8mm;
+            size: A4 portrait;
+            margin: 5mm;
         }
 
         * {
             box-sizing: border-box;
         }
 
+        html,
         body {
             margin: 0;
+            padding: 0;
+            background: #ffffff;
+            color: #111827;
             font-family:
                 DejaVu Sans,
                 Arial,
                 sans-serif;
-            color: #0f172a;
-            background: #ffffff;
         }
 
-        .toolbar {
-            margin-bottom: 16px;
-            text-align: center;
-        }
-
-        .toolbar button {
-            border: 0;
-            border-radius: 7px;
-            padding: 9px 18px;
-            background: #0891b2;
-            color: #ffffff;
-            font-weight: bold;
-            cursor: pointer;
-        }
-
-        .grid {
+        .voucher-page {
             width: 100%;
+            page-break-after: always;
         }
 
-        .card {
-            display: inline-block;
-            width: 48%;
-            min-height: 205px;
-            margin: 0 1% 10px 0;
-            padding: 12px;
-            border: 1.5px dashed #64748b;
-            border-radius: 10px;
+        .voucher-page:last-child {
+            page-break-after: auto;
+        }
+
+        .voucher-grid {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 1.2mm 1.2mm;
+            table-layout: fixed;
+        }
+
+        .voucher-cell {
+            width: 25%;
+            height: 33mm;
+            padding: 0;
             vertical-align: top;
-            page-break-inside: avoid;
         }
 
-        .brand {
-            font-size: 16px;
-            font-weight: bold;
-            color: {{ $branding['primary_color'] ?? '#0891b2' }};
-        }
-
-        .plan {
-            margin-top: 3px;
-            font-size: 12px;
-            color: #475569;
-        }
-
-        .content {
-            margin-top: 10px;
-            width: 100%;
-        }
-
-        .qr {
-            width: 31%;
-            float: right;
+        .voucher-card {
+            height: 31.8mm;
+            overflow: hidden;
+            border: 0.35mm solid #111827;
+            border-radius: 1.4mm;
+            padding: 1.7mm 1.7mm 1.4mm;
             text-align: center;
         }
 
-        .qr svg {
-            width: 100px;
-            height: 100px;
+        .company {
+            height: 5.3mm;
+            overflow: hidden;
+            font-size: 7.8pt;
+            line-height: 8.5pt;
+            font-weight: 700;
         }
 
-        .details {
-            width: 66%;
-            float: left;
+        .code-label {
+            margin-top: 0.3mm;
+            color: #4b5563;
+            font-size: 5.3pt;
+            line-height: 6pt;
+            letter-spacing: 0.15mm;
+            text-transform: uppercase;
         }
 
-        .label {
-            margin-top: 5px;
-            font-size: 10px;
-            color: #64748b;
+        .code {
+            margin-top: 0.1mm;
+            font-size: 15.5pt;
+            line-height: 16.5pt;
+            font-weight: 800;
+            letter-spacing: 0.55mm;
         }
 
-        .value {
-            font-size: 15px;
-            font-weight: bold;
+        .price {
+            margin-top: 0.3mm;
+            font-size: 7pt;
+            line-height: 7.7pt;
+            font-weight: 700;
+        }
+
+        .validity {
+            margin-top: 0.2mm;
+            font-size: 6.7pt;
+            line-height: 7.5pt;
+            font-weight: 700;
+        }
+
+        .policy {
+            margin-top: 0.5mm;
+            color: #374151;
+            font-size: 5.1pt;
+            line-height: 5.9pt;
+        }
+
+        .portal {
+            margin-top: 0.5mm;
+            overflow: hidden;
+            font-size: 5.9pt;
+            line-height: 6.7pt;
+            font-weight: 700;
             word-break: break-all;
         }
 
-        .footer {
-            clear: both;
-            padding-top: 10px;
-            font-size: 9px;
-            color: #64748b;
+        .empty-card {
+            border-color: transparent;
         }
 
         @media print {
-            .toolbar {
-                display: none;
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
             }
         }
     </style>
@@ -117,91 +132,134 @@
 
 <body>
 
-@if($autoPrint)
-    <div class="toolbar">
-        <button onclick="window.print()">
-            Print Vouchers
-        </button>
+@foreach(
+    array_chunk(
+        $items,
+        32
+    )
+    as $pageItems
+)
+    <div class="voucher-page">
+
+        <table class="voucher-grid">
+
+            @foreach(
+                array_chunk(
+                    $pageItems,
+                    4
+                )
+                as $rowItems
+            )
+                @php
+                    $rowItems =
+                        array_pad(
+                            $rowItems,
+                            4,
+                            null
+                        );
+                @endphp
+
+                <tr>
+
+                    @foreach(
+                        $rowItems
+                        as $item
+                    )
+                        <td class="voucher-cell">
+
+                            @if($item)
+
+                                <div class="voucher-card">
+
+                                    <div class="company">
+                                        {{
+                                            $item[
+                                                'company_name'
+                                            ]
+                                        }}
+                                    </div>
+
+                                    <div class="code-label">
+                                        Voucher Code
+                                    </div>
+
+                                    <div class="code">
+                                        {{
+                                            $item[
+                                                'username'
+                                            ]
+                                        }}
+                                    </div>
+
+                                    <div class="price">
+                                        Price:
+                                        {{
+                                            $item[
+                                                'currency'
+                                            ]
+                                        }}
+                                        {{
+                                            number_format(
+                                                (float) $item[
+                                                    'price'
+                                                ],
+                                                2
+                                            )
+                                        }}
+                                    </div>
+
+                                    <div class="validity">
+                                        Validity:
+                                        {{
+                                            $item[
+                                                'validity'
+                                            ]
+                                        }}
+                                    </div>
+
+                                    <div class="policy">
+                                        Validity starts according to the voucher service policy.
+                                    </div>
+
+                                    <div class="portal">
+                                        Portal:
+                                        {{
+                                            $item[
+                                                'dns_name'
+                                            ]
+                                        }}
+                                    </div>
+
+                                </div>
+
+                            @else
+
+                                <div class="voucher-card empty-card">
+                                    &nbsp;
+                                </div>
+
+                            @endif
+
+                        </td>
+                    @endforeach
+
+                </tr>
+
+            @endforeach
+
+        </table>
+
     </div>
-@endif
+@endforeach
 
-<div class="grid">
-    @foreach($items as $item)
-        <div class="card">
-            <div class="brand">
-                {{ $branding['brand_name'] ?? 'MikroPanel Hotspot' }}
-            </div>
-
-            <div class="plan">
-                {{ $item['plan'] ?? '-' }}
-                @if($branding['show_price'] ?? true)
-                    · QAR
-                    {{ number_format(
-                        (float) ($item['price'] ?? 0),
-                        2
-                    ) }}
-                @endif
-                · {{ $item['validity'] }}
-            </div>
-
-            <div class="content">
-                <div class="details">
-                    <div class="label">VOUCHER CODE</div>
-
-                    <div class="value">
-                        {{ $item['username'] }}
-                    </div>
-
-
-                    <div class="label">
-                        SERVER
-                    </div>
-
-                    <div class="value">
-                        {{ $item['server'] ?? '-' }}
-                    </div>
-
-                    @if(!empty($item['rate_limit']))
-                        <div class="label">
-                            SPEED
-                        </div>
-
-                        <div class="value">
-                            {{ $item['rate_limit'] }}
-                        </div>
-                    @endif
-                </div>
-
-                @if($branding['show_qr'] ?? true)
-                    <div class="qr">
-                        {!! $item['qr_svg'] !!}
-                    </div>
-                @endif
-            </div>
-
-            <div class="footer">
-                Validity starts according to the
-                voucher service policy.
-                @if(!empty($item['dns_name']))
-                    Portal:
-                    {{ $item['dns_name'] }}
-                @endif
-            </div>
-        </div>
-    @endforeach
-</div>
-
-@if($autoPrint)
+@if($autoPrint ?? false)
 <script>
-    window.addEventListener(
-        'load',
-        () => {
-            setTimeout(
-                () => window.print(),
-                350
-            );
-        }
-    );
+window.addEventListener(
+    'load',
+    function () {
+        window.print();
+    }
+);
 </script>
 @endif
 
