@@ -229,6 +229,20 @@ function RouterCard({
                             : 'MikroTik Sync'}
                     </button>
 
+                    {/* MAIN_HOTSPOT_PORTAL_PACKAGE_V1 */}
+                    {item.zone?.service_type ===
+                        'hotspot' && (
+                        <a
+                            href={route(
+                                'routers.hotspot-portal.download',
+                                item.id,
+                            )}
+                            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                        >
+                            Download Hotspot Portal
+                        </a>
+                    )}
+
                     <Link
                         href={route(
                             'routers.edit',

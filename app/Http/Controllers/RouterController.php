@@ -9,12 +9,14 @@ use App\Models\Router;
 use App\Services\MikroTik\MikroTikService;
 use App\Services\RouterClientSyncService;
 use App\Services\RouterStatusService;
+use App\Services\Hotspot\HotspotPortalPackageService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
 class RouterController extends Controller
@@ -240,6 +242,90 @@ class RouterController extends Controller
                     . $exception->getMessage()
             );
         }
+    }
+
+    /*
+     * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
+     *
+     * Generates a reseller-branded MikroTik Hotspot
+     * portal ZIP. No RouterOS or database write occurs.
+     */
+    public function downloadHotspotPortal(
+        Request $request,
+        Router $router,
+        HotspotPortalPackageService $packages
+    ): BinaryFileResponse {
+        $router->loadMissing([
+            'zone:id,reseller_id,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : null;
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        /*
+         * Normal Company users may only download
+         * packages for their own reseller zone.
+         *
+         * Super Admin may support any visible router.
+         */
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+        }
+
+        $package =
+            $packages->build(
+                $resellerId
+            );
+
+        return response()
+            ->download(
+                $package['path'],
+                $package['filename'],
+                [
+                    'Content-Type' =>
+                        'application/zip',
+
+                    'Cache-Control' =>
+                        'private, no-store, max-age=0',
+                ]
+            )
+            ->deleteFileAfterSend(
+                true
+            );
     }
 
     public function destroy(

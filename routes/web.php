@@ -53,6 +53,19 @@ Route::post(
     [RouterController::class, 'sync']
 )->name('routers.sync');
 
+/*
+ * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
+ */
+Route::get(
+    'routers/{router}/hotspot-portal',
+    [
+        RouterController::class,
+        'downloadHotspotPortal',
+    ]
+)->name(
+    'routers.hotspot-portal.download'
+);
+
     Route::resource('routers', RouterController::class);
     Route::resource('packages', PackageController::class);
 Route::get(
