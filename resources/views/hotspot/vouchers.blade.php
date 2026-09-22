@@ -146,21 +146,12 @@
 
             <div class="content">
                 <div class="details">
-                    <div class="label">
-                        USERNAME
-                    </div>
+                    <div class="label">VOUCHER CODE</div>
 
                     <div class="value">
                         {{ $item['username'] }}
                     </div>
 
-                    <div class="label">
-                        PASSWORD
-                    </div>
-
-                    <div class="value">
-                        {{ $item['password'] }}
-                    </div>
 
                     <div class="label">
                         SERVER

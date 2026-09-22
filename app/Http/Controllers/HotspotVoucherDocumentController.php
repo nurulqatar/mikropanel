@@ -192,10 +192,9 @@ class HotspotVoucherDocumentController extends Controller
                     ?->name
                 ?? '-'
             )
-            . "\nUsername: "
+            . "
+Voucher Code: "
             . $voucher->username
-            . "\nPassword: "
-            . $voucher->password
             . "\nPlan: "
             . (
                 $voucher
@@ -226,10 +225,6 @@ class HotspotVoucherDocumentController extends Controller
             'username' =>
                 $voucher
                     ->username,
-
-            'password' =>
-                $voucher
-                    ->password,
 
             'server' =>
                 $voucher

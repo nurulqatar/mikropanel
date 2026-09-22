@@ -288,10 +288,6 @@ class HotspotSectionController extends Controller
                                 $voucher
                                     ->username,
 
-                            'password' =>
-                                $voucher
-                                    ->password,
-
                             'status' =>
                                 $voucher
                                     ->status,

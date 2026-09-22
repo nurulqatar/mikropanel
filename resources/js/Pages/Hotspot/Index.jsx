@@ -60,7 +60,6 @@ export default function Index({
         hotspot_server_id: '',
         hotspot_plan_id: '',
         quantity: 1,
-        prefix: '',
     });
 
     const saleForm = useForm({
@@ -932,36 +931,7 @@ export default function Index({
                                     />
                                 </Field>
 
-                                <Field
-                                    label="Prefix (Optional)"
-                                    error={
-                                        generatorForm
-                                            .errors
-                                            .prefix
-                                    }
-                                >
-                                    <input
-                                        value={
-                                            generatorForm
-                                                .data
-                                                .prefix
-                                        }
-                                        onChange={(
-                                            e,
-                                        ) =>
-                                            generatorForm.setData(
-                                                'prefix',
-                                                e
-                                                    .target
-                                                    .value,
-                                            )
-                                        }
-                                        placeholder="VIP"
-                                        className={
-                                            inputClass
-                                        }
-                                    />
-                                </Field>
+
                             </div>
                         </div>
 
@@ -1142,12 +1112,7 @@ export default function Index({
                                                         }
                                                     </div>
 
-                                                    <div className="font-mono text-xs text-slate-500">
-                                                        Pass:{' '}
-                                                        {
-                                                            voucher.password
-                                                        }
-                                                    </div>
+
                                                 </Td>
 
                                                 <Td>

@@ -89,14 +89,6 @@ class HotspotController extends Controller
                                 $voucher
                                     ->username,
 
-                            /*
-                             * Admin-only operations page.
-                             * Password cast decrypts value.
-                             */
-                            'password' =>
-                                $voucher
-                                    ->password,
-
                             'status' =>
                                 $voucher
                                     ->status,
@@ -528,26 +520,19 @@ class HotspotController extends Controller
                 'min:1',
                 'max:500',
             ],
-
-            'prefix' => [
-                'nullable',
-                'alpha_dash',
-                'max:8',
-            ],
         ]);
+
+
+        /*
+         * HOTSPOT_VOUCHER_CODE_ONLY_V1
+         *
+         * Customer-facing credential is one exact six-digit
+         * numeric Voucher Code. RouterOS still receives the same
+         * code internally as both username and password.
+         */
 
         $quantity =
             (int) $data['quantity'];
-
-        $prefix =
-            Str::upper(
-                trim(
-                    (string) (
-                        $data['prefix']
-                        ?? ''
-                    )
-                )
-            );
 
         /*
          * HOTSPOT_GENERATION_SERVER_ZONE_GUARD_V1
@@ -573,8 +558,7 @@ class HotspotController extends Controller
             function () use (
                 $data,
                 $quantity,
-                $prefix,
-                $request
+$request
             ): void {
                 $batch =
                     HotspotBatch::create([
@@ -603,10 +587,7 @@ class HotspotController extends Controller
                         'quantity' =>
                             $quantity,
 
-                        'prefix' =>
-                            $prefix !== ''
-                                ? $prefix
-                                : null,
+                        'prefix' => null,
 
                         'status' =>
                             'ready',
@@ -632,9 +613,7 @@ class HotspotController extends Controller
                                 999999
                             );
 
-                        $username =
-                            $prefix
-                            . $digits;
+                        $username = $digits;
 
                     } while (
                         isset(

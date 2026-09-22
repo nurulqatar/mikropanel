@@ -28,7 +28,6 @@ export default function Vouchers({
             hotspot_server_id: '',
             hotspot_plan_id: '',
             quantity: 1,
-            prefix: '',
         });
 
     const sale =
@@ -214,25 +213,7 @@ export default function Vouchers({
                                 />
                             </Field>
 
-                            <Field label="Prefix">
-                                <input
-                                    value={
-                                        generator.data
-                                            .prefix
-                                    }
-                                    onChange={(e) =>
-                                        generator.setData(
-                                            'prefix',
-                                            e.target
-                                                .value,
-                                        )
-                                    }
-                                    placeholder="Optional"
-                                    className={
-                                        inputClass
-                                    }
-                                />
-                            </Field>
+
                         </div>
 
                         <button
@@ -481,11 +462,7 @@ export default function Vouchers({
                                                 }
                                             </div>
 
-                                            <div className="font-mono text-xs text-slate-400">
-                                                {
-                                                    voucher.password
-                                                }
-                                            </div>
+
                                         </Td>
 
                                         <Td>

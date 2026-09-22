@@ -9,6 +9,16 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class HotspotVoucher extends Model
 {
+
+    /*
+     * Main Hotspot RouterOS credential remains encrypted in DB
+     * and usable internally, but is never exposed in JSON/Inertia.
+     */
+    protected $hidden = [
+        'password',
+    ];
+
+
     use SoftDeletes;
 
     protected $fillable = [
