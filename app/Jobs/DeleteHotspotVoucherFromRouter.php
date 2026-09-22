@@ -10,16 +10,16 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class ProvisionHotspotVoucher implements
+class DeleteHotspotVoucherFromRouter implements
     ShouldQueue,
     ShouldBeUnique
 {
     use Queueable;
 
-    public int $tries = 2;
+    public int $tries = 5;
     public int $timeout = 60;
-    public int $backoff = 5;
-    public int $uniqueFor = 120;
+    public int $backoff = 15;
+    public int $uniqueFor = 300;
 
     public function __construct(
         public int $voucherId
@@ -38,48 +38,33 @@ class ProvisionHotspotVoucher implements
         HotspotRouterService $service
     ): void {
         $voucher =
-            HotspotVoucher::query()
+            HotspotVoucher::withoutGlobalScopes()
+                ->withTrashed()
                 ->find(
                     $this->voucherId
                 );
 
-        /*
-         * HOTSPOT_FIRST_LOGIN_AUTO_SALE_V2
-         *
-         * Generated vouchers are immediately
-         * provisioned to RouterOS. Validity
-         * starts only on first login.
-         */
         if (
             !$voucher
-            || !in_array(
-                $voucher->status,
-                [
-                    'unused',
-                    'active',
-                ],
-                true
-            )
+            || !$voucher->mikrotik_user_id
         ) {
             return;
         }
 
-        $id =
-            $service->provisionVoucher(
-                $voucher
-            );
+        $service->deleteVoucherFromRouter(
+            $voucher
+        );
 
         $voucher->forceFill([
-            'mikrotik_user_id' =>
-                $id,
-        ])->save();
+            'mikrotik_user_id' => null,
+        ])->saveQuietly();
     }
 
     public function failed(
         Throwable $exception
     ): void {
         Log::error(
-            'Hotspot voucher provisioning failed.',
+            'Hotspot RouterOS voucher removal failed.',
             [
                 'voucher_id' =>
                     $this->voucherId,

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\ProvisionHotspotVoucher;
+use App\Jobs\DeleteHotspotVoucherFromRouter;
 use App\Jobs\SuspendHotspotVoucher;
 use App\Models\HotspotBatch;
 use App\Models\HotspotInvoice;
@@ -238,13 +239,6 @@ class HotspotVoucherController extends Controller
             ]);
         }
 
-        if (!$voucher->sold_at) {
-            return back()->withErrors([
-                'activate' =>
-                    'Voucher must be sold before activation.',
-            ]);
-        }
-
         $voucher->forceFill([
             'status' =>
                 $voucher
@@ -295,11 +289,9 @@ class HotspotVoucherController extends Controller
                     : null,
         ])->save();
 
-        if ($voucher->sold_at) {
-            ProvisionHotspotVoucher::dispatch(
-                $voucher->id
-            );
-        }
+        ProvisionHotspotVoucher::dispatch(
+            $voucher->id
+        );
 
         return back()->with(
             'success',
@@ -341,7 +333,7 @@ class HotspotVoucherController extends Controller
             }
         );
 
-        SuspendHotspotVoucher::dispatch(
+        DeleteHotspotVoucherFromRouter::dispatch(
             $voucher->id
         );
 

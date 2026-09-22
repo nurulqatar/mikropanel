@@ -124,6 +124,13 @@ class HotspotRouterService
         $profileName =
             $plan->mikrotikProfileName();
 
+        /*
+         * HOTSPOT_FIRST_LOGIN_AUTO_SALE_V2
+         */
+        $expectedComment =
+            'MikroPanel Voucher #'
+            . $voucher->id;
+
         $existing = $api->query(
             (new Query(
                 '/ip/hotspot/user/print'
@@ -134,11 +141,25 @@ class HotspotRouterService
                 )
                 ->equal(
                     '.proplist',
-                    '.id,name'
+                    '.id,name,comment'
                 )
         )->read();
 
         if ($existing !== []) {
+            foreach ($existing as $row) {
+                if (
+                    (string) (
+                        $row['comment']
+                        ?? ''
+                    ) !== $expectedComment
+                ) {
+                    throw new \RuntimeException(
+                        'Hotspot username conflict: '
+                        . $voucher->username
+                    );
+                }
+            }
+
             $id = $existing[0]['.id'];
 
             $query = (new Query(
@@ -159,7 +180,7 @@ class HotspotRouterService
                 )
                 ->equal(
                     'disabled',
-                    'no'
+                    'false'
                 )
                 ->equal(
                     'comment',
@@ -203,7 +224,7 @@ class HotspotRouterService
             )
             ->equal(
                 'disabled',
-                'no'
+                'false'
             )
             ->equal(
                 'comment',
@@ -244,6 +265,79 @@ class HotspotRouterService
         }
 
         return $created[0]['.id'];
+    }
+
+
+    public function deleteVoucherFromRouter(
+        HotspotVoucher $voucher
+    ): void {
+        $voucher->loadMissing(
+            'server.router'
+        );
+
+        if (
+            !$voucher->server
+            || !$voucher->server->router
+        ) {
+            throw new \RuntimeException(
+                'Hotspot server/router is unavailable.'
+            );
+        }
+
+        $api = $this->api(
+            $voucher->server->router
+        );
+
+        $this->disconnectUsername(
+            $api,
+            $voucher->username
+        );
+
+        $expectedComment =
+            'MikroPanel Voucher #'
+            . $voucher->id;
+
+        $users = $api->query(
+            (new Query(
+                '/ip/hotspot/user/print'
+            ))
+                ->where(
+                    'name',
+                    $voucher->username
+                )
+                ->equal(
+                    '.proplist',
+                    '.id,name,comment'
+                )
+        )->read();
+
+        foreach ($users as $user) {
+            if (!isset($user['.id'])) {
+                continue;
+            }
+
+            if (
+                (string) (
+                    $user['comment']
+                    ?? ''
+                ) !== $expectedComment
+            ) {
+                throw new \RuntimeException(
+                    'Refusing to remove unmanaged Hotspot user '
+                    . $voucher->username
+                );
+            }
+
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/user/remove'
+                ))
+                    ->equal(
+                        '.id',
+                        $user['.id']
+                    )
+            )->read();
+        }
     }
 
     public function suspendVoucher(
@@ -293,7 +387,7 @@ class HotspotRouterService
                     )
                     ->equal(
                         'disabled',
-                        'yes'
+                        'true'
                     )
             )->read();
         }
@@ -353,7 +447,7 @@ class HotspotRouterService
                     )
                     ->equal(
                         'disabled',
-                        'no'
+                        'false'
                     )
             )->read();
         }
@@ -373,6 +467,38 @@ class HotspotRouterService
         $api = $this->api(
             $server->router
         );
+
+        /*
+         * HOTSPOT_PLAN_AUTO_PROFILE_V2
+         */
+        HotspotPlan::withoutGlobalScopes()
+            ->where(
+                'enabled',
+                true
+            )
+            ->when(
+                $server->reseller_id !== null,
+                fn ($query) =>
+                    $query->where(
+                        'reseller_id',
+                        $server->reseller_id
+                    ),
+                fn ($query) =>
+                    $query->whereNull(
+                        'reseller_id'
+                    )
+            )
+            ->orderBy('id')
+            ->each(
+                function (
+                    HotspotPlan $plan
+                ) use ($api): void {
+                    $this->ensureProfile(
+                        $api,
+                        $plan
+                    );
+                }
+            );
 
         $users = $api->query(
             (new Query(
@@ -562,17 +688,45 @@ class HotspotRouterService
                         'plan'
                     );
 
-                    $expiry = $now
-                        ->copy()
-                        ->addSeconds(
-                            $voucher
-                                ->plan
-                                ->validitySeconds()
+                    /*
+                     * HOTSPOT_FIRST_LOGIN_AUTO_SALE_V2
+                     *
+                     * RouterOS uptime gives us the
+                     * actual session start time,
+                     * not merely the polling time.
+                     */
+                    $sessionUptime =
+                        $this->durationToSeconds(
+                            $row['uptime']
+                            ?? '0s'
                         );
 
+                    $firstLoginAt =
+                        $now
+                            ->copy()
+                            ->subSeconds(
+                                max(
+                                    0,
+                                    $sessionUptime
+                                )
+                            );
+
+                    $expiry =
+                        $firstLoginAt
+                            ->copy()
+                            ->addSeconds(
+                                $voucher
+                                    ->plan
+                                    ->validitySeconds()
+                            );
+
                     $voucher->forceFill([
+                        'sold_at' =>
+                            $voucher->sold_at
+                            ?? $firstLoginAt,
+
                         'activated_at' =>
-                            $now,
+                            $firstLoginAt,
 
                         'expires_at' =>
                             $expiry,

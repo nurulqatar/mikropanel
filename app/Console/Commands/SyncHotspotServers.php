@@ -63,12 +63,11 @@ class SyncHotspotServers extends Command
 
         /*
          * Convergence retry:
-         * a sold voucher that failed its first
+         * a generated voucher that failed its first
          * RouterOS provisioning attempt will
          * be queued again automatically.
          */
         HotspotVoucher::query()
-            ->whereNotNull('sold_at')
             ->whereNull(
                 'mikrotik_user_id'
             )

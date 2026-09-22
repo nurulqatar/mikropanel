@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\DiscoverHotspotServersJob;
 use App\Jobs\DisconnectHotspotSession;
+use App\Jobs\ProvisionHotspotVoucher;
 use App\Jobs\SyncHotspotServer;
 use App\Models\HotspotBatch;
 use App\Models\HotspotInvoice;
@@ -427,6 +428,19 @@ class HotspotController extends Controller
 
         HotspotPlan::create($data);
 
+        /*
+         * HOTSPOT_PLAN_AUTO_PROFILE_V2
+         */
+        HotspotServer::query()
+            ->where('enabled', true)
+            ->pluck('id')
+            ->each(
+                fn ($serverId) =>
+                    SyncHotspotServer::dispatch(
+                        (int) $serverId
+                    )
+            );
+
         return back()->with(
             'success',
             'Hotspot plan created successfully.'
@@ -445,6 +459,16 @@ class HotspotController extends Controller
             );
 
         $plan->update($data);
+
+        HotspotServer::query()
+            ->where('enabled', true)
+            ->pluck('id')
+            ->each(
+                fn ($serverId) =>
+                    SyncHotspotServer::dispatch(
+                        (int) $serverId
+                    )
+            );
 
         return back()->with(
             'success',
@@ -635,7 +659,7 @@ $request
 
                     $password = $username;
 
-                    HotspotVoucher::create([
+                    $voucher = HotspotVoucher::create([
                         'hotspot_batch_id' =>
                             $batch->id,
 
@@ -663,13 +687,20 @@ $request
                                 ->user()
                                 ->id,
                     ]);
+
+                    /*
+                     * HOTSPOT_FIRST_LOGIN_AUTO_SALE_V2
+                     */
+                    ProvisionHotspotVoucher::dispatch(
+                        $voucher->id
+                    )->afterCommit();
                 }
             }
         );
 
         return back()->with(
             'success',
-            "{$quantity} voucher(s) generated successfully. Sell a voucher to activate RouterOS provisioning."
+            "{$quantity} voucher(s) generated and queued for MikroTik synchronization."
         );
     }
 
