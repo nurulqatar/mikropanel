@@ -60,7 +60,14 @@ class HotspotPlan extends Model
 
     public function mikrotikProfileName(): string
     {
-        return 'MP-HSP-'
-            . $this->id;
+        /*
+         * HOTSPOT_PROFILE_USES_PLAN_NAME_V1
+         *
+         * Keep the RouterOS Hotspot user-profile
+         * name identical to the panel plan name.
+         */
+        return trim(
+            (string) $this->name
+        );
     }
 }
