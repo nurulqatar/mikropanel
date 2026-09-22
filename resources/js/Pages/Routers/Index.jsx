@@ -229,6 +229,17 @@ function RouterCard({
                             : 'MikroTik Sync'}
                     </button>
 
+                    {/* RESELLER_ROUTER_WIREGUARD_V1 */}
+                    <Link
+                        href={route(
+                            'routers.wireguard.show',
+                            item.id,
+                        )}
+                        className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+                    >
+                        WireGuard VPN
+                    </Link>
+
                     {/* MAIN_HOTSPOT_PORTAL_PACKAGE_V1 */}
                     {item.zone?.service_type ===
                         'hotspot' && (

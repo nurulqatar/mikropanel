@@ -11,6 +11,7 @@ use App\Http\Controllers\HotspotVoucherDocumentController;
 use App\Http\Controllers\HotspotVoucherController;
 use Inertia\Inertia;
 use App\Http\Controllers\RouterController;
+use App\Http\Controllers\RouterWireGuardController;
 use App\Http\Controllers\HotspotPortalActionController;
 use App\Http\Controllers\PackageController;
 use App\Http\Controllers\ClientController;
@@ -83,6 +84,70 @@ Route::post(
     'routers/{router}/sync',
     [RouterController::class, 'sync']
 )->name('routers.sync');
+
+
+/*
+ * RESELLER_ROUTER_WIREGUARD_V1
+ */
+Route::get(
+    'routers/{router}/wireguard',
+    [
+        RouterWireGuardController::class,
+        'show',
+    ]
+)->name(
+    'routers.wireguard.show'
+);
+
+Route::post(
+    'routers/{router}/wireguard',
+    [
+        RouterWireGuardController::class,
+        'create',
+    ]
+)->name(
+    'routers.wireguard.create'
+);
+
+Route::post(
+    'routers/{router}/wireguard/check',
+    [
+        RouterWireGuardController::class,
+        'refresh',
+    ]
+)->name(
+    'routers.wireguard.check'
+);
+
+Route::post(
+    'routers/{router}/wireguard/regenerate',
+    [
+        RouterWireGuardController::class,
+        'rotate',
+    ]
+)->name(
+    'routers.wireguard.rotate'
+);
+
+Route::post(
+    'routers/{router}/wireguard/use-as-host',
+    [
+        RouterWireGuardController::class,
+        'activateHost',
+    ]
+)->name(
+    'routers.wireguard.activate-host'
+);
+
+Route::delete(
+    'routers/{router}/wireguard',
+    [
+        RouterWireGuardController::class,
+        'revoke',
+    ]
+)->name(
+    'routers.wireguard.revoke'
+);
 
 /*
  * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
