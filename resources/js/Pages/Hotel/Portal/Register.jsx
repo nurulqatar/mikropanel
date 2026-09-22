@@ -1,40 +1,52 @@
 import {
-    countryOptions,
-    directionForLocale,
-} from '@/Hotel/portalCatalog';
-import {
-    createTranslator,
-} from '@/Hotel/portalI18n';
+    BrandHeader,
+    CountryPicker,
+    PortalFrame,
+    TextField,
+    termsText,
+    tx,
+} from '@/Hotel/PortalV15Kit';
 import {
     Head,
     Link,
     useForm,
 } from '@inertiajs/react';
 import {
-    useMemo,
+    useState,
 } from 'react';
-
-const inputClass =
-    'w-full rounded-xl border-slate-300 px-3 py-2.5';
 
 export default function Register({
     hotel,
     locale,
 }) {
-    const t =
-        createTranslator(
-            locale,
-            hotel.portal_translations,
-        );
+    const [
+        firstName,
+        setFirstName,
+    ] = useState('');
 
-    const countries =
-        useMemo(
-            () =>
-                countryOptions(
-                    locale,
-                ),
-            [locale],
-        );
+    const [
+        lastName,
+        setLastName,
+    ] = useState('');
+
+    const [
+        country,
+        setCountry,
+    ] = useState(
+        null,
+    );
+
+    const [
+        mobileCountry,
+        setMobileCountry,
+    ] = useState(
+        null,
+    );
+
+    const [
+        mobile,
+        setMobile,
+    ] = useState('');
 
     const form =
         useForm({
@@ -54,334 +66,359 @@ export default function Register({
                 false,
         });
 
+    const today =
+        new Date()
+            .toISOString()
+            .slice(
+                0,
+                10,
+            );
+
+    const submit = (
+        event,
+    ) => {
+        event.preventDefault();
+
+        const name =
+            `${firstName.trim()} ${lastName.trim()}`
+                .trim();
+
+        const digits =
+            mobile.replace(
+                /\D/g,
+                '',
+            );
+
+        const phone =
+            mobileCountry?.dial
+                ? `${mobileCountry.dial}${digits}`
+                : digits;
+
+        form.transform(
+            (
+                data,
+            ) => ({
+                ...data,
+
+                name,
+
+                nationality:
+                    country?.code
+                    || '',
+
+                phone_country:
+                    mobileCountry?.code
+                    || '',
+
+                phone,
+
+                identity_type:
+                    'passport',
+
+                preferred_locale:
+                    locale,
+            }),
+        );
+
+        form.post(
+            route(
+                'hotel.portal.register.store',
+                {
+                    hotel:
+                        hotel.slug,
+
+                    lang:
+                        locale,
+                },
+            ),
+        );
+    };
+
     return (
-        <div
-            dir={directionForLocale(
-                locale,
-            )}
-            className="min-h-screen bg-slate-100 p-4 md:p-8"
+        <PortalFrame
+            hotel={
+                hotel
+            }
+            locale={
+                locale
+            }
         >
             <Head
-                title={t(
-                    'guestRegistration',
+                title={tx(
+                    locale,
+                    'Guest Registration',
                 )}
             />
 
-            <div className="mx-auto max-w-3xl rounded-[2rem] bg-white p-6 shadow-xl md:p-8">
-                <div className="text-center">
-                    {hotel.logo_url && (
-                        <img
-                            src={
-                                hotel.logo_url
-                            }
-                            alt={
-                                hotel.name
-                            }
-                            className="mx-auto h-20 max-w-52 object-contain"
-                        />
+            <div className="overflow-hidden rounded-[2rem] bg-white shadow-2xl">
+                <BrandHeader
+                    hotel={
+                        hotel
+                    }
+                    title={tx(
+                        locale,
+                        'Guest Registration',
                     )}
-
-                    <h1 className="mt-4 text-2xl font-black">
-                        {t(
-                            'guestRegistration',
-                        )}
-                    </h1>
-
-                    <p className="mt-1 text-slate-500">
-                        {hotel.name}
-                    </p>
-                </div>
+                    subtitle={tx(
+                        locale,
+                        'Please enter details exactly as shown on Passport / QID.',
+                    )}
+                />
 
                 <form
-                    onSubmit={(event) => {
-                        event.preventDefault();
-
-                        form.post(
-                            route(
-                                'hotel.portal.register.store',
-                                {
-                                    hotel:
-                                        hotel.slug,
-
-                                    lang:
-                                        locale,
-                                },
-                            ),
-                        );
-                    }}
-                    className="mt-8"
+                    onSubmit={
+                        submit
+                    }
+                    className="space-y-5 p-6"
                 >
-                    <div className="grid gap-5 md:grid-cols-2">
-                        <Input
-                            label={t(
-                                'roomNumber',
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <TextField
+                            label={tx(
+                                locale,
+                                'First Name',
                             )}
                             value={
-                                form.data
-                                    .room_number
+                                firstName
                             }
-                            onChange={(v) =>
-                                form.setData(
-                                    'room_number',
-                                    v,
-                                )
+                            onChange={
+                                setFirstName
                             }
+                            autoComplete="given-name"
+                            placeholder={tx(
+                                locale,
+                                'As Passport / QID',
+                            )}
                         />
 
-                        <Input
-                            label={t(
-                                'guestName',
+                        <TextField
+                            label={tx(
+                                locale,
+                                'Last Name',
                             )}
                             value={
-                                form.data.name
+                                lastName
                             }
-                            onChange={(v) =>
-                                form.setData(
-                                    'name',
-                                    v,
-                                )
+                            onChange={
+                                setLastName
+                            }
+                            autoComplete="family-name"
+                            placeholder={tx(
+                                locale,
+                                'As Passport / QID',
+                            )}
+                        />
+                    </div>
+
+                    <div>
+                        <div className="mb-2 text-sm font-black text-slate-700">
+                            {tx(
+                                locale,
+                                'Country',
+                            )}
+                        </div>
+
+                        <CountryPicker
+                            locale={
+                                locale
+                            }
+                            value={
+                                country?.code
+                            }
+                            onSelect={
+                                setCountry
                             }
                         />
+                    </div>
 
-                        <Input
-                            label={t(
-                                'checkInDate',
+                    <TextField
+                        label={tx(
+                            locale,
+                            'Passport Number',
+                        )}
+                        value={
+                            form.data
+                                .identity_number
+                        }
+                        onChange={(value) =>
+                            form.setData(
+                                'identity_number',
+                                value
+                                    .toUpperCase(),
+                            )
+                        }
+                        placeholder={tx(
+                            locale,
+                            'Passport number',
+                        )}
+                    />
+
+                    <TextField
+                        label={tx(
+                            locale,
+                            'Room Number',
+                        )}
+                        value={
+                            form.data
+                                .room_number
+                        }
+                        onChange={(value) =>
+                            form.setData(
+                                'room_number',
+                                value,
+                            )
+                        }
+                        placeholder={tx(
+                            locale,
+                            'Example: 504',
+                        )}
+                    />
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <TextField
+                            label={tx(
+                                locale,
+                                'Check-in Date',
                             )}
                             type="date"
+                            min={
+                                today
+                            }
                             value={
                                 form.data
                                     .check_in_date
                             }
-                            onChange={(v) =>
+                            onChange={(value) => {
                                 form.setData(
                                     'check_in_date',
-                                    v,
-                                )
-                            }
+                                    value,
+                                );
+
+                                if (
+                                    form.data
+                                        .check_out_date
+                                    && form.data
+                                        .check_out_date
+                                        < value
+                                ) {
+                                    form.setData(
+                                        'check_out_date',
+                                        '',
+                                    );
+                                }
+                            }}
                         />
 
-                        <Input
-                            label={t(
-                                'checkOutDate',
+                        <TextField
+                            label={tx(
+                                locale,
+                                'Checkout Date',
                             )}
                             type="date"
+                            min={
+                                form.data
+                                    .check_in_date
+                                || today
+                            }
                             value={
                                 form.data
                                     .check_out_date
                             }
-                            onChange={(v) =>
+                            onChange={(value) =>
                                 form.setData(
                                     'check_out_date',
-                                    v,
-                                )
-                            }
-                        />
-
-                        <label>
-                            <div className="mb-1 text-sm font-black">
-                                {t(
-                                    'phoneCountry',
-                                )}
-                            </div>
-
-                            <select
-                                value={
-                                    form.data
-                                        .phone_country
-                                }
-                                onChange={(e) =>
-                                    form.setData(
-                                        'phone_country',
-                                        e.target.value,
-                                    )
-                                }
-                                className={
-                                    inputClass
-                                }
-                            >
-                                <option value="">
-                                    {t(
-                                        'selectCountry',
-                                    )}
-                                </option>
-
-                                {countries.map(
-                                    (
-                                        country,
-                                    ) => (
-                                        <option
-                                            key={
-                                                country.code
-                                            }
-                                            value={
-                                                country.code
-                                            }
-                                        >
-                                            {
-                                                country.name
-                                            }
-                                        </option>
-                                    ),
-                                )}
-                            </select>
-                        </label>
-
-                        <Input
-                            label={t(
-                                'mobileNumber',
-                            )}
-                            placeholder="+974..."
-                            value={
-                                form.data.phone
-                            }
-                            onChange={(v) =>
-                                form.setData(
-                                    'phone',
-                                    v,
-                                )
-                            }
-                        />
-
-                        <label>
-                            <div className="mb-1 text-sm font-black">
-                                {t(
-                                    'nationality',
-                                )}
-                            </div>
-
-                            <select
-                                value={
-                                    form.data
-                                        .nationality
-                                }
-                                onChange={(e) =>
-                                    form.setData(
-                                        'nationality',
-                                        e.target.value,
-                                    )
-                                }
-                                className={
-                                    inputClass
-                                }
-                            >
-                                <option value="">
-                                    {t(
-                                        'selectCountry',
-                                    )}
-                                </option>
-
-                                {countries.map(
-                                    (
-                                        country,
-                                    ) => (
-                                        <option
-                                            key={
-                                                country.code
-                                            }
-                                            value={
-                                                country.code
-                                            }
-                                        >
-                                            {
-                                                country.name
-                                            }
-                                        </option>
-                                    ),
-                                )}
-                            </select>
-                        </label>
-
-                        <label>
-                            <div className="mb-1 text-sm font-black">
-                                {t(
-                                    'identificationType',
-                                )}
-                            </div>
-
-                            <select
-                                value={
-                                    form.data
-                                        .identity_type
-                                }
-                                onChange={(e) =>
-                                    form.setData(
-                                        'identity_type',
-                                        e.target.value,
-                                    )
-                                }
-                                className={
-                                    inputClass
-                                }
-                            >
-                                <option value="passport">
-                                    {t(
-                                        'passport',
-                                    )}
-                                </option>
-
-                                <option value="qid">
-                                    {t(
-                                        'qid',
-                                    )}
-                                </option>
-                            </select>
-                        </label>
-
-                        <Input
-                            label={t(
-                                'identificationNumber',
-                            )}
-                            value={
-                                form.data
-                                    .identity_number
-                            }
-                            onChange={(v) =>
-                                form.setData(
-                                    'identity_number',
-                                    v,
+                                    value,
                                 )
                             }
                         />
                     </div>
 
+                    <div>
+                        <div className="mb-2 text-sm font-black text-slate-700">
+                            {tx(
+                                locale,
+                                'Mobile Country Prefix',
+                            )}
+                        </div>
+
+                        <CountryPicker
+                            locale={
+                                locale
+                            }
+                            value={
+                                mobileCountry?.code
+                            }
+                            onSelect={
+                                setMobileCountry
+                            }
+                            dialMode
+                        />
+                    </div>
+
+                    <label className="block">
+                        <span className="mb-2 block text-sm font-black text-slate-700">
+                            {tx(
+                                locale,
+                                'Mobile Number',
+                            )}
+                        </span>
+
+                        <div className="flex overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm focus-within:border-blue-500">
+                            <div
+                                dir="ltr"
+                                className="flex min-w-20 items-center justify-center border-e border-slate-200 bg-slate-50 px-3 font-black text-blue-700"
+                            >
+                                {
+                                    mobileCountry?.dial
+                                    || '+'
+                                }
+                            </div>
+
+                            <input
+                                dir="ltr"
+                                inputMode="tel"
+                                value={
+                                    mobile
+                                }
+                                onChange={(e) =>
+                                    setMobile(
+                                        e.target.value
+                                            .replace(
+                                                /[^0-9\s()-]/g,
+                                                '',
+                                            ),
+                                    )
+                                }
+                                placeholder={tx(
+                                    locale,
+                                    'Mobile number',
+                                )}
+                                className="min-w-0 flex-1 border-0 px-4 py-3.5 focus:ring-0"
+                            />
+                        </div>
+                    </label>
+
                     {(hotel.terms_text
                         || hotel.privacy_text) && (
-                        <div className="mt-6 max-h-48 overflow-y-auto rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                        <div className="max-h-40 overflow-y-auto rounded-2xl bg-slate-50 p-4 text-xs leading-5 text-slate-500">
                             {hotel.terms_text && (
-                                <>
-                                    <strong>
-                                        {t(
-                                            'termsConditions',
-                                        )}
-                                    </strong>
-
-                                    <p className="mt-2 whitespace-pre-line">
-                                        {
-                                            hotel.terms_text
-                                        }
-                                    </p>
-                                </>
+                                <p className="whitespace-pre-line">
+                                    {
+                                        hotel.terms_text
+                                    }
+                                </p>
                             )}
 
                             {hotel.privacy_text && (
-                                <>
-                                    <strong className="mt-5 block">
-                                        {t(
-                                            'privacyNotice',
-                                        )}
-                                    </strong>
-
-                                    <p className="mt-2 whitespace-pre-line">
-                                        {
-                                            hotel.privacy_text
-                                        }
-                                    </p>
-                                </>
+                                <p className="mt-3 whitespace-pre-line">
+                                    {
+                                        hotel.privacy_text
+                                    }
+                                </p>
                             )}
                         </div>
                     )}
 
-                    <label className="mt-5 flex items-start gap-3">
+                    <label className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
                         <input
                             type="checkbox"
                             checked={
@@ -394,12 +431,12 @@ export default function Register({
                                     e.target.checked,
                                 )
                             }
-                            className="mt-1 rounded"
+                            className="mt-1 rounded border-slate-300"
                         />
 
-                        <span className="text-sm font-semibold">
-                            {t(
-                                'acceptTerms',
+                        <span className="text-sm font-semibold text-slate-600">
+                            {termsText(
+                                locale,
                             )}
                         </span>
                     </label>
@@ -407,12 +444,12 @@ export default function Register({
                     {Object.keys(
                         form.errors,
                     ).length > 0 && (
-                        <div className="mt-5 rounded-xl bg-red-50 p-4 text-sm font-bold text-red-700">
+                        <div className="rounded-2xl bg-red-50 p-4 text-sm font-bold text-red-700">
                             {Object.values(
                                 form.errors,
                             ).map(
                                 (
-                                    error,
+                                    message,
                                     index,
                                 ) => (
                                     <div
@@ -420,7 +457,9 @@ export default function Register({
                                             index
                                         }
                                     >
-                                        {error}
+                                        {
+                                            message
+                                        }
                                     </div>
                                 ),
                             )}
@@ -432,66 +471,35 @@ export default function Register({
                         disabled={
                             form.processing
                         }
-                        style={{
-                            backgroundColor:
-                                hotel.primary_color,
-                        }}
-                        className="mt-6 w-full rounded-xl px-6 py-3.5 font-black text-white shadow-lg disabled:opacity-50"
+                        className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 px-6 py-4 text-lg font-black text-white shadow-lg disabled:opacity-50"
                     >
-                        {t(
-                            'registerGetVoucher',
+                        {tx(
+                            locale,
+                            'Create WiFi Access',
                         )}
                     </button>
+
+                    <Link
+                        href={route(
+                            'hotel.portal.access',
+                            {
+                                hotel:
+                                    hotel.slug,
+
+                                lang:
+                                    locale,
+                            },
+                        )}
+                        className="block text-center text-sm font-black text-slate-400"
+                    >
+                        ←{' '}
+                        {tx(
+                            locale,
+                            'Back',
+                        )}
+                    </Link>
                 </form>
-
-                <Link
-                    href={route(
-                        'hotel.portal.access',
-                        {
-                            hotel:
-                                hotel.slug,
-
-                            lang:
-                                locale,
-                        },
-                    )}
-                    className="mt-5 block text-center font-bold text-slate-500"
-                >
-                    {t('back')}
-                </Link>
             </div>
-        </div>
-    );
-}
-
-function Input({
-    label,
-    value,
-    onChange,
-    type = 'text',
-    placeholder = '',
-}) {
-    return (
-        <label>
-            <div className="mb-1 text-sm font-black">
-                {label}
-            </div>
-
-            <input
-                type={type}
-                value={value}
-                placeholder={
-                    placeholder
-                }
-                onChange={(e) =>
-                    onChange(
-                        e.target.value,
-                    )
-                }
-                className={
-                    inputClass
-                }
-            />
-        </label>
+        </PortalFrame>
     );
 }

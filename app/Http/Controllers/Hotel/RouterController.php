@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Hotel\HotelRouter;
 use App\Models\Hotel\HotelUser;
 use App\Services\Hotel\HotelMikroTikService;
+use App\Services\Hotel\HotelCaptivePortalDeployService;
 use App\Services\Hotel\HotelRouterQuotaService;
 use App\Services\Hotel\HotelRouterSetupCommandService;
 use Illuminate\Http\RedirectResponse;
@@ -379,7 +380,8 @@ class RouterController extends Controller
 
     public function test(
         HotelRouter $router,
-        HotelMikroTikService $mikrotik
+        HotelMikroTikService $mikrotik,
+        HotelCaptivePortalDeployService $portalDeploy
     ): RedirectResponse {
         $admin =
             $this->admin();
@@ -453,9 +455,47 @@ class RouterController extends Controller
                 null,
         ])->save();
 
+        /*
+         * HOTEL_CAPTIVE_AUTO_DEPLOY_V1
+         *
+         * Connection is already confirmed.
+         * Now install/update only the dedicated Hotel
+         * captive bridge and walled-garden rule.
+         */
+        try {
+            $deployment =
+                $portalDeploy->deploy(
+                    $router
+                );
+        } catch (Throwable $e) {
+            $message =
+                mb_substr(
+                    trim(
+                        $e->getMessage()
+                    ),
+                    0,
+                    500
+                );
+
+            $router->forceFill([
+                'last_error' =>
+                    'Captive portal deploy failed: '
+                    . $message,
+            ])->save();
+
+            return back()
+                ->withErrors([
+                    'router' =>
+                        'MikroTik connected, but captive portal auto-deploy failed: '
+                        . $message,
+                ]);
+        }
+
         return back()->with(
             'success',
-            'MikroTik connection successful.'
+            'MikroTik connected. Captive portal auto-deployed to '
+            . $deployment['directory']
+            . '.'
         );
     }
 

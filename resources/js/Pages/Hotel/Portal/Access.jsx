@@ -1,9 +1,8 @@
 import {
-    directionForLocale,
-} from '@/Hotel/portalCatalog';
-import {
-    createTranslator,
-} from '@/Hotel/portalI18n';
+    BrandHeader,
+    PortalFrame,
+    tx,
+} from '@/Hotel/PortalV15Kit';
 import {
     Head,
     Link,
@@ -13,63 +12,38 @@ export default function Access({
     hotel,
     locale,
 }) {
-    const t =
-        createTranslator(
-            locale,
-            hotel.portal_translations,
-        );
-
     return (
-        <div
-            dir={directionForLocale(
-                locale,
-            )}
-            className="flex min-h-screen items-center justify-center bg-slate-950 p-5"
+        <PortalFrame
+            hotel={
+                hotel
+            }
+            locale={
+                locale
+            }
         >
-            <Head title={hotel.name} />
-
-            <div className="w-full max-w-xl rounded-[2rem] bg-white p-8 shadow-2xl">
-                {hotel.logo_url && (
-                    <img
-                        src={hotel.logo_url}
-                        alt={hotel.name}
-                        className="mx-auto h-20 max-w-48 object-contain"
-                    />
+            <Head
+                title={tx(
+                    locale,
+                    'Guest WiFi Access',
                 )}
+            />
 
-                <h1 className="mt-5 text-center text-3xl font-black">
-                    {t('guestWifi')}
-                </h1>
-
-                <p className="mt-2 text-center text-slate-500">
-                    {t(
-                        'chooseContinue',
+            <div className="overflow-hidden rounded-[2rem] bg-white shadow-2xl">
+                <BrandHeader
+                    hotel={
+                        hotel
+                    }
+                    title={tx(
+                        locale,
+                        'Guest WiFi Access',
                     )}
-                </p>
+                    subtitle={tx(
+                        locale,
+                        'Choose one option to continue.',
+                    )}
+                />
 
-                <div className="mt-8 grid gap-4">
-                    <Link
-                        href={route(
-                            'hotel.portal.register',
-                            {
-                                hotel:
-                                    hotel.slug,
-
-                                lang:
-                                    locale,
-                            },
-                        )}
-                        style={{
-                            backgroundColor:
-                                hotel.primary_color,
-                        }}
-                        className="rounded-2xl p-5 text-center text-lg font-black text-white shadow-lg"
-                    >
-                        {t(
-                            'newGuestRegistration',
-                        )}
-                    </Link>
-
+                <div className="space-y-4 p-6">
                     <Link
                         href={route(
                             'hotel.portal.login',
@@ -81,14 +55,72 @@ export default function Access({
                                     locale,
                             },
                         )}
-                        className="rounded-2xl bg-slate-900 p-5 text-center text-lg font-black text-white"
+                        className="block rounded-2xl border-2 border-blue-100 bg-blue-50 p-5 transition hover:border-blue-300"
                     >
-                        {t(
-                            'existingGuestLogin',
+                        <div className="text-lg font-black text-blue-900">
+                            {tx(
+                                locale,
+                                'I Already Registered — Login Now',
+                            )}
+                        </div>
+
+                        <div className="mt-1 text-sm font-semibold text-blue-600">
+                            {tx(
+                                locale,
+                                'Use your existing voucher code',
+                            )}
+                        </div>
+                    </Link>
+
+                    <Link
+                        href={route(
+                            'hotel.portal.register',
+                            {
+                                hotel:
+                                    hotel.slug,
+
+                                lang:
+                                    locale,
+                            },
+                        )}
+                        className="block rounded-2xl border-2 border-emerald-100 bg-emerald-50 p-5 transition hover:border-emerald-300"
+                    >
+                        <div className="text-lg font-black text-emerald-900">
+                            {tx(
+                                locale,
+                                'New Guest — Register Now',
+                            )}
+                        </div>
+
+                        <div className="mt-1 text-sm font-semibold text-emerald-600">
+                            {tx(
+                                locale,
+                                'Create your hotel WiFi access',
+                            )}
+                        </div>
+                    </Link>
+
+                    <Link
+                        href={route(
+                            'hotel.portal.welcome',
+                            {
+                                hotel:
+                                    hotel.slug,
+
+                                lang:
+                                    locale,
+                            },
+                        )}
+                        className="block pt-2 text-center text-sm font-black text-slate-400"
+                    >
+                        ←{' '}
+                        {tx(
+                            locale,
+                            'Back',
                         )}
                     </Link>
                 </div>
             </div>
-        </div>
+        </PortalFrame>
     );
 }

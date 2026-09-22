@@ -1,9 +1,7 @@
 import {
-    directionForLocale,
-} from '@/Hotel/portalCatalog';
-import {
-    createTranslator,
-} from '@/Hotel/portalI18n';
+    PortalFrame,
+    tx,
+} from '@/Hotel/PortalV15Kit';
 import {
     Head,
     Link,
@@ -13,19 +11,43 @@ export default function Voucher({
     hotel,
     locale,
     voucher,
+    captive = null,
 }) {
-    const t =
-        createTranslator(
+    const t = (key) => {
+        const map = {
+            yourVoucher:
+                'Your WiFi Access Is Ready',
+            registrationComplete:
+                'Registration Successful',
+            voucherCode:
+                'Voucher Code',
+            guest:
+                'Guest',
+            room:
+                'Room',
+            validUntil:
+                'Valid Until',
+            continueLogin:
+                'Connect to WiFi',
+        };
+
+        return tx(
             locale,
-            hotel.portal_translations,
+            map[key] || key,
         );
+    };
+
+    const connectHref =
+        captive?.connect_url
+            ? `${captive.connect_url}?voucher=${encodeURIComponent(
+                  voucher.username,
+              )}`
+            : null;
 
     return (
-        <div
-            dir={directionForLocale(
-                locale,
-            )}
-            className="flex min-h-screen items-center justify-center bg-slate-950 p-5"
+        <PortalFrame
+            hotel={hotel}
+            locale={locale}
         >
             <Head
                 title={t(
@@ -33,95 +55,148 @@ export default function Voucher({
                 )}
             />
 
-            <div className="w-full max-w-lg rounded-[2rem] bg-white p-8 text-center shadow-2xl">
-                {hotel.logo_url && (
-                    <img
-                        src={hotel.logo_url}
-                        alt={hotel.name}
-                        className="mx-auto h-20 max-w-52 object-contain"
-                    />
-                )}
+            <div className="mx-auto flex min-h-screen max-w-lg items-center">
+                <div className="w-full overflow-hidden rounded-[2rem] bg-white shadow-2xl">
+                    <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 px-7 py-8 text-center text-white">
+                        {hotel.logo_url && (
+                            <img
+                                src={
+                                    hotel.logo_url
+                                }
+                                alt={hotel.name}
+                                className="mx-auto h-20 max-w-52 object-contain"
+                            />
+                        )}
 
-                <div className="mt-5 text-sm font-black uppercase tracking-widest text-emerald-600">
-                    {t(
-                        'registrationComplete',
-                    )}
-                </div>
+                        <div className="mt-3 text-xs font-black uppercase tracking-[0.22em] text-blue-100">
+                            ✓{' '}
+                            {t(
+                                'registrationComplete',
+                            )}
+                        </div>
 
-                <h1 className="mt-2 text-3xl font-black">
-                    {t(
-                        'yourVoucher',
-                    )}
-                </h1>
+                        <h1 className="mt-2 text-2xl font-black">
+                            {t(
+                                'yourVoucher',
+                            )}
+                        </h1>
+                    </div>
 
-                <div className="mt-7 rounded-2xl bg-slate-950 p-7">
-                    <div className="text-xs font-black uppercase tracking-[0.25em] text-slate-400">
-                        {t(
-                            'voucherCode',
+                    <div className="p-7">
+                        <div className="rounded-3xl bg-slate-950 p-7 text-center shadow-xl">
+                            <div className="text-xs font-black uppercase tracking-[0.25em] text-slate-400">
+                                {t(
+                                    'voucherCode',
+                                )}
+                            </div>
+
+                            <div
+                                dir="ltr"
+                                className="mt-3 break-all font-mono text-4xl font-black tracking-widest text-white"
+                            >
+                                {
+                                    voucher.username
+                                }
+                            </div>
+                        </div>
+
+                        <div className="mt-6 grid gap-3">
+                            <Info
+                                label={t(
+                                    'guest',
+                                )}
+                                value={
+                                    voucher.guest_name
+                                }
+                            />
+
+                            <Info
+                                label={t(
+                                    'room',
+                                )}
+                                value={
+                                    voucher.room_number
+                                }
+                            />
+
+                            <Info
+                                label={t(
+                                    'validUntil',
+                                )}
+                                value={
+                                    voucher.expires_at
+                                }
+                            />
+
+                            {captive && (
+                                <>
+                                    <Info
+                                        label="Device IP"
+                                        value={
+                                            captive.ip
+                                            || '-'
+                                        }
+                                    />
+
+                                    <Info
+                                        label="Device MAC"
+                                        value={
+                                            captive.mac
+                                            || '-'
+                                        }
+                                    />
+                                </>
+                            )}
+                        </div>
+
+                        {connectHref ? (
+                            <a
+                                href={
+                                    connectHref
+                                }
+                                className="mt-6 block rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 px-6 py-4 text-center text-lg font-black text-white shadow-lg"
+                            >
+                                Connect to WiFi
+                            </a>
+                        ) : (
+                            <Link
+                                href={route(
+                                    'hotel.portal.login',
+                                    {
+                                        hotel:
+                                            hotel.slug,
+
+                                        lang:
+                                            locale,
+                                    },
+                                )}
+                                className="mt-6 block rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 px-6 py-4 text-center font-black text-white shadow-lg"
+                            >
+                                {t(
+                                    'continueLogin',
+                                )}
+                            </Link>
                         )}
                     </div>
-
-                    <div
-                        dir="ltr"
-                        className="mt-3 font-mono text-4xl font-black tracking-widest text-white"
-                    >
-                        {voucher.username}
-                    </div>
                 </div>
-
-                <div className="mt-6 space-y-2 text-sm text-slate-600">
-                    <div>
-                        {t('guest')}:{' '}
-                        <strong>
-                            {
-                                voucher.guest_name
-                            }
-                        </strong>
-                    </div>
-
-                    <div>
-                        {t('room')}:{' '}
-                        <strong>
-                            {
-                                voucher.room_number
-                            }
-                        </strong>
-                    </div>
-
-                    <div>
-                        {t(
-                            'validUntil',
-                        )}:{' '}
-                        <strong>
-                            {
-                                voucher.expires_at
-                            }
-                        </strong>
-                    </div>
-                </div>
-
-                <Link
-                    href={route(
-                        'hotel.portal.login',
-                        {
-                            hotel:
-                                hotel.slug,
-
-                            lang:
-                                locale,
-                        },
-                    )}
-                    style={{
-                        backgroundColor:
-                            hotel.primary_color,
-                    }}
-                    className="mt-7 block rounded-xl px-6 py-3 font-black text-white"
-                >
-                    {t(
-                        'continueLogin',
-                    )}
-                </Link>
             </div>
+        </PortalFrame>
+    );
+}
+
+function Info({
+    label,
+    value,
+}) {
+    return (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+            <span className="text-sm font-bold text-slate-400">
+                {label}
+            </span>
+
+            <strong className="text-right text-sm text-slate-800">
+                {value}
+            </strong>
         </div>
     );
 }

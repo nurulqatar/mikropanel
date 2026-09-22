@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Hotel;
 
+use App\Models\Hotel\HotelRouter;
 use App\Http\Controllers\Controller;
 use App\Models\Hotel\Hotel;
 use App\Models\Hotel\HotelVoucher;
@@ -458,6 +459,136 @@ class PortalController extends Controller
         Request $request,
         Hotel $hotel
     ): array {
+
+        /*
+         * HOTEL_CAPTIVE_CONTEXT_V1
+         *
+         * Only a Hotel-owned enabled router ID is trusted.
+         * The connect URL is calculated server-side from
+         * that router, never accepted from a browser query.
+         */
+        $captiveKey =
+            'hotel_captive_'
+            . $hotel->id;
+
+        $incomingRouterId =
+            (int)
+            $request->query(
+                'mp_router',
+                0
+            );
+
+        if ($incomingRouterId > 0) {
+            $captiveRouter =
+                HotelRouter::query()
+                    ->where(
+                        'hotel_id',
+                        $hotel->id
+                    )
+                    ->whereKey(
+                        $incomingRouterId
+                    )
+                    ->where(
+                        'enabled',
+                        true
+                    )
+                    ->first();
+
+            if ($captiveRouter) {
+                $mac =
+                    strtoupper(
+                        trim(
+                            (string)
+                            $request->query(
+                                'mp_mac',
+                                ''
+                            )
+                        )
+                    );
+
+                if (
+                    !preg_match(
+                        '/^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/',
+                        $mac
+                    )
+                ) {
+                    $mac = null;
+                }
+
+                $ip =
+                    trim(
+                        (string)
+                        $request->query(
+                            'mp_ip',
+                            ''
+                        )
+                    );
+
+                if (
+                    !filter_var(
+                        $ip,
+                        FILTER_VALIDATE_IP,
+                        FILTER_FLAG_IPV4
+                    )
+                ) {
+                    $ip = null;
+                }
+
+                $host =
+                    trim(
+                        (string)
+                        $captiveRouter
+                            ->dns_name
+                    );
+
+                if ($host === '') {
+                    $host =
+                        explode(
+                            '/',
+                            (string)
+                            $captiveRouter
+                                ->guest_gateway_cidr
+                        )[0]
+                        ?? '';
+                }
+
+                $captive = [
+                    'router_id' =>
+                        $captiveRouter->id,
+
+                    'router_name' =>
+                        $captiveRouter->name,
+
+                    'mac' =>
+                        $mac,
+
+                    'ip' =>
+                        $ip,
+
+                    'connect_url' =>
+                        $host !== ''
+                            ? 'http://'
+                                . $host
+                                . '/connect.html'
+                            : null,
+                ];
+
+                $request
+                    ->session()
+                    ->put(
+                        $captiveKey,
+                        $captive
+                    );
+            }
+        }
+
+        $captive =
+            $request
+                ->session()
+                ->get(
+                    $captiveKey
+                );
+
         $supportedLanguages =
             config(
                 'hotel_portal.languages',
@@ -607,6 +738,9 @@ class PortalController extends Controller
                             ->background_path
                     ),
             ],
+
+            'captive' =>
+                $captive,
 
             'locale' =>
                 $locale,
