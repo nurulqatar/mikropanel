@@ -17,9 +17,49 @@ class HotelCaptivePortalDeployService
      * The commercial Hotel portal remains on MikroPanel,
      * so branding/UI updates do not require router uploads.
      */
+    /*
+     * CAPTIVE_STREAM_RETRY_V1
+     *
+     * RouterOS API TCP streams can occasionally close between
+     * request and response. The deployment itself is idempotent,
+     * so a complete retry with a fresh Client is safe.
+     */
     public function deploy(
         HotelRouter $router
     ): array {
+        $last = null;
+
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            try {
+                return $this->deployOnce(
+                    $router
+                );
+            } catch (
+                \RouterOS\Exceptions\StreamException $e
+            ) {
+                $last = $e;
+
+                if ($attempt >= 3) {
+                    throw $e;
+                }
+
+                /*
+                 * Short bounded backoff.
+                 * Next deployOnce() creates a fresh RouterOS Client.
+                 */
+                usleep(
+                    250000 * $attempt
+                );
+            }
+        }
+
+        throw $last;
+    }
+
+    private function deployOnce(
+        HotelRouter $router
+    ): array {
+
         $router->loadMissing(
             'hotel'
         );
