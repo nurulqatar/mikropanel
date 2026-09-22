@@ -7,6 +7,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class RouterWireGuardPeer extends Model
 {
+    /*
+     * Laravel would infer:
+     * router_wire_guard_peers
+     *
+     * Actual migration table:
+     * router_wireguard_peers
+     */
+    protected $table = 'router_wireguard_peers';
+
     protected $fillable = [
         'router_id',
         'reseller_id',
