@@ -10,6 +10,8 @@ class RouterWireGuardPeer extends Model
     protected $fillable = [
         'router_id',
         'reseller_id',
+        'label',
+        'created_by_user_id',
         'server_interface',
         'server_public_key',
         'endpoint_host',

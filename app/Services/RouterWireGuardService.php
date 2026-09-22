@@ -92,6 +92,410 @@ class RouterWireGuardService
         ];
     }
 
+    /*
+     * VPN_FIRST_STANDALONE_PEER_V2
+     *
+     * Reseller creates VPN before Router DB record exists.
+     */
+    public function createStandalone(
+        int $resellerId,
+        ?int $createdByUserId = null,
+        ?string $label = null
+    ): RouterWireGuardPeer {
+        if ($resellerId < 1) {
+            throw new RuntimeException(
+                'A reseller account is required.'
+            );
+        }
+
+        $clientIp =
+            $this->allocateClientIp();
+
+        [
+            $privateKey,
+            $publicKey,
+        ] =
+            $this->generateKeyPair();
+
+        $serverPublicKey =
+            $this->serverPublicKey();
+
+        $endpointHost =
+            trim(
+                (string)
+                config(
+                    'router_wireguard.endpoint_host'
+                )
+            );
+
+        $endpointPort =
+            (int)
+            config(
+                'router_wireguard.endpoint_port'
+            );
+
+        if (
+            $endpointHost === ''
+            || $endpointPort < 1
+            || $endpointPort > 65535
+        ) {
+            throw new RuntimeException(
+                'WireGuard endpoint configuration is invalid.'
+            );
+        }
+
+        $this->helper([
+            'add',
+            $publicKey,
+            $clientIp,
+        ]);
+
+        try {
+            return RouterWireGuardPeer::query()
+                ->create([
+                    'router_id' =>
+                        null,
+
+                    'reseller_id' =>
+                        $resellerId,
+
+                    'label' =>
+                        trim(
+                            (string)
+                            $label
+                        ) ?: null,
+
+                    'created_by_user_id' =>
+                        $createdByUserId,
+
+                    'server_interface' =>
+                        (string)
+                        config(
+                            'router_wireguard.interface'
+                        ),
+
+                    'server_public_key' =>
+                        $serverPublicKey,
+
+                    'endpoint_host' =>
+                        $endpointHost,
+
+                    'endpoint_port' =>
+                        $endpointPort,
+
+                    'client_private_key' =>
+                        $privateKey,
+
+                    'client_public_key' =>
+                        $publicKey,
+
+                    'client_ip' =>
+                        $clientIp,
+
+                    'active' =>
+                        true,
+
+                    'provisioned_at' =>
+                        now(),
+
+                    'revoked_at' =>
+                        null,
+
+                    'rx_bytes' =>
+                        0,
+
+                    'tx_bytes' =>
+                        0,
+                ])
+                ->refresh();
+
+        } catch (Throwable $exception) {
+            $this->safeRemove(
+                $publicKey
+            );
+
+            throw $exception;
+        }
+    }
+
+
+    public function standaloneSnapshot(
+        RouterWireGuardPeer $peer
+    ): array {
+        $status =
+            $this->emptyStatus();
+
+        if ($peer->active) {
+            try {
+                $status =
+                    $this->readStatus(
+                        $peer
+                    );
+            } catch (Throwable $exception) {
+                $status['error'] =
+                    $exception
+                        ->getMessage();
+            }
+        }
+
+        return [
+            'peer' => [
+                ...$this->peerData(
+                    $peer
+                ),
+
+                'label' =>
+                    $peer->label,
+
+                'router_id' =>
+                    $peer->router_id,
+
+                'router_name' =>
+                    $peer->router?->name,
+            ],
+
+            'status' =>
+                $status,
+
+            'command' =>
+                $peer->active
+                    ? $this
+                        ->standaloneMikrotikCommand(
+                            $peer
+                        )
+                    : null,
+        ];
+    }
+
+
+    public function refreshStandaloneStatus(
+        RouterWireGuardPeer $peer
+    ): array {
+        $status =
+            $this->readStatus(
+                $peer
+            );
+
+        $peer->forceFill([
+            'last_handshake_at' =>
+                $status[
+                    'handshake_at'
+                ],
+
+            'rx_bytes' =>
+                $status['rx_bytes'],
+
+            'tx_bytes' =>
+                $status['tx_bytes'],
+
+            'last_endpoint' =>
+                $status['endpoint'],
+
+            'last_status_check_at' =>
+                now(),
+        ])->save();
+
+        return $status;
+    }
+
+
+    public function rotateStandalone(
+        RouterWireGuardPeer $peer
+    ): RouterWireGuardPeer {
+        if (!$peer->active) {
+            throw new RuntimeException(
+                'This VPN is revoked.'
+            );
+        }
+
+        $oldPublicKey =
+            $peer->client_public_key;
+
+        [
+            $privateKey,
+            $publicKey,
+        ] =
+            $this->generateKeyPair();
+
+        $this->helper([
+            'add',
+            $publicKey,
+            $peer->client_ip,
+        ]);
+
+        try {
+            $this->safeRemove(
+                $oldPublicKey
+            );
+
+            $peer->forceFill([
+                'server_public_key' =>
+                    $this->serverPublicKey(),
+
+                'endpoint_host' =>
+                    (string)
+                    config(
+                        'router_wireguard.endpoint_host'
+                    ),
+
+                'endpoint_port' =>
+                    (int)
+                    config(
+                        'router_wireguard.endpoint_port'
+                    ),
+
+                'client_private_key' =>
+                    $privateKey,
+
+                'client_public_key' =>
+                    $publicKey,
+
+                'provisioned_at' =>
+                    now(),
+
+                'last_handshake_at' =>
+                    null,
+
+                'last_endpoint' =>
+                    null,
+
+                'rx_bytes' =>
+                    0,
+
+                'tx_bytes' =>
+                    0,
+
+                'last_status_check_at' =>
+                    null,
+            ])->save();
+
+            return $peer->refresh();
+
+        } catch (Throwable $exception) {
+            $this->safeRemove(
+                $publicKey
+            );
+
+            try {
+                $this->helper([
+                    'add',
+                    $oldPublicKey,
+                    $peer->client_ip,
+                ]);
+            } catch (Throwable) {
+                //
+            }
+
+            throw $exception;
+        }
+    }
+
+
+    public function revokeStandalone(
+        RouterWireGuardPeer $peer
+    ): void {
+        if ($peer->active) {
+            $this->safeRemove(
+                $peer->client_public_key
+            );
+        }
+
+        $peer->forceFill([
+            'active' =>
+                false,
+
+            'revoked_at' =>
+                now(),
+
+            'last_status_check_at' =>
+                now(),
+        ])->save();
+    }
+
+
+    public function standaloneMikrotikCommand(
+        RouterWireGuardPeer $peer
+    ): string {
+        $interface =
+            (string)
+            config(
+                'router_wireguard.mikrotik_interface',
+                'mp-wg'
+            );
+
+        $serverIp =
+            (string)
+            config(
+                'router_wireguard.server_tunnel_ip'
+            );
+
+        $keepalive =
+            (int)
+            config(
+                'router_wireguard.persistent_keepalive',
+                25
+            );
+
+        /*
+         * Router has not been added to the panel yet.
+         * Allow standard RouterOS API/API-SSL ports only
+         * from the MikroPanel WireGuard server.
+         *
+         * No 0.0.0.0/0 route is created.
+         */
+        return implode(
+            "\n",
+            [
+                ':local mpIf "'
+                    . $interface
+                    . '";',
+
+                '/ip/firewall/filter/remove [find where comment="MikroPanel VPN API"];',
+
+                '/ip/firewall/filter/remove [find where comment="MikroPanel VPN Ping"];',
+
+                '/ip/address/remove [find where comment="MikroPanel VPN"];',
+
+                '/interface/wireguard/remove [find where comment="MikroPanel VPN"];',
+
+                '/interface/wireguard/add name=$mpIf mtu=1420 private-key="'
+                    . $peer->client_private_key
+                    . '" comment="MikroPanel VPN";',
+
+                '/ip/address/add address="'
+                    . $peer->client_ip
+                    . '/32" network="'
+                    . $serverIp
+                    . '" interface=$mpIf comment="MikroPanel VPN";',
+
+                '/interface/wireguard/peers/add interface=$mpIf public-key="'
+                    . $peer->server_public_key
+                    . '" endpoint-address="'
+                    . $peer->endpoint_host
+                    . '" endpoint-port='
+                    . $peer->endpoint_port
+                    . ' allowed-address="'
+                    . $serverIp
+                    . '/32" persistent-keepalive='
+                    . $keepalive
+                    . 's comment="MikroPanel Server";',
+
+                '/ip/firewall/filter/add chain=input action=accept in-interface=$mpIf src-address="'
+                    . $serverIp
+                    . '" protocol=tcp dst-port=8728,8729 comment="MikroPanel VPN API";',
+
+                '/ip/firewall/filter/move [find where comment="MikroPanel VPN API"] 0;',
+
+                '/ip/firewall/filter/add chain=input action=accept in-interface=$mpIf src-address="'
+                    . $serverIp
+                    . '" protocol=icmp comment="MikroPanel VPN Ping";',
+
+                '/ip/firewall/filter/move [find where comment="MikroPanel VPN Ping"] 0;',
+            ]
+        );
+    }
+
+
     public function create(
         Router $router
     ): RouterWireGuardPeer {

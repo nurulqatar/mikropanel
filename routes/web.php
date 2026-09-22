@@ -162,6 +162,62 @@ Route::get(
     'routers.hotspot-portal.download'
 );
 
+
+/*
+ * RESELLER_VPN_FIRST_FLOW_V2
+ *
+ * VPN is created before Router registration.
+ */
+Route::get(
+    '/reseller/mikrotik-vpn',
+    [
+        \App\Http\Controllers\Reseller\MikroTikVpnController::class,
+        'index',
+    ]
+)->name(
+    'reseller.mikrotik-vpn.index'
+);
+
+Route::post(
+    '/reseller/mikrotik-vpn',
+    [
+        \App\Http\Controllers\Reseller\MikroTikVpnController::class,
+        'store',
+    ]
+)->name(
+    'reseller.mikrotik-vpn.store'
+);
+
+Route::post(
+    '/reseller/mikrotik-vpn/{peer}/check',
+    [
+        \App\Http\Controllers\Reseller\MikroTikVpnController::class,
+        'check',
+    ]
+)->name(
+    'reseller.mikrotik-vpn.check'
+);
+
+Route::post(
+    '/reseller/mikrotik-vpn/{peer}/regenerate',
+    [
+        \App\Http\Controllers\Reseller\MikroTikVpnController::class,
+        'rotate',
+    ]
+)->name(
+    'reseller.mikrotik-vpn.rotate'
+);
+
+Route::delete(
+    '/reseller/mikrotik-vpn/{peer}',
+    [
+        \App\Http\Controllers\Reseller\MikroTikVpnController::class,
+        'revoke',
+    ]
+)->name(
+    'reseller.mikrotik-vpn.revoke'
+);
+
     Route::resource('routers', RouterController::class);
     Route::resource('packages', PackageController::class);
 Route::get(

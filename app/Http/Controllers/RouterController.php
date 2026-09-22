@@ -6,6 +6,7 @@ use App\Http\Requests\RouterRequest;
 use App\Jobs\SyncRouterStatus;
 use App\Models\NetworkZone;
 use App\Models\Router;
+use App\Models\RouterWireGuardPeer;
 use App\Services\MikroTik\MikroTikService;
 use App\Services\RouterClientSyncService;
 use App\Services\RouterStatusService;
@@ -81,6 +82,45 @@ class RouterController extends Controller
         $router = Router::create(
             $request->validated()
         );
+
+        /*
+         * VPN_FIRST_AUTO_LINK_V2
+         *
+         * If reseller created the VPN before registering
+         * the Router, entering the MikroTik VPN Local IP
+         * as Router Host automatically binds the peer.
+         */
+        $router->loadMissing([
+            'zone:id,reseller_id',
+        ]);
+
+        $routerResellerId =
+            $request->user()?->reseller_id
+            ?: $router->zone?->reseller_id;
+
+        if ($routerResellerId) {
+            RouterWireGuardPeer::query()
+                ->where(
+                    'reseller_id',
+                    (int)
+                    $routerResellerId
+                )
+                ->whereNull(
+                    'router_id'
+                )
+                ->where(
+                    'client_ip',
+                    $router->host
+                )
+                ->where(
+                    'active',
+                    true
+                )
+                ->update([
+                    'router_id' =>
+                        $router->id,
+                ]);
+        }
 
         SyncRouterStatus::dispatch(
             $router->id

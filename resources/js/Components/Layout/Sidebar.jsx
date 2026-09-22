@@ -663,6 +663,12 @@ function NormalSidebar({
             icon: '◉',
         },
         {
+            label: 'MikroTik VPN',
+            route: 'reseller.mikrotik-vpn.index',
+            active: 'reseller.mikrotik-vpn.*',
+            icon: '🔐',
+        },
+        {
             label: 'Packages',
             route: 'packages.index',
             active: 'packages.*',
