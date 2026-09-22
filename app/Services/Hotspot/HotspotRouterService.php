@@ -971,6 +971,135 @@ class HotspotRouterService
      *
      * No database write is performed here.
      */
+    /*
+     * MAIN_HOTSPOT_VOUCHER_DEVICE_INFO_V1
+     *
+     * Read the current RouterOS Hotspot user and
+     * active session without changing anything.
+     */
+    public function voucherDeviceInfo(
+        HotspotVoucher $voucher
+    ): array {
+        $server =
+            HotspotServer::withoutGlobalScopes()
+                ->find(
+                    $voucher
+                        ->hotspot_server_id
+                );
+
+        if (!$server) {
+            throw new \RuntimeException(
+                'Hotspot server was not found.'
+            );
+        }
+
+        $router =
+            Router::withoutGlobalScopes()
+                ->find(
+                    $server->router_id
+                );
+
+        if (!$router) {
+            throw new \RuntimeException(
+                'Hotspot router was not found.'
+            );
+        }
+
+        $api =
+            $this->api(
+                $router
+            );
+
+        $users =
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/user/print'
+                ))
+                    ->where(
+                        'name',
+                        $voucher->username
+                    )
+                    ->equal(
+                        '.proplist',
+                        '.id,name,mac-address,disabled'
+                    )
+            )->read();
+
+        $activeRows =
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/active/print'
+                ))
+                    ->where(
+                        'user',
+                        $voucher->username
+                    )
+                    ->equal(
+                        '.proplist',
+                        '.id,user,address,mac-address,login-by,uptime,server'
+                    )
+            )->read();
+
+        $user =
+            $users[0]
+            ?? [];
+
+        $active =
+            $activeRows[0]
+            ?? [];
+
+        $mac =
+            trim(
+                (string) (
+                    $active['mac-address']
+                    ?? $user['mac-address']
+                    ?? $voucher->mac_address
+                    ?? ''
+                )
+            );
+
+        if (
+            $mac === ''
+            || $mac
+                === '00:00:00:00:00:00'
+        ) {
+            $mac = null;
+        }
+
+        return [
+            'online' =>
+                $active !== [],
+
+            'mac_address' =>
+                $mac
+                    ? strtoupper($mac)
+                    : null,
+
+            'ip_address' =>
+                $active['address']
+                ?? null,
+
+            'login_by' =>
+                $active['login-by']
+                ?? null,
+
+            'uptime' =>
+                $active['uptime']
+                ?? null,
+
+            'hotspot_server' =>
+                $active['server']
+                ?? $server->mikrotik_name
+                ?? $server->name,
+
+            'router_name' =>
+                $router->name,
+
+            'router_user_found' =>
+                $user !== [],
+        ];
+    }
+
     public function resetVoucherMac(
         HotspotVoucher $voucher
     ): bool {

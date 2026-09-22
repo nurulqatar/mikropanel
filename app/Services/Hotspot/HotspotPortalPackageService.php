@@ -518,6 +518,9 @@ class HotspotPortalPackageService
     /*
      * MAIN_HOTSPOT_MAC_RESET_PACKAGE_V1
      */
+    /*
+     * MAIN_HOTSPOT_TWO_STEP_MAC_RESET_UI_V1
+     */
     private function injectMacReset(
         string $contents,
         string $resetUrl
@@ -538,8 +541,8 @@ class HotspotPortalPackageService
 
         $replacement = <<<HTML
 <div>
-  <strong>MAC Reset / Use Voucher on New Device</strong>
-  <small>Enter the same 6-digit Voucher Code above, then tap MAC Reset.</small>
+  <strong>MAC Reset / Release Voucher</strong>
+  <small>Check the voucher and review its current device before resetting.</small>
 </div>
 <button
   class="btn btn-outline-danger"
@@ -550,11 +553,6 @@ class HotspotPortalPackageService
 >
   ↻ MAC Reset / Release Voucher
 </button>
-<div
-  id="mac-reset-result"
-  style="margin-top:10px;font-size:14px;font-weight:700"
-  aria-live="polite"
-></div>
 HTML;
 
         $contents =
@@ -575,110 +573,14 @@ HTML;
             );
         }
 
-        $script = <<<'HTML'
-<script>
-(function () {
-  var button = document.getElementById('mac-reset-btn');
-  var input = document.getElementById('voucher');
-  var result = document.getElementById('mac-reset-result');
-
-  if (!button || !input || !result) {
-    return;
-  }
-
-  button.addEventListener('click', async function () {
-    var code = (input.value || '').replace(/\D/g, '').slice(0, 6);
-
-    input.value = code;
-
-    if (!/^[0-9]{6}$/.test(code)) {
-      result.style.color = '#dc2626';
-      result.textContent = 'Enter your 6-digit Voucher Code first.';
-      input.focus();
-      return;
-    }
-
-    var url = button.getAttribute('data-reset-url');
-
-    if (!url) {
-      result.style.color = '#dc2626';
-      result.textContent = 'MAC Reset is unavailable.';
-      return;
-    }
-
-    button.disabled = true;
-    result.style.color = '#475569';
-    result.textContent = 'Resetting voucher MAC...';
-
-    try {
-      var response = await fetch(url, {
-        method: 'POST',
-        mode: 'cors',
-        credentials: 'omit',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
-        },
-        body: 'voucher_code=' + encodeURIComponent(code)
-      });
-
-      var data = {};
-
-      try {
-        data = await response.json();
-      } catch (_) {
-        data = {};
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          data.message || 'MAC Reset failed. Please try again.'
-        );
-      }
-
-      result.style.color = '#15803d';
-      result.textContent =
-        data.message ||
-        'MAC reset successful. You can now login on the new device.';
-    } catch (error) {
-      result.style.color = '#dc2626';
-      result.textContent =
-        error && error.message
-          ? error.message
-          : 'MAC Reset failed. Please try again.';
-    } finally {
-      button.disabled = false;
-    }
-  });
-})();
-</script>
-HTML;
-
-        if (
-            !str_contains(
-                $contents,
-                '</body>'
-            )
-        ) {
-            throw new RuntimeException(
-                'Portal closing body tag is missing.'
-            );
-        }
-
-        return str_replace(
-            '</body>',
-            $script
-            . "
-</body>",
-            $contents
+        return $this->appendMacResetModal(
+            $contents,
+            'mac-reset-btn'
         );
     }
 
     /*
      * MAIN_HOTSPOT_STATUS_MAC_RESET_V1
-     *
-     * The logged-in status page must use the same
-     * real backend reset as the login page.
      */
     private function injectStatusMacReset(
         string $contents,
@@ -716,15 +618,9 @@ HTML;
   id="status-mac-reset-btn"
   type="button"
   data-reset-url="{$safeUrl}"
-  data-voucher="\$(username)"
 >
-  ↻ MAC Reset / Release Voucher
+  ↻ <span data-i18n="release">MAC Reset / Release Voucher</span>
 </button>
-<div
-  id="status-mac-reset-result"
-  style="margin-top:10px;font-size:14px;font-weight:700"
-  aria-live="polite"
-></div>
 HTML;
 
         $contents =
@@ -734,10 +630,6 @@ HTML;
                 $contents
             );
 
-        /*
-         * Do not let old portal.js translation describe
-         * this as cookie-only release.
-         */
         $contents =
             str_replace(
                 'data-i18n="release_desc"',
@@ -748,139 +640,20 @@ HTML;
         $contents =
             str_replace(
                 'Log out this device and erase the Hotspot browser cookie so the voucher is ready for another device.',
-                'Clear this voucher MAC binding and disconnect this device so the voucher can be used on another device.',
+                'Check the voucher and review its current device before resetting.',
                 $contents
             );
 
-        $script = <<<'HTML'
-<script>
-(function () {
-  var button =
-    document.getElementById(
-      'status-mac-reset-btn'
-    );
-
-  var result =
-    document.getElementById(
-      'status-mac-reset-result'
-    );
-
-  if (!button || !result) {
-    return;
-  }
-
-  button.addEventListener(
-    'click',
-    async function () {
-      var code =
-        (
-          button.getAttribute(
-            'data-voucher'
-          )
-          || ''
-        )
-          .replace(/\D/g, '')
-          .slice(0, 6);
-
-      if (!/^[0-9]{6}$/.test(code)) {
-        result.style.color =
-          '#dc2626';
-
-        result.textContent =
-          'Voucher Code is unavailable.';
-
-        return;
-      }
-
-      var url =
-        button.getAttribute(
-          'data-reset-url'
+        return $this->appendMacResetModal(
+            $contents,
+            'status-mac-reset-btn'
         );
-
-      if (!url) {
-        result.style.color =
-          '#dc2626';
-
-        result.textContent =
-          'MAC Reset is unavailable.';
-
-        return;
-      }
-
-      button.disabled = true;
-
-      result.style.color =
-        '#475569';
-
-      result.textContent =
-        'Resetting voucher MAC...';
-
-      try {
-        var response =
-          await fetch(
-            url,
-            {
-              method: 'POST',
-              mode: 'cors',
-              credentials: 'omit',
-              headers: {
-                'Accept':
-                  'application/json',
-
-                'Content-Type':
-                  'application/x-www-form-urlencoded;charset=UTF-8'
-              },
-
-              body:
-                'voucher_code='
-                + encodeURIComponent(
-                    code
-                  )
-            }
-          );
-
-        var data = {};
-
-        try {
-          data =
-            await response.json();
-        } catch (_) {
-          data = {};
-        }
-
-        if (!response.ok) {
-          throw new Error(
-            data.message
-            || 'MAC Reset failed. Please try again.'
-          );
-        }
-
-        result.style.color =
-          '#15803d';
-
-        result.textContent =
-          data.message
-          || 'MAC reset successful.';
-
-      } catch (error) {
-        result.style.color =
-          '#dc2626';
-
-        result.textContent =
-          error
-          && error.message
-            ? error.message
-            : 'MAC Reset failed. Please try again.';
-
-      } finally {
-        button.disabled = false;
-      }
     }
-  );
-})();
-</script>
-HTML;
 
+    private function appendMacResetModal(
+        string $contents,
+        string $triggerId
+    ): string {
         if (
             !str_contains(
                 $contents,
@@ -888,13 +661,626 @@ HTML;
             )
         ) {
             throw new RuntimeException(
-                'Status closing body tag is missing.'
+                'Portal closing body tag is missing.'
             );
         }
 
+        $safeTrigger =
+            htmlspecialchars(
+                $triggerId,
+                ENT_QUOTES
+                | ENT_SUBSTITUTE,
+                'UTF-8'
+            );
+
+        $ui = <<<HTML
+<div
+  id="voucher-reset-modal"
+  style="
+    display:none;
+    position:fixed;
+    inset:0;
+    z-index:99999;
+    background:rgba(15,23,42,.72);
+    padding:18px;
+    align-items:center;
+    justify-content:center;
+  "
+>
+  <div
+    style="
+      width:100%;
+      max-width:430px;
+      max-height:90vh;
+      overflow:auto;
+      background:#fff;
+      border-radius:20px;
+      padding:22px;
+      box-shadow:0 24px 70px rgba(0,0,0,.28);
+      color:#0f172a;
+      text-align:left;
+    "
+  >
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div>
+        <div style="font-size:20px;font-weight:800">
+          MAC Reset / Release Voucher
+        </div>
+        <div style="margin-top:4px;font-size:13px;color:#64748b">
+          Verify the voucher before any reset is performed.
+        </div>
+      </div>
+
+      <button
+        id="voucher-reset-close"
+        type="button"
+        aria-label="Close"
+        style="
+          border:0;
+          background:#f1f5f9;
+          width:36px;
+          height:36px;
+          border-radius:50%;
+          font-size:22px;
+          cursor:pointer;
+        "
+      >×</button>
+    </div>
+
+    <div
+      id="voucher-reset-check-step"
+      style="margin-top:20px"
+    >
+      <label
+        for="voucher-reset-code"
+        style="
+          display:block;
+          font-size:13px;
+          font-weight:700;
+          margin-bottom:7px;
+        "
+      >
+        6-digit Voucher Code
+      </label>
+
+      <input
+        id="voucher-reset-code"
+        type="text"
+        inputmode="numeric"
+        pattern="[0-9]{6}"
+        minlength="6"
+        maxlength="6"
+        autocomplete="one-time-code"
+        placeholder="Enter 6-digit voucher"
+        style="
+          width:100%;
+          box-sizing:border-box;
+          border:1px solid #cbd5e1;
+          border-radius:12px;
+          padding:13px 14px;
+          font-size:18px;
+          letter-spacing:3px;
+          text-align:center;
+          outline:none;
+        "
+      >
+
+      <button
+        id="voucher-reset-check"
+        type="button"
+        class="btn btn-primary"
+        style="width:100%;margin-top:12px"
+      >
+        Check Voucher
+      </button>
+    </div>
+
+    <div
+      id="voucher-device-info"
+      style="
+        display:none;
+        margin-top:18px;
+        border:1px solid #e2e8f0;
+        border-radius:15px;
+        overflow:hidden;
+      "
+    >
+      <div
+        style="
+          padding:12px 14px;
+          background:#f8fafc;
+          font-size:14px;
+          font-weight:800;
+        "
+      >
+        Current Device Information
+      </div>
+
+      <div style="padding:12px 14px;font-size:14px">
+        <div style="display:flex;justify-content:space-between;gap:14px;margin:7px 0">
+          <span style="color:#64748b">Status</span>
+          <strong id="reset-info-status">—</strong>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;gap:14px;margin:7px 0">
+          <span style="color:#64748b">MAC Address</span>
+          <strong id="reset-info-mac">—</strong>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;gap:14px;margin:7px 0">
+          <span style="color:#64748b">IP Address</span>
+          <strong id="reset-info-ip">—</strong>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;gap:14px;margin:7px 0">
+          <span style="color:#64748b">Login By</span>
+          <strong id="reset-info-login">—</strong>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;gap:14px;margin:7px 0">
+          <span style="color:#64748b">Uptime</span>
+          <strong id="reset-info-uptime">—</strong>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;gap:14px;margin:7px 0">
+          <span style="color:#64748b">Hotspot</span>
+          <strong id="reset-info-server">—</strong>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;gap:14px;margin:7px 0">
+          <span style="color:#64748b">Router</span>
+          <strong id="reset-info-router">—</strong>
+        </div>
+      </div>
+    </div>
+
+    <button
+      id="voucher-reset-confirm"
+      type="button"
+      class="btn btn-outline-danger"
+      style="
+        display:none;
+        width:100%;
+        margin-top:14px;
+      "
+    >
+      ↻ Reset Voucher
+    </button>
+
+    <div
+      id="voucher-reset-message"
+      aria-live="polite"
+      style="
+        min-height:20px;
+        margin-top:12px;
+        font-size:13px;
+        font-weight:700;
+        text-align:center;
+      "
+    ></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var trigger =
+    document.getElementById(
+      '{$safeTrigger}'
+    );
+
+  var modal =
+    document.getElementById(
+      'voucher-reset-modal'
+    );
+
+  var closeButton =
+    document.getElementById(
+      'voucher-reset-close'
+    );
+
+  var codeInput =
+    document.getElementById(
+      'voucher-reset-code'
+    );
+
+  var checkButton =
+    document.getElementById(
+      'voucher-reset-check'
+    );
+
+  var confirmButton =
+    document.getElementById(
+      'voucher-reset-confirm'
+    );
+
+  var deviceBox =
+    document.getElementById(
+      'voucher-device-info'
+    );
+
+  var message =
+    document.getElementById(
+      'voucher-reset-message'
+    );
+
+  if (
+    !trigger
+    || !modal
+    || !codeInput
+    || !checkButton
+    || !confirmButton
+    || !message
+  ) {
+    return;
+  }
+
+  var confirmationToken = '';
+  var verifiedCode = '';
+
+  function setMessage(
+    text,
+    success
+  ) {
+    message.style.color =
+      success
+        ? '#15803d'
+        : '#dc2626';
+
+    message.textContent =
+      text || '';
+  }
+
+  function valueOrDash(value) {
+    if (
+      value === null
+      || value === undefined
+      || value === ''
+    ) {
+      return '—';
+    }
+
+    return String(value);
+  }
+
+  function resetView() {
+    confirmationToken = '';
+    verifiedCode = '';
+
+    codeInput.value = '';
+
+    deviceBox.style.display =
+      'none';
+
+    confirmButton.style.display =
+      'none';
+
+    checkButton.disabled =
+      false;
+
+    confirmButton.disabled =
+      false;
+
+    message.textContent =
+      '';
+  }
+
+  function openModal() {
+    resetView();
+
+    modal.style.display =
+      'flex';
+
+    setTimeout(
+      function () {
+        codeInput.focus();
+      },
+      30
+    );
+  }
+
+  function closeModal() {
+    modal.style.display =
+      'none';
+
+    resetView();
+  }
+
+  async function sendRequest(payload) {
+    var url =
+      trigger.getAttribute(
+        'data-reset-url'
+      );
+
+    if (!url) {
+      throw new Error(
+        'MAC Reset is unavailable.'
+      );
+    }
+
+    var body =
+      Object.keys(payload)
+        .map(
+          function (key) {
+            return (
+              encodeURIComponent(key)
+              + '='
+              + encodeURIComponent(
+                  payload[key]
+              )
+            );
+          }
+        )
+        .join('&');
+
+    var response =
+      await fetch(
+        url,
+        {
+          method: 'POST',
+          mode: 'cors',
+          credentials: 'omit',
+
+          headers: {
+            'Accept':
+              'application/json',
+
+            'Content-Type':
+              'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+
+          body: body
+        }
+      );
+
+    var data = {};
+
+    try {
+      data =
+        await response.json();
+    } catch (_) {
+      data = {};
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        data.message
+        || 'Request failed. Please try again.'
+      );
+    }
+
+    return data;
+  }
+
+  trigger.addEventListener(
+    'click',
+    openModal
+  );
+
+  closeButton.addEventListener(
+    'click',
+    closeModal
+  );
+
+  modal.addEventListener(
+    'click',
+    function (event) {
+      if (event.target === modal) {
+        closeModal();
+      }
+    }
+  );
+
+  codeInput.addEventListener(
+    'input',
+    function () {
+      codeInput.value =
+        (codeInput.value || '')
+          .replace(/\D/g, '')
+          .slice(0, 6);
+    }
+  );
+
+  checkButton.addEventListener(
+    'click',
+    async function () {
+      var code =
+        (codeInput.value || '')
+          .replace(/\D/g, '')
+          .slice(0, 6);
+
+      codeInput.value =
+        code;
+
+      if (!/^[0-9]{6}$/.test(code)) {
+        setMessage(
+          'Enter a valid 6-digit Voucher Code.',
+          false
+        );
+
+        codeInput.focus();
+        return;
+      }
+
+      checkButton.disabled =
+        true;
+
+      confirmationToken = '';
+      verifiedCode = '';
+
+      deviceBox.style.display =
+        'none';
+
+      confirmButton.style.display =
+        'none';
+
+      message.style.color =
+        '#475569';
+
+      message.textContent =
+        'Checking voucher and current device...';
+
+      try {
+        var data =
+          await sendRequest({
+            action: 'inspect',
+            voucher_code: code
+          });
+
+        var device =
+          data.device || {};
+
+        verifiedCode =
+          code;
+
+        confirmationToken =
+          data.confirm_token
+          || '';
+
+        document.getElementById(
+          'reset-info-status'
+        ).textContent =
+          device.online
+            ? 'Online'
+            : 'Offline';
+
+        document.getElementById(
+          'reset-info-mac'
+        ).textContent =
+          valueOrDash(
+            device.mac_address
+          );
+
+        document.getElementById(
+          'reset-info-ip'
+        ).textContent =
+          valueOrDash(
+            device.ip_address
+          );
+
+        document.getElementById(
+          'reset-info-login'
+        ).textContent =
+          valueOrDash(
+            device.login_by
+          );
+
+        document.getElementById(
+          'reset-info-uptime'
+        ).textContent =
+          valueOrDash(
+            device.uptime
+          );
+
+        document.getElementById(
+          'reset-info-server'
+        ).textContent =
+          valueOrDash(
+            device.hotspot_server
+          );
+
+        document.getElementById(
+          'reset-info-router'
+        ).textContent =
+          valueOrDash(
+            device.router_name
+          );
+
+        deviceBox.style.display =
+          'block';
+
+        confirmButton.style.display =
+          'block';
+
+        setMessage(
+          'Voucher verified. Check the device information, then tap Reset Voucher.',
+          true
+        );
+
+      } catch (error) {
+        setMessage(
+          error && error.message
+            ? error.message
+            : 'Voucher check failed.',
+          false
+        );
+
+      } finally {
+        checkButton.disabled =
+          false;
+      }
+    }
+  );
+
+  confirmButton.addEventListener(
+    'click',
+    async function () {
+      if (
+        !verifiedCode
+        || !confirmationToken
+      ) {
+        setMessage(
+          'Check the voucher again before resetting.',
+          false
+        );
+
+        return;
+      }
+
+      confirmButton.disabled =
+        true;
+
+      message.style.color =
+        '#475569';
+
+      message.textContent =
+        'Resetting voucher...';
+
+      try {
+        var data =
+          await sendRequest({
+            action: 'reset',
+            voucher_code:
+              verifiedCode,
+            confirm_token:
+              confirmationToken
+          });
+
+        confirmationToken =
+          '';
+
+        deviceBox.style.display =
+          'none';
+
+        confirmButton.style.display =
+          'none';
+
+        setMessage(
+          data.message
+          || 'Voucher reset successful.',
+          true
+        );
+
+      } catch (error) {
+        setMessage(
+          error && error.message
+            ? error.message
+            : 'Voucher reset failed.',
+          false
+        );
+
+      } finally {
+        confirmButton.disabled =
+          false;
+      }
+    }
+  );
+})();
+</script>
+HTML;
+
         return str_replace(
             '</body>',
-            $script
+            $ui
             . "\n</body>",
             $contents
         );

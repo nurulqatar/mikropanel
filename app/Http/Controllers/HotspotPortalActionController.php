@@ -19,6 +19,17 @@ class HotspotPortalActionController extends Controller
     /*
      * MAIN_HOTSPOT_PUBLIC_MAC_RESET_V1
      */
+    /*
+     * MAIN_HOTSPOT_TWO_STEP_MAC_RESET_V1
+     *
+     * Step 1: inspect
+     *   Voucher Code -> current device/session info
+     *   -> short-lived confirmation token.
+     *
+     * Step 2: reset
+     *   Voucher Code + confirmation token
+     *   -> clear RouterOS MAC + disconnect old session.
+     */
     public function resetMac(
         Request $request,
         int $router,
@@ -61,6 +72,33 @@ class HotspotPortalActionController extends Controller
             );
         }
 
+        $action =
+            strtolower(
+                trim(
+                    (string)
+                    $request->input(
+                        'action',
+                        'inspect'
+                    )
+                )
+            );
+
+        if (
+            !in_array(
+                $action,
+                [
+                    'inspect',
+                    'reset',
+                ],
+                true
+            )
+        ) {
+            return $this->reply(
+                'Invalid MAC reset action.',
+                422
+            );
+        }
+
         $code =
             preg_replace(
                 '/\D+/',
@@ -85,84 +123,85 @@ class HotspotPortalActionController extends Controller
             );
         }
 
-        /*
-         * Two rate-limit layers:
-         *
-         * - router + source IP
-         * - router + voucher code
-         *
-         * The voucher code itself is never stored
-         * in the rate-limit key in plain text.
-         */
         $ip =
             (string) (
                 $request->ip()
                 ?: 'unknown'
             );
 
-        $ipKey =
-            'hotspot-mac-reset:ip:'
-            . $routerModel->id
-            . ':'
-            . hash(
+        $ipHash =
+            hash(
                 'sha256',
                 $ip
             );
 
-        $voucherKey =
-            'hotspot-mac-reset:voucher:'
-            . $routerModel->id
-            . ':'
-            . hash(
-                'sha256',
-                $code
-            );
+        /*
+         * Voucher discovery is protected here.
+         * The actual reset cannot happen without
+         * the short-lived confirmation token.
+         */
+        if ($action === 'inspect') {
+            $ipKey =
+                'hotspot-mac-reset:ip:'
+                . $routerModel->id
+                . ':'
+                . $ipHash;
 
-        if (
-            RateLimiter::tooManyAttempts(
+            $voucherKey =
+                'hotspot-mac-reset:voucher:'
+                . $routerModel->id
+                . ':'
+                . hash(
+                    'sha256',
+                    $code
+                );
+
+            if (
+                RateLimiter::tooManyAttempts(
+                    $ipKey,
+                    30
+                )
+            ) {
+                return $this->reply(
+                    'Too many voucher checks. Try again shortly.',
+                    429,
+                    [
+                        'retry_after' =>
+                            RateLimiter::availableIn(
+                                $ipKey
+                            ),
+                    ]
+                );
+            }
+
+            if (
+                RateLimiter::tooManyAttempts(
+                    $voucherKey,
+                    5
+                )
+            ) {
+                return $this->reply(
+                    'Too many checks for this voucher. Try again shortly.',
+                    429,
+                    [
+                        'retry_after' =>
+                            RateLimiter::availableIn(
+                                $voucherKey
+                            ),
+                    ]
+                );
+            }
+
+            RateLimiter::hit(
                 $ipKey,
-                30
-            )
-        ) {
-            return $this->reply(
-                'Too many reset attempts. Try again shortly.',
-                429,
-                [
-                    'retry_after' =>
-                        RateLimiter::availableIn(
-                            $ipKey
-                        ),
-                ]
+                60
             );
-        }
 
-        if (
-            RateLimiter::tooManyAttempts(
+            RateLimiter::hit(
                 $voucherKey,
-                5
-            )
-        ) {
-            return $this->reply(
-                'Too many reset attempts for this voucher. Try again shortly.',
-                429,
-                [
-                    'retry_after' =>
-                        RateLimiter::availableIn(
-                            $voucherKey
-                        ),
-                ]
+                60
             );
         }
-
-        RateLimiter::hit(
-            $ipKey,
-            60
-        );
-
-        RateLimiter::hit(
-            $voucherKey,
-            60
-        );
 
         $serverIds =
             HotspotServer::withoutGlobalScopes()
@@ -174,7 +213,7 @@ class HotspotPortalActionController extends Controller
 
         if ($serverIds->isEmpty()) {
             return $this->reply(
-                'Voucher could not be reset.',
+                'Voucher could not be verified.',
                 422
             );
         }
@@ -204,10 +243,6 @@ class HotspotPortalActionController extends Controller
                 )
                 ->first();
 
-        /*
-         * Keep the public response generic so the
-         * endpoint is not useful for voucher discovery.
-         */
         if (
             !$voucher
             || (
@@ -218,19 +253,156 @@ class HotspotPortalActionController extends Controller
             )
         ) {
             return $this->reply(
-                'Voucher could not be reset.',
+                'Voucher could not be verified.',
                 422
             );
         }
 
+        if ($action === 'inspect') {
+            try {
+                $device =
+                    $routerService
+                        ->voucherDeviceInfo(
+                            $voucher
+                        );
+
+                $confirmToken =
+                    bin2hex(
+                        random_bytes(32)
+                    );
+
+                $cacheKey =
+                    'hotspot-mac-reset-confirm:'
+                    . hash(
+                        'sha256',
+                        $confirmToken
+                    );
+
+                \Illuminate\Support\Facades\Cache::put(
+                    $cacheKey,
+                    [
+                        'router_id' =>
+                            (int)
+                            $routerModel->id,
+
+                        'voucher_id' =>
+                            (int)
+                            $voucher->id,
+
+                        'ip_hash' =>
+                            $ipHash,
+                    ],
+                    now()->addSeconds(
+                        120
+                    )
+                );
+
+                return $this->reply(
+                    'Voucher verified. Review the current device before resetting.',
+                    200,
+                    [
+                        'success' =>
+                            true,
+
+                        'action' =>
+                            'inspect',
+
+                        'voucher' => [
+                            'code' =>
+                                $code,
+
+                            'status' =>
+                                $voucher->status,
+
+                            'expires_at' =>
+                                $voucher
+                                    ->expires_at
+                                    ?->toIso8601String(),
+                        ],
+
+                        'device' =>
+                            $device,
+
+                        'confirm_token' =>
+                            $confirmToken,
+
+                        'confirm_expires_in' =>
+                            120,
+                    ]
+                );
+
+            } catch (Throwable $exception) {
+                report(
+                    $exception
+                );
+
+                return $this->reply(
+                    'Router is temporarily unavailable. Current device information could not be loaded.',
+                    503
+                );
+            }
+        }
+
+        $confirmToken =
+            strtolower(
+                trim(
+                    (string)
+                    $request->input(
+                        'confirm_token',
+                        ''
+                    )
+                )
+            );
+
+        if (
+            !preg_match(
+                '/^[a-f0-9]{64}$/',
+                $confirmToken
+            )
+        ) {
+            return $this->reply(
+                'Check the voucher again before resetting.',
+                409
+            );
+        }
+
+        $cacheKey =
+            'hotspot-mac-reset-confirm:'
+            . hash(
+                'sha256',
+                $confirmToken
+            );
+
+        $confirmation =
+            \Illuminate\Support\Facades\Cache::get(
+                $cacheKey
+            );
+
+        if (
+            !is_array($confirmation)
+            || (int) (
+                $confirmation['router_id']
+                ?? 0
+            ) !== (int) $routerModel->id
+            || (int) (
+                $confirmation['voucher_id']
+                ?? 0
+            ) !== (int) $voucher->id
+            || !hash_equals(
+                (string) (
+                    $confirmation['ip_hash']
+                    ?? ''
+                ),
+                $ipHash
+            )
+        ) {
+            return $this->reply(
+                'The reset confirmation expired. Check the voucher again.',
+                409
+            );
+        }
+
         try {
-            /*
-             * First clear RouterOS and disconnect
-             * any currently active session.
-             *
-             * If the router cannot be reached,
-             * the database remains unchanged.
-             */
             $routerUserFound =
                 $routerService
                     ->resetVoucherMac(
@@ -252,23 +424,25 @@ class HotspotPortalActionController extends Controller
                         now(),
                 ]);
 
-            /*
-             * Always queue normal provisioning as a
-             * convergence pass. This also handles the
-             * unusual case where the RouterOS user did
-             * not exist yet.
-             */
             ProvisionHotspotVoucher::dispatch(
                 $voucher->id
             );
 
+            \Illuminate\Support\Facades\Cache::forget(
+                $cacheKey
+            );
+
             return $this->reply(
                 $routerUserFound
-                    ? 'MAC reset successful. You can now use this voucher on the new device.'
-                    : 'MAC reset accepted. Router synchronization has been queued.',
+                    ? 'Voucher reset successful. You can now use it on the new device.'
+                    : 'Voucher reset accepted. Router synchronization has been queued.',
                 200,
                 [
-                    'success' => true,
+                    'success' =>
+                        true,
+
+                    'action' =>
+                        'reset',
                 ]
             );
 
@@ -278,7 +452,7 @@ class HotspotPortalActionController extends Controller
             );
 
             return $this->reply(
-                'Router is temporarily unavailable. Please try again.',
+                'Router is temporarily unavailable. Voucher was not reset.',
                 503
             );
         }
