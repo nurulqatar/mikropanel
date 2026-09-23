@@ -9,6 +9,7 @@ use App\Http\Controllers\HotspotBrandingController;
 use App\Http\Controllers\HotspotReportController;
 use App\Http\Controllers\HotspotVoucherDocumentController;
 use App\Http\Controllers\HotspotVoucherController;
+use App\Http\Controllers\HotspotSellerController;
 use Inertia\Inertia;
 use App\Http\Controllers\RouterController;
 use App\Http\Controllers\RouterWireGuardController;
@@ -390,6 +391,69 @@ Route::get(
     Route::prefix('hotspot')
         ->name('hotspot.')
         ->group(function () {
+
+            /*
+             * HOTSPOT_SELLER_LEDGER_V1
+             */
+            Route::get(
+                'sellers',
+                [
+                    HotspotSellerController::class,
+                    'index',
+                ]
+            )->name(
+                'sellers.index'
+            );
+
+            Route::post(
+                'sellers',
+                [
+                    HotspotSellerController::class,
+                    'store',
+                ]
+            )->name(
+                'sellers.store'
+            );
+
+            Route::put(
+                'sellers/{seller}',
+                [
+                    HotspotSellerController::class,
+                    'update',
+                ]
+            )->name(
+                'sellers.update'
+            );
+
+            Route::post(
+                'sellers/{seller}/collections',
+                [
+                    HotspotSellerController::class,
+                    'collect',
+                ]
+            )->name(
+                'sellers.collections.store'
+            );
+
+            Route::post(
+                'seller-assignments/batch',
+                [
+                    HotspotSellerController::class,
+                    'assignBatch',
+                ]
+            )->name(
+                'sellers.assign-batch'
+            );
+
+            Route::post(
+                'seller-assignments/voucher',
+                [
+                    HotspotSellerController::class,
+                    'assignVoucher',
+                ]
+            )->name(
+                'sellers.assign-voucher'
+            );
             Route::get(
                 '/',
                 [

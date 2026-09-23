@@ -23,6 +23,7 @@ class HotspotVoucher extends Model
 
     protected $fillable = [
         'hotspot_batch_id',
+        'hotspot_seller_id',
         'hotspot_server_id',
         'hotspot_plan_id',
         'username',
@@ -50,6 +51,15 @@ class HotspotVoucher extends Model
         'bytes_in' => 'integer',
         'bytes_out' => 'integer',
     ];
+
+    /* HOTSPOT_SELLER_LEDGER_V1 */
+    public function seller(): BelongsTo
+    {
+        return $this->belongsTo(
+            HotspotSeller::class,
+            'hotspot_seller_id'
+        );
+    }
 
     public function server(): BelongsTo
     {

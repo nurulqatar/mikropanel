@@ -15,6 +15,11 @@ use Throwable;
 
 class HotspotRouterService
 {
+    public function __construct(
+        private readonly HotspotBillingService $billing
+    ) {
+    }
+
     public function discover(
         Router $router
     ): array {
@@ -683,18 +688,23 @@ class HotspotRouterService
                     }
                 }
 
-                if (!$voucher->activated_at) {
-                    $voucher->loadMissing(
-                        'plan'
-                    );
+                $voucher->loadMissing(
+                    'plan'
+                );
 
-                    /*
-                     * HOTSPOT_FIRST_LOGIN_AUTO_SALE_V2
-                     *
-                     * RouterOS uptime gives us the
-                     * actual session start time,
-                     * not merely the polling time.
-                     */
+                if (!$voucher->plan) {
+                    throw new \RuntimeException(
+                        'Hotspot voucher plan is missing.'
+                    );
+                }
+
+                /*
+                 * HOTSPOT_SELLER_FIRST_LOGIN_PAID_V1
+                 *
+                 * First actual RouterOS session starts the
+                 * validity and records a fully-paid sale.
+                 */
+                if (!$voucher->activated_at) {
                     $sessionUptime =
                         $this->durationToSeconds(
                             $row['uptime']
@@ -720,20 +730,14 @@ class HotspotRouterService
                                     ->validitySeconds()
                             );
 
-                    $voucher->forceFill([
-                        'sold_at' =>
-                            $voucher->sold_at
-                            ?? $firstLoginAt,
-
-                        'activated_at' =>
+                    $this->billing
+                        ->recordFirstLoginPaidSale(
+                            $voucher,
                             $firstLoginAt,
+                            $expiry
+                        );
 
-                        'expires_at' =>
-                            $expiry,
-
-                        'status' =>
-                            'active',
-                    ]);
+                    $voucher->refresh();
                 }
 
                 $voucher->forceFill([

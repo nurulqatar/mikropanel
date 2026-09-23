@@ -12,6 +12,7 @@ class HotspotBatch extends Model
         'batch_code',
         'hotspot_server_id',
         'hotspot_plan_id',
+        'hotspot_seller_id',
         'quantity',
         'prefix',
         'status',
@@ -21,6 +22,15 @@ class HotspotBatch extends Model
     protected $casts = [
         'quantity' => 'integer',
     ];
+
+    /* HOTSPOT_SELLER_LEDGER_V1 */
+    public function seller(): BelongsTo
+    {
+        return $this->belongsTo(
+            HotspotSeller::class,
+            'hotspot_seller_id'
+        );
+    }
 
     public function server(): BelongsTo
     {

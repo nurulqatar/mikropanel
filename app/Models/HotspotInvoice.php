@@ -10,6 +10,7 @@ class HotspotInvoice extends Model
 {
     protected $fillable = [
         'hotspot_voucher_id',
+        'hotspot_seller_id',
         'invoice_no',
         'invoice_type',
         'amount',
@@ -35,6 +36,15 @@ class HotspotInvoice extends Model
         'service_from' => 'datetime',
         'service_until' => 'datetime',
     ];
+
+    /* HOTSPOT_SELLER_LEDGER_V1 */
+    public function seller(): BelongsTo
+    {
+        return $this->belongsTo(
+            HotspotSeller::class,
+            'hotspot_seller_id'
+        );
+    }
 
     public function voucher(): BelongsTo
     {

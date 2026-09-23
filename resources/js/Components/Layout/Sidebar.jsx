@@ -181,6 +181,12 @@ function ResellerSidebar({
             permission: 'hotspot.view',
         },
         {
+            label: 'Sellers & Collections',
+            route: 'hotspot.sellers.index',
+            active: 'hotspot.sellers.*',
+            permission: 'hotspot.manage',
+        },
+        {
             label: 'Live Sessions',
             route: 'hotspot.sessions.index',
             active: 'hotspot.sessions.*',
