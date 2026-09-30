@@ -7,6 +7,7 @@ use App\Models\Client;
 use App\Models\Expense;
 use App\Models\HotspotInvoice;
 use App\Models\HotspotPayment;
+use App\Models\HotspotSellerCollection;
 use App\Models\HotspotSession;
 use App\Models\HotspotVoucher;
 use App\Models\Invoice;
@@ -130,7 +131,7 @@ class DashboardController extends Controller
                     'amount'
                 );
 
-        $hotspotCollection =
+        $directHotspotCollection =
             (float)
             HotspotPayment::query()
                 ->whereDate(
@@ -141,6 +142,26 @@ class DashboardController extends Controller
                 ->sum(
                     'amount'
                 );
+
+        $sellerHotspotCollection =
+            (float)
+            HotspotSellerCollection::query()
+                ->whereDate(
+                    'collected_at',
+                    $today
+                        ->toDateString()
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $hotspotCollection =
+            round(
+                $directHotspotCollection
+                + $sellerHotspotCollection,
+                2
+            );
+
 
         return Inertia::render(
             'Reseller/Dashboard',

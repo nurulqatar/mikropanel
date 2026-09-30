@@ -209,23 +209,47 @@ class HotspotPortalPackageService
 
         File::ensureDirectoryExists(
             $directory,
-            0750,
+            0770,
             true
         );
 
-        $path =
-            tempnam(
-                $directory,
-                'portal-'
-            );
+        /*
+         * Never allow tempnam() to silently fall
+         * back to system /tmp. Laravel converts
+         * that warning into an exception.
+         *
+         * If an old deployment created the child
+         * directory with wrong ownership, use the
+         * writable application tmp parent.
+         */
+        if (!is_writable($directory)) {
+            $directory =
+                storage_path(
+                    'app/tmp'
+                );
 
-        if ($path === false) {
+            File::ensureDirectoryExists(
+                $directory,
+                0770,
+                true
+            );
+        }
+
+        if (!is_writable($directory)) {
             $source->close();
 
             throw new RuntimeException(
-                'Unable to create temporary package.'
+                'Hotspot package temporary directory is not writable.'
             );
         }
+
+        $path =
+            $directory
+            . DIRECTORY_SEPARATOR
+            . 'portal-'
+            . Str::uuid()
+                ->toString()
+            . '.zip';
 
         $output =
             new ZipArchive();

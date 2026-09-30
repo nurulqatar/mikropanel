@@ -13,6 +13,8 @@ use App\Models\HotspotBranding;
 use App\Models\HotspotInvoice;
 use App\Models\HotspotPayment;
 use App\Models\HotspotPlan;
+use App\Models\HotspotSeller;
+use App\Models\HotspotSellerCollection;
 use App\Models\HotspotServer;
 use App\Models\HotspotSession;
 use App\Models\HotspotVoucher;
@@ -279,6 +281,8 @@ class ResellerTenancyServiceProvider extends ServiceProvider
             HotspotVoucher::class,
             HotspotInvoice::class,
             HotspotPayment::class,
+            HotspotSeller::class,
+            HotspotSellerCollection::class,
             HotspotSession::class,
         ];
 

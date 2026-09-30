@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Client;
 use App\Models\ClientRefund;
 use App\Models\Expense;
+use App\Models\HotspotInvoice;
+use App\Models\HotspotPayment;
+use App\Models\HotspotSellerCollection;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\NetworkZone;
@@ -174,19 +177,83 @@ class AccountingController extends Controller
                 $endDate,
             ]);
 
-        $grossBilled = round(
-            (float) (
-                clone $invoiceQuery
-            )->sum('amount'),
-            2
-        );
+        $normalGrossBilled =
+            round(
+                (float) (
+                    clone $invoiceQuery
+                )->sum(
+                    'amount'
+                ),
+                2
+            );
 
-        $discount = round(
-            (float) (
-                clone $invoiceQuery
-            )->sum('discount'),
-            2
-        );
+        $hotspotGrossBilled =
+            round(
+                (float)
+                HotspotInvoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->whereBetween(
+                        'issue_date',
+                        [
+                            $startDate,
+                            $endDate,
+                        ]
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $grossBilled =
+            round(
+                $normalGrossBilled
+                + $hotspotGrossBilled,
+                2
+            );
+
+        $normalDiscount =
+            round(
+                (float) (
+                    clone $invoiceQuery
+                )->sum(
+                    'discount'
+                ),
+                2
+            );
+
+        $hotspotDiscount =
+            round(
+                (float)
+                HotspotInvoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->whereBetween(
+                        'issue_date',
+                        [
+                            $startDate,
+                            $endDate,
+                        ]
+                    )
+                    ->sum(
+                        'discount'
+                    ),
+                2
+            );
+
+        $discount =
+            round(
+                $normalDiscount
+                + $hotspotDiscount,
+                2
+            );
 
         $netBilled = max(
             0,
@@ -196,12 +263,112 @@ class AccountingController extends Controller
             )
         );
 
-        $collection = round(
-            (float) (
-                clone $paymentQuery
-            )->sum('amount'),
-            2
-        );
+        $normalCollection =
+            round(
+                (float) (
+                    clone $paymentQuery
+                )->sum(
+                    'amount'
+                ),
+                2
+            );
+
+        $directHotspotCollection =
+            round(
+                (float)
+                HotspotPayment::query()
+                    ->whereBetween(
+                        'payment_date',
+                        [
+                            $startDate,
+                            $endDate,
+                        ]
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $sellerCollection =
+            round(
+                (float)
+                HotspotSellerCollection::query()
+                    ->whereDate(
+                        'collected_at',
+                        '>=',
+                        $startDate
+                    )
+                    ->whereDate(
+                        'collected_at',
+                        '<=',
+                        $endDate
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $collection =
+            round(
+                $normalCollection
+                + $directHotspotCollection
+                + $sellerCollection,
+                2
+            );
+
+        /*
+         * Customer has already paid seller vouchers.
+         * Until seller cash is handed to company this
+         * is a seller receivable, not customer due.
+         */
+        $sellerSalesAllTime =
+            (float)
+            HotspotInvoice::query()
+                ->whereNotNull(
+                    'hotspot_seller_id'
+                )
+                ->where(
+                    'invoice_type',
+                    'sale'
+                )
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->selectRaw(
+                    '
+                        COALESCE(
+                            SUM(
+                                amount
+                                - discount
+                            ),
+                            0
+                        ) AS total
+                    '
+                )
+                ->value(
+                    'total'
+                );
+
+        $sellerCollectedAllTime =
+            (float)
+            HotspotSellerCollection::query()
+                ->sum(
+                    'amount'
+                );
+
+        $sellerOutstanding =
+            max(
+                0,
+                round(
+                    $sellerSalesAllTime
+                    - $sellerCollectedAllTime,
+                    2
+                )
+            );
 
         $refundsTotal =
             round(
@@ -237,28 +404,157 @@ class AccountingController extends Controller
             2
         );
 
-        $periodDue = round(
-            (float) (
-                clone $invoiceQuery
-            )->sum('due_amount'),
-            2
-        );
+        $normalPeriodDue =
+            round(
+                (float) (
+                    clone $invoiceQuery
+                )->sum(
+                    'due_amount'
+                ),
+                2
+            );
 
-        $currentReceivable = round(
-            (float) Invoice::query()
+        $hotspotPeriodDue =
+            round(
+                (float)
+                HotspotInvoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->whereBetween(
+                        'issue_date',
+                        [
+                            $startDate,
+                            $endDate,
+                        ]
+                    )
+                    ->sum(
+                        'due_amount'
+                    ),
+                2
+            );
+
+        $sellerPeriodSales =
+            (float)
+            HotspotInvoice::query()
+                ->whereNotNull(
+                    'hotspot_seller_id'
+                )
+                ->where(
+                    'invoice_type',
+                    'sale'
+                )
                 ->where(
                     'status',
                     '!=',
                     'cancelled'
                 )
-                ->where(
-                    'due_amount',
-                    '>',
-                    0
+                ->whereBetween(
+                    'issue_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
                 )
-                ->sum('due_amount'),
-            2
-        );
+                ->selectRaw(
+                    '
+                        COALESCE(
+                            SUM(
+                                amount
+                                - discount
+                            ),
+                            0
+                        ) AS total
+                    '
+                )
+                ->value(
+                    'total'
+                );
+
+        $sellerPeriodCollected =
+            (float)
+            HotspotSellerCollection::query()
+                ->whereDate(
+                    'collected_at',
+                    '>=',
+                    $startDate
+                )
+                ->whereDate(
+                    'collected_at',
+                    '<=',
+                    $endDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $sellerPeriodOutstanding =
+            max(
+                0,
+                round(
+                    $sellerPeriodSales
+                    - $sellerPeriodCollected,
+                    2
+                )
+            );
+
+        $periodDue =
+            round(
+                $normalPeriodDue
+                + $hotspotPeriodDue
+                + $sellerPeriodOutstanding,
+                2
+            );
+
+        $normalCurrentReceivable =
+            round(
+                (float)
+                Invoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->where(
+                        'due_amount',
+                        '>',
+                        0
+                    )
+                    ->sum(
+                        'due_amount'
+                    ),
+                2
+            );
+
+        $hotspotCurrentReceivable =
+            round(
+                (float)
+                HotspotInvoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->where(
+                        'due_amount',
+                        '>',
+                        0
+                    )
+                    ->sum(
+                        'due_amount'
+                    ),
+                2
+            );
+
+        $currentReceivable =
+            round(
+                $normalCurrentReceivable
+                + $hotspotCurrentReceivable
+                + $sellerOutstanding,
+                2
+            );
 
         $overdueAmount = round(
             (float) Invoice::query()
@@ -373,6 +669,23 @@ class AccountingController extends Controller
                 'collection' =>
                     $netCollection,
 
+                'hotspot_billed' =>
+                    round(
+                        $hotspotGrossBilled
+                        - $hotspotDiscount,
+                        2
+                    ),
+
+                'hotspot_collection' =>
+                    round(
+                        $directHotspotCollection
+                        + $sellerCollection,
+                        2
+                    ),
+
+                'seller_outstanding' =>
+                    $sellerOutstanding,
+
                 'expenses' =>
                     $expensesTotal,
 
@@ -394,12 +707,50 @@ class AccountingController extends Controller
                 'invoice_count' =>
                     (
                         clone $invoiceQuery
-                    )->count(),
+                    )->count()
+                    +
+                    HotspotInvoice::query()
+                        ->where(
+                            'status',
+                            '!=',
+                            'cancelled'
+                        )
+                        ->whereBetween(
+                            'issue_date',
+                            [
+                                $startDate,
+                                $endDate,
+                            ]
+                        )
+                        ->count(),
 
                 'payment_count' =>
                     (
                         clone $paymentQuery
-                    )->count(),
+                    )->count()
+                    +
+                    HotspotPayment::query()
+                        ->whereBetween(
+                            'payment_date',
+                            [
+                                $startDate,
+                                $endDate,
+                            ]
+                        )
+                        ->count()
+                    +
+                    HotspotSellerCollection::query()
+                        ->whereDate(
+                            'collected_at',
+                            '>=',
+                            $startDate
+                        )
+                        ->whereDate(
+                            'collected_at',
+                            '<=',
+                            $endDate
+                        )
+                        ->count(),
 
                 'refund_count' =>
                     (
@@ -475,58 +826,248 @@ class AccountingController extends Controller
         string $startDate,
         string $endDate
     ): Collection {
-        return Payment::query()
-            ->with([
-                'client:id,name,client_code,phone',
-                'invoice:id,invoice_no',
-            ])
-            ->whereBetween('payment_date', [
-                $startDate,
-                $endDate,
-            ])
-            ->orderByDesc('payment_date')
-            ->orderByDesc('id')
-            ->get()
-            ->map(function (
-                Payment $payment
-            ): array {
-                return [
-                    'id' => $payment->id,
+        $normal =
+            Payment::query()
+                ->with([
+                    'client:id,name,client_code,phone',
+                    'invoice:id,invoice_no',
+                ])
+                ->whereBetween(
+                    'payment_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->get()
+                ->map(
+                    function (
+                        Payment $payment
+                    ): array {
+                        return [
+                            'id' =>
+                                'client-'
+                                . $payment->id,
 
-                    'date' =>
-                        $payment->payment_date
-                            ?->format('Y-m-d'),
+                            'date' =>
+                                $payment
+                                    ->payment_date
+                                    ?->format(
+                                        'Y-m-d'
+                                    ),
 
-                    'client_id' =>
-                        $payment->client_id,
+                            'client_id' =>
+                                $payment
+                                    ->client_id,
 
-                    'client_name' =>
-                        $payment->client?->name,
+                            'client_name' =>
+                                $payment
+                                    ->client
+                                    ?->name,
 
-                    'client_code' =>
-                        $payment->client
-                            ?->client_code,
+                            'client_code' =>
+                                $payment
+                                    ->client
+                                    ?->client_code,
 
-                    'phone' =>
-                        $payment->client?->phone,
+                            'phone' =>
+                                $payment
+                                    ->client
+                                    ?->phone,
 
-                    'invoice_no' =>
-                        $payment->invoice
-                            ?->invoice_no,
+                            'invoice_no' =>
+                                $payment
+                                    ->invoice
+                                    ?->invoice_no,
 
-                    'amount' =>
-                        (float) $payment->amount,
+                            'amount' =>
+                                (float)
+                                $payment->amount,
 
-                    'method' =>
-                        $payment->payment_method,
+                            'method' =>
+                                $payment
+                                    ->payment_method,
 
-                    'transaction_id' =>
-                        $payment->transaction_id,
+                            'transaction_id' =>
+                                $payment
+                                    ->transaction_id,
 
-                    'notes' =>
-                        $payment->notes,
-                ];
-            });
+                            'notes' =>
+                                $payment->notes,
+                        ];
+                    }
+                );
+
+        $hotspot =
+            HotspotPayment::query()
+                ->with([
+                    'voucher:id,username',
+                    'invoice:id,invoice_no',
+                ])
+                ->whereBetween(
+                    'payment_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->get()
+                ->map(
+                    function (
+                        HotspotPayment $payment
+                    ): array {
+                        return [
+                            'id' =>
+                                'hotspot-'
+                                . $payment->id,
+
+                            'date' =>
+                                $payment
+                                    ->payment_date
+                                    ?->format(
+                                        'Y-m-d'
+                                    ),
+
+                            'client_id' =>
+                                null,
+
+                            'client_name' =>
+                                'Hotspot Voucher',
+
+                            'client_code' =>
+                                $payment
+                                    ->voucher
+                                    ?->username,
+
+                            'phone' =>
+                                null,
+
+                            'invoice_no' =>
+                                $payment
+                                    ->invoice
+                                    ?->invoice_no,
+
+                            'amount' =>
+                                (float)
+                                $payment->amount,
+
+                            'method' =>
+                                $payment
+                                    ->payment_method,
+
+                            'transaction_id' =>
+                                $payment
+                                    ->transaction_id,
+
+                            'notes' =>
+                                $payment->notes,
+                        ];
+                    }
+                );
+
+        $seller =
+            HotspotSellerCollection::query()
+                ->leftJoin(
+                    'hotspot_sellers as seller',
+                    'seller.id',
+                    '=',
+                    'hotspot_seller_collections.hotspot_seller_id'
+                )
+                ->whereDate(
+                    'hotspot_seller_collections.collected_at',
+                    '>=',
+                    $startDate
+                )
+                ->whereDate(
+                    'hotspot_seller_collections.collected_at',
+                    '<=',
+                    $endDate
+                )
+                ->get([
+                    'hotspot_seller_collections.id',
+                    'hotspot_seller_collections.collected_at',
+                    'hotspot_seller_collections.amount',
+                    'hotspot_seller_collections.payment_method',
+                    'hotspot_seller_collections.reference',
+                    'hotspot_seller_collections.notes',
+                    'seller.code as seller_code',
+                    'seller.name as seller_name',
+                ])
+                ->map(
+                    function ($row): array {
+                        return [
+                            'id' =>
+                                'seller-'
+                                . $row->id,
+
+                            'date' =>
+                                Carbon::parse(
+                                    $row
+                                        ->collected_at
+                                )->format(
+                                    'Y-m-d'
+                                ),
+
+                            'client_id' =>
+                                null,
+
+                            'client_name' =>
+                                'Hotspot Seller: '
+                                . (
+                                    $row
+                                        ->seller_name
+                                    ?: 'Seller'
+                                ),
+
+                            'client_code' =>
+                                $row
+                                    ->seller_code,
+
+                            'phone' =>
+                                null,
+
+                            'invoice_no' =>
+                                'Seller Collection',
+
+                            'amount' =>
+                                (float)
+                                $row->amount,
+
+                            'method' =>
+                                $row
+                                    ->payment_method
+                                ?: 'Cash',
+
+                            'transaction_id' =>
+                                $row
+                                    ->reference,
+
+                            'notes' =>
+                                $row->notes,
+                        ];
+                    }
+                );
+
+        return $normal
+            ->concat(
+                $hotspot
+            )
+            ->concat(
+                $seller
+            )
+            ->sortByDesc(
+                fn (array $row): string =>
+                    (
+                        $row['date']
+                        ?? ''
+                    )
+                    . '|'
+                    . (
+                        $row['id']
+                        ?? ''
+                    )
+            )
+            ->values();
     }
 
     private function refundRows(
@@ -753,33 +1294,51 @@ class AccountingController extends Controller
         string $startDate,
         string $endDate
     ): array {
-        return Payment::query()
-            ->selectRaw(
-                '
-                    payment_method,
-                    COUNT(*) AS transaction_count,
-                    SUM(amount) AS total
-                '
-            )
-            ->whereBetween('payment_date', [
+        return $this
+            ->collectionRows(
                 $startDate,
-                $endDate,
-            ])
-            ->groupBy('payment_method')
-            ->orderByDesc('total')
-            ->get()
-            ->map(fn ($row): array => [
-                'name' =>
-                    $row->payment_method
-                    ?: 'Unknown',
+                $endDate
+            )
+            ->groupBy(
+                fn (array $row): string =>
+                    trim(
+                        (string) (
+                            $row['method']
+                            ?? ''
+                        )
+                    ) !== ''
+                        ? trim(
+                            (string)
+                            $row['method']
+                        )
+                        : 'Unknown'
+            )
+            ->map(
+                function (
+                    Collection $rows,
+                    string $method
+                ): array {
+                    return [
+                        'name' =>
+                            $method,
 
-                'transaction_count' =>
-                    (int) $row
-                        ->transaction_count,
+                        'transaction_count' =>
+                            $rows->count(),
 
-                'total' =>
-                    (float) $row->total,
-            ])
+                        'total' =>
+                            round(
+                                (float)
+                                $rows->sum(
+                                    'amount'
+                                ),
+                                2
+                            ),
+                    ];
+                }
+            )
+            ->sortByDesc(
+                'total'
+            )
             ->values()
             ->all();
     }
@@ -889,7 +1448,7 @@ class AccountingController extends Controller
         $endDate =
             $end->toDateString();
 
-        $collections =
+        $normalCollections =
             Payment::query()
                 ->selectRaw(
                     "
@@ -906,6 +1465,61 @@ class AccountingController extends Controller
                         $startDate,
                         $endDate,
                     ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
+
+        $hotspotCollections =
+            HotspotPayment::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            payment_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(amount) AS total
+                    "
+                )
+                ->whereBetween(
+                    'payment_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
+
+        $sellerCollections =
+            HotspotSellerCollection::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            collected_at,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(amount) AS total
+                    "
+                )
+                ->whereDate(
+                    'collected_at',
+                    '>=',
+                    $startDate
+                )
+                ->whereDate(
+                    'collected_at',
+                    '<=',
+                    $endDate
                 )
                 ->groupBy(
                     'month'
@@ -943,11 +1557,6 @@ class AccountingController extends Controller
 
         $expenses =
             Expense::query()
-            ->where(
-                'approval_status',
-                '!=',
-                'rejected'
-            )
                 ->selectRaw(
                     "
                         DATE_FORMAT(
@@ -956,6 +1565,11 @@ class AccountingController extends Controller
                         ) AS month,
                         SUM(amount) AS total
                     "
+                )
+                ->where(
+                    'approval_status',
+                    '!=',
+                    'rejected'
                 )
                 ->whereBetween(
                     'expense_date',
@@ -972,7 +1586,7 @@ class AccountingController extends Controller
                     'month'
                 );
 
-        $billing =
+        $normalBilling =
             Invoice::query()
                 ->selectRaw(
                     "
@@ -980,7 +1594,44 @@ class AccountingController extends Controller
                             issue_date,
                             '%Y-%m'
                         ) AS month,
-                        SUM(amount - discount) AS total
+                        SUM(
+                            amount
+                            - discount
+                        ) AS total
+                    "
+                )
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->whereBetween(
+                    'issue_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
+
+        $hotspotBilling =
+            HotspotInvoice::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            issue_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(
+                            amount
+                            - discount
+                        ) AS total
                     "
                 )
                 ->where(
@@ -1026,10 +1677,24 @@ class AccountingController extends Controller
                     'Y-m'
                 );
 
-            $gross =
+            $grossCollected =
                 round(
                     (float) (
-                        $collections[
+                        $normalCollections[
+                            $month
+                        ]
+                        ?? 0
+                    )
+                    +
+                    (float) (
+                        $hotspotCollections[
+                            $month
+                        ]
+                        ?? 0
+                    )
+                    +
+                    (float) (
+                        $sellerCollections[
                             $month
                         ]
                         ?? 0
@@ -1048,9 +1713,9 @@ class AccountingController extends Controller
                     2
                 );
 
-            $net =
+            $collected =
                 round(
-                    $gross
+                    $grossCollected
                     - $refunded,
                     2
                 );
@@ -1066,42 +1731,45 @@ class AccountingController extends Controller
                     2
                 );
 
+            $billed =
+                round(
+                    (float) (
+                        $normalBilling[
+                            $month
+                        ]
+                        ?? 0
+                    )
+                    +
+                    (float) (
+                        $hotspotBilling[
+                            $month
+                        ]
+                        ?? 0
+                    ),
+                    2
+                );
+
             $rows[] = [
                 'month' =>
                     $month,
 
                 'label' =>
-                    $cursor
-                        ->format(
-                            'M Y'
-                        ),
-
-                'billed' =>
-                    round(
-                        (float) (
-                            $billing[
-                                $month
-                            ]
-                            ?? 0
-                        ),
-                        2
+                    $cursor->format(
+                        'M Y'
                     ),
 
-                'gross_collection' =>
-                    $gross,
-
-                'refunds' =>
-                    $refunded,
+                'billed' =>
+                    $billed,
 
                 'collection' =>
-                    $net,
+                    $collected,
 
                 'expenses' =>
                     $spent,
 
                 'profit' =>
                     round(
-                        $net
+                        $collected
                         - $spent,
                         2
                     ),
