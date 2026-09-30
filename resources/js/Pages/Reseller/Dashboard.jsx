@@ -17,6 +17,7 @@ export default function Dashboard({
     pos = {},
     recentClients = [],
     upgradePlans = [],
+    companyModules = {},
     isOwner = false,
 }) {
     const expired =
@@ -68,6 +69,20 @@ export default function Dashboard({
             },
         );
     };
+
+    /*
+     * DASHBOARD_MAC_MODULE_QUICK_POS_V1
+     *
+     * Quick Recharge POS is a MAC Client feature.
+     * Hotspot-only companies must never see it.
+     */
+    const hasMacClientModule =
+        (
+            companyModules.enabled
+            ?? []
+        ).includes(
+            'mac_client',
+        );
 
     return (
         <AppLayout title={isOwner ? 'Reseller Dashboard' : 'Operator Dashboard'}>
@@ -286,7 +301,7 @@ export default function Dashboard({
                     </section>
                 )}
 
-                {isOwner && (
+                {isOwner && hasMacClientModule && (
                     <QuickRechargePos
                         pos={pos}
                     />
