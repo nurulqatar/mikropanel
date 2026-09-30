@@ -13,14 +13,16 @@ use App\Models\HotspotPlan;
 use App\Models\HotspotServer;
 use App\Models\HotspotSession;
 use App\Models\HotspotVoucher;
-use App\Services\Hotspot\HotspotBillingService;
+
+use App\Models\NetworkZone;use App\Services\Hotspot\HotspotBillingService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Inertia\Inertia;
+
+use Illuminate\Validation\ValidationException;use Inertia\Inertia;
 use Inertia\Response;
 
 class HotspotController extends Controller
@@ -510,18 +512,17 @@ class HotspotController extends Controller
         );
 
         $data = $request->validate([
+            'zone_id' => [
+                'nullable',
+                'integer',
+            ],
+
+            /*
+             * Legacy compatibility only. New UI sends zone_id.
+             */
             'hotspot_server_id' => [
-                'required',
-                Rule::exists(
-                    'hotspot_servers',
-                    'id'
-                )->where(
-                    fn ($query) =>
-                        $query->where(
-                            'enabled',
-                            true
-                        )
-                ),
+                'nullable',
+                'integer',
             ],
 
             'hotspot_plan_id' => [
@@ -544,107 +545,206 @@ class HotspotController extends Controller
                 'min:1',
                 'max:500',
             ],
+
+            'prefix' => [
+                'nullable',
+                'alpha_dash',
+                'max:8',
+            ],
+
+            'batch_name' => [
+                'nullable',
+                'string',
+                'max:180',
+            ],
         ]);
 
+        $resellerId = (int) (
+            $request->user()?->reseller_id
+        );
 
-        /*
-         * HOTSPOT_VOUCHER_CODE_ONLY_V1
-         *
-         * Customer-facing credential is one exact six-digit
-         * numeric Voucher Code. RouterOS still receives the same
-         * code internally as both username and password.
-         */
+        abort_unless($resellerId > 0, 403);
 
-        $quantity =
-            (int) $data['quantity'];
+        $zoneId = (int) (
+            $data['zone_id'] ?? 0
+        );
 
-        /*
-         * HOTSPOT_GENERATION_SERVER_ZONE_GUARD_V1
-         */
-        $authorizedServer =
-            HotspotServer::query()
+        if (
+            !$zoneId
+            && !empty($data['hotspot_server_id'])
+        ) {
+            $legacyServer = HotspotServer::query()
+                ->where(
+                    'reseller_id',
+                    $resellerId
+                )
                 ->where(
                     'enabled',
                     true
                 )
-                ->findOrFail(
-                    (int)
-                    $data[
-                        'hotspot_server_id'
-                    ]
+                ->find(
+                    (int) $data['hotspot_server_id']
                 );
 
-        $data['hotspot_server_id'] =
-            (int)
-            $authorizedServer->id;
+            $zoneId = (int) (
+                $legacyServer?->zone_id
+            );
+        }
+
+        $zone = NetworkZone::query()
+            ->where('id', $zoneId)
+            ->where(
+                'reseller_id',
+                $resellerId
+            )
+            ->where(
+                'service_type',
+                'hotspot'
+            )
+            ->where('enabled', true)
+            ->first();
+
+        if (!$zone) {
+            throw ValidationException::withMessages([
+                'zone_id' =>
+                    'Select an active Hotspot Network Zone.',
+            ]);
+        }
+
+        $anchorServer = HotspotServer::query()
+            ->where(
+                'reseller_id',
+                $resellerId
+            )
+            ->where(
+                'zone_id',
+                $zone->id
+            )
+            ->where('enabled', true)
+            ->whereHas(
+                'router',
+                fn ($query) =>
+                    $query->where(
+                        'enabled',
+                        true
+                    )
+            )
+            ->orderBy('router_id')
+            ->orderBy('id')
+            ->first();
+
+        if (!$anchorServer) {
+            throw ValidationException::withMessages([
+                'zone_id' =>
+                    'This Hotspot zone has no enabled MikroTik Hotspot server.',
+            ]);
+        }
+
+        $quantity = (int) $data['quantity'];
+
+        $prefix = Str::upper(
+            trim(
+                (string) (
+                    $data['prefix'] ?? ''
+                )
+            )
+        );
+
+        $batchName = trim(
+            (string) (
+                $data['batch_name'] ?? ''
+            )
+        );
+
+        if ($batchName === '') {
+            $batchName =
+                $zone->name
+                . ' - '
+                . now('Asia/Qatar')
+                    ->format('Y-m-d H:i');
+        }
+
+        $voucherIds = [];
 
         DB::transaction(
             function () use (
+                &$voucherIds,
+                $anchorServer,
+                $batchName,
                 $data,
+                $prefix,
                 $quantity,
-$request
+                $request,
+                $zone
             ): void {
-                $batch =
-                    HotspotBatch::create([
-                        'batch_code' =>
-                            'HB-'
-                            . now(
-                                'Asia/Qatar'
-                            )->format(
-                                'YmdHis'
-                            )
-                            . '-'
-                            . Str::upper(
-                                Str::random(5)
-                            ),
+                $zoneCode = Str::upper(
+                    Str::slug(
+                        $zone->code ?: $zone->name,
+                        '-'
+                    )
+                );
 
-                        'hotspot_server_id' =>
-                            $data[
-                                'hotspot_server_id'
-                            ],
+                $batch = HotspotBatch::create([
+                    'batch_code' =>
+                        'HB-'
+                        . Str::limit(
+                            $zoneCode,
+                            35,
+                            ''
+                        )
+                        . '-'
+                        . now('Asia/Qatar')
+                            ->format('YmdHis')
+                        . '-'
+                        . Str::upper(
+                            Str::random(5)
+                        ),
 
-                        'hotspot_plan_id' =>
-                            $data[
-                                'hotspot_plan_id'
-                            ],
+                    'batch_name' =>
+                        $batchName,
 
-                        'quantity' =>
-                            $quantity,
+                    'zone_id' =>
+                        $zone->id,
 
-                        'prefix' => null,
+                    /*
+                     * Compatibility anchor for billing,
+                     * tenancy and legacy documents.
+                     */
+                    'hotspot_server_id' =>
+                        $anchorServer->id,
 
-                        'status' =>
-                            'ready',
+                    'hotspot_plan_id' =>
+                        $data['hotspot_plan_id'],
 
-                        'created_by' =>
-                            $request
-                                ->user()
-                                ->id,
-                    ]);
+                    'quantity' =>
+                        $quantity,
+
+                    'prefix' =>
+                        $prefix !== ''
+                            ? $prefix
+                            : null,
+
+                    'status' =>
+                        'ready',
+
+                    'created_by' =>
+                        $request->user()->id,
+                ]);
 
                 $generated = [];
 
-                for (
-                    $i = 0;
-                    $i < $quantity;
-                    $i++
-                ) {
+                for ($i = 0; $i < $quantity; $i++) {
                     do {
-                        $digits =
-                            (string)
-                            random_int(
-                                100000,
-                                999999
-                            );
+                        $digits = (string) random_int(
+                            100000,
+                            999999
+                        );
 
-                        $username = $digits;
+                        $username =
+                            $prefix . $digits;
 
                     } while (
-                        isset(
-                            $generated[
-                                $username
-                            ]
-                        )
+                        isset($generated[$username])
                         || HotspotVoucher::withTrashed()
                             ->where(
                                 'username',
@@ -653,54 +753,52 @@ $request
                             ->exists()
                     );
 
-                    $generated[
-                        $username
-                    ] = true;
-
-                    $password = $username;
+                    $generated[$username] = true;
 
                     $voucher = HotspotVoucher::create([
                         'hotspot_batch_id' =>
                             $batch->id,
 
+                        'zone_id' =>
+                            $zone->id,
+
                         'hotspot_server_id' =>
-                            $data[
-                                'hotspot_server_id'
-                            ],
+                            $anchorServer->id,
 
                         'hotspot_plan_id' =>
-                            $data[
-                                'hotspot_plan_id'
-                            ],
+                            $data['hotspot_plan_id'],
 
                         'username' =>
                             $username,
 
                         'password' =>
-                            $password,
+                            $username,
 
                         'status' =>
                             'unused',
 
                         'created_by' =>
-                            $request
-                                ->user()
-                                ->id,
+                            $request->user()->id,
                     ]);
 
-                    /*
-                     * HOTSPOT_FIRST_LOGIN_AUTO_SALE_V2
-                     */
-                    ProvisionHotspotVoucher::dispatch(
-                        $voucher->id
-                    )->afterCommit();
+                    $voucherIds[] =
+                        $voucher->id;
                 }
             }
         );
 
+        foreach ($voucherIds as $voucherId) {
+            ProvisionHotspotVoucher::dispatch(
+                $voucherId
+            );
+        }
+
         return back()->with(
             'success',
-            "{$quantity} voucher(s) generated and queued for MikroTik synchronization."
+            $quantity
+            . ' voucher(s) generated for '
+            . $zone->name
+            . '. Every voucher is queued to synchronize to every enabled MikroTik in this zone.'
         );
     }
 

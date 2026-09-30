@@ -2,6 +2,7 @@
 
 namespace App\Services\Hotspot;
 
+use App\Jobs\ProvisionHotspotVoucher;
 use App\Models\HotspotPlan;
 use App\Models\HotspotServer;
 use App\Models\HotspotSession;
@@ -567,12 +568,24 @@ class HotspotRouterService
 
             $voucher = HotspotVoucher::query()
                 ->where(
-                    'hotspot_server_id',
-                    $server->id
-                )
-                ->where(
                     'username',
                     $username
+                )
+                ->where(
+                    function ($query) use ($server): void {
+                        if ($server->zone_id) {
+                            $query->where(
+                                'zone_id',
+                                $server->zone_id
+                            );
+                            return;
+                        }
+
+                        $query->where(
+                            'hotspot_server_id',
+                            $server->id
+                        );
+                    }
                 )
                 ->first();
 
@@ -615,6 +628,10 @@ class HotspotRouterService
                             'mac_address' =>
                                 $observedMac,
                         ])->save();
+
+                        ProvisionHotspotVoucher::dispatch(
+                            $voucher->id
+                        );
 
                         $usersForMac =
                             $api->query(

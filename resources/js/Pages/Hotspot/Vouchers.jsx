@@ -14,7 +14,7 @@ const money = (value) =>
 
 export default function Vouchers({
     vouchers = [],
-    servers = [],
+    zones = [],
     plans = [],
     capabilities = {},
 }) {
@@ -25,7 +25,8 @@ export default function Vouchers({
 
     const generator =
         useForm({
-            hotspot_server_id: '',
+            zone_id: '',
+            batch_name: '',
             hotspot_plan_id: '',
             quantity: 1,
         });
@@ -106,41 +107,32 @@ export default function Vouchers({
                             Generate Vouchers
                         </h2>
 
-                        <div className="mt-5 grid gap-4 md:grid-cols-4">
-                            <Field label="Server">
+                        <div className="mt-5 grid gap-4 md:grid-cols-5">
+                            <Field label="Network Zone">
                                 <select
                                     value={
                                         generator.data
-                                            .hotspot_server_id
+                                            .zone_id
                                     }
                                     onChange={(e) =>
                                         generator.setData(
-                                            'hotspot_server_id',
-                                            e.target
-                                                .value,
+                                            'zone_id',
+                                            e.target.value,
                                         )
                                     }
-                                    className={
-                                        inputClass
-                                    }
+                                    className={inputClass}
                                 >
                                     <option value="">
-                                        Select Server
+                                        Select Hotspot Zone
                                     </option>
 
-                                    {servers.map(
-                                        (server) => (
+                                    {zones.map(
+                                        (zone) => (
                                             <option
-                                                key={
-                                                    server.id
-                                                }
-                                                value={
-                                                    server.id
-                                                }
+                                                key={zone.id}
+                                                value={zone.id}
                                             >
-                                                {
-                                                    server.name
-                                                }
+                                                {zone.name}
                                             </option>
                                         ),
                                     )}
@@ -212,6 +204,23 @@ export default function Vouchers({
                                     }
                                 />
                             </Field>
+                            <Field label="Batch Name">
+                                <input
+                                    value={
+                                        generator.data
+                                            .batch_name
+                                    }
+                                    onChange={(e) =>
+                                        generator.setData(
+                                            'batch_name',
+                                            e.target.value,
+                                        )
+                                    }
+                                    placeholder="Optional custom name"
+                                    className={inputClass}
+                                />
+                            </Field>
+
 
 
                         </div>
@@ -437,7 +446,7 @@ export default function Vouchers({
                         <thead className="bg-slate-50">
                             <tr>
                                 <Th>Voucher</Th>
-                                <Th>Server</Th>
+                                <Th>Zone</Th>
                                 <Th>Plan</Th>
                                 <Th>Price</Th>
                                 <Th>Status</Th>
@@ -466,7 +475,8 @@ export default function Vouchers({
                                         </Td>
 
                                         <Td>
-                                            {voucher.server?.name ||
+                                            {voucher.zone?.name ||
+                                                voucher.server?.name ||
                                                 '-'}
                                         </Td>
 

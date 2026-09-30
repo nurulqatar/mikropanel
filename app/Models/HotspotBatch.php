@@ -10,6 +10,8 @@ class HotspotBatch extends Model
 {
     protected $fillable = [
         'batch_code',
+        'batch_name',
+        'zone_id',
         'hotspot_server_id',
         'hotspot_plan_id',
         'hotspot_seller_id',
@@ -29,6 +31,14 @@ class HotspotBatch extends Model
         return $this->belongsTo(
             HotspotSeller::class,
             'hotspot_seller_id'
+        );
+    }
+
+    public function zone(): BelongsTo
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
         );
     }
 

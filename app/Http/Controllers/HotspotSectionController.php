@@ -8,7 +8,8 @@ use App\Models\HotspotPlan;
 use App\Models\HotspotServer;
 use App\Models\HotspotSession;
 use App\Models\HotspotVoucher;
-use Carbon\Carbon;
+
+use App\Models\NetworkZone;use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -259,6 +260,7 @@ class HotspotSectionController extends Controller
             HotspotVoucher::query()
                 ->with([
                     'server:id,name',
+                    'zone:id,name,code',
                     'plan:id,name,price,validity_value,validity_unit,rate_limit',
                     'invoices' =>
                         function ($query) {
@@ -329,7 +331,12 @@ class HotspotSectionController extends Controller
                                 $voucher
                                     ->server,
 
-                            'plan' =>
+
+                            'zone' =>
+                                $voucher
+                                    ->zone,
+
+'plan' =>
                                 $voucher
                                     ->plan,
 
@@ -373,6 +380,27 @@ class HotspotSectionController extends Controller
             [
                 'vouchers' =>
                     $vouchers,
+
+                'zones' =>
+                    NetworkZone::query()
+                        ->where(
+                            'reseller_id',
+                            $request->user()->reseller_id
+                        )
+                        ->where(
+                            'service_type',
+                            'hotspot'
+                        )
+                        ->where(
+                            'enabled',
+                            true
+                        )
+                        ->orderBy('name')
+                        ->get([
+                            'id',
+                            'name',
+                            'code',
+                        ]),
 
                 'servers' =>
                     HotspotServer::query()

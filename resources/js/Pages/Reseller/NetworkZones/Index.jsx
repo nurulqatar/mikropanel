@@ -10,11 +10,13 @@ export default function Index({
     zones = [],
     operators = [],
     currentZoneId = null,
+    serviceTypes = [],
     isOwner = false,
 }) {
     const form = useForm({
         name: '',
-        service_type: 'mac',
+        service_type:
+            serviceTypes[0]?.value ?? '',
         enabled: true,
     });
 
@@ -49,7 +51,7 @@ export default function Index({
                     </p>
                 </div>
 
-                {isOwner && (
+                {isOwner && serviceTypes.length > 0 && (
                     <form
                         onSubmit={(event) => {
                             event.preventDefault();
@@ -100,18 +102,24 @@ export default function Index({
                                     onChange={(e) =>
                                         form.setData(
                                             'service_type',
-                                            e.target
-                                                .value,
+                                            e.target.value,
                                         )
                                     }
                                     className="w-full rounded-lg border-slate-300"
+                                    disabled={
+                                        serviceTypes.length === 1
+                                    }
                                 >
-                                    <option value="mac">
-                                        MAC
-                                    </option>
-                                    <option value="hotspot">
-                                        Hotspot
-                                    </option>
+                                    {serviceTypes.map(
+                                        (type) => (
+                                            <option
+                                                key={type.value}
+                                                value={type.value}
+                                            >
+                                                {type.label}
+                                            </option>
+                                        ),
+                                    )}
                                 </select>
                             </Field>
 

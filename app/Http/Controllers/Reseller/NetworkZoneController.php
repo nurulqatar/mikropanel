@@ -79,6 +79,11 @@ class NetworkZoneController extends Controller
                             'network_zone_id'
                         ),
 
+                'serviceTypes' =>
+                    $this->serviceTypeOptions(
+                        $user
+                    ),
+
                 'isOwner' =>
                     $user
                         ->isResellerOwner(),
@@ -127,10 +132,11 @@ class NetworkZoneController extends Controller
 
                 'service_type' => [
                     'required',
-                    Rule::in([
-                        'mac',
-                        'hotspot',
-                    ]),
+                    Rule::in(
+                        $this->allowedServiceTypes(
+                            $owner
+                        )
+                    ),
                 ],
 
                 'enabled' => [
@@ -225,10 +231,12 @@ class NetworkZoneController extends Controller
 
                 'service_type' => [
                     'required',
-                    Rule::in([
-                        'mac',
-                        'hotspot',
-                    ]),
+                    Rule::in(
+                        $this->allowedServiceTypes(
+                            $owner,
+                            $zone->service_type
+                        )
+                    ),
                 ],
 
                 'enabled' => [
@@ -547,6 +555,74 @@ class NetworkZoneController extends Controller
             : 'Network Zone deleted.'
     );
 }
+
+    private function allowedServiceTypes(
+        User $user,
+        ?string $keepCurrent = null
+    ): array {
+        $keys = DB::table(
+            'reseller_module_entitlements'
+        )
+            ->where(
+                'reseller_id',
+                $user->reseller_id
+            )
+            ->where('enabled', true)
+            ->pluck('module_key')
+            ->all();
+
+        $types = [];
+
+        if (in_array('mac_client', $keys, true)) {
+            $types[] = 'mac';
+        }
+
+        if (in_array('hotspot', $keys, true)) {
+            $types[] = 'hotspot';
+        }
+
+        if (
+            $keepCurrent
+            && in_array(
+                $keepCurrent,
+                ['mac', 'hotspot'],
+                true
+            )
+            && !in_array(
+                $keepCurrent,
+                $types,
+                true
+            )
+        ) {
+            /*
+             * Existing data stays manageable after a module is
+             * disabled, but a disabled type cannot be selected
+             * for a new Network Zone.
+             */
+            $types[] = $keepCurrent;
+        }
+
+        return array_values(
+            array_unique($types)
+        );
+    }
+
+    private function serviceTypeOptions(
+        User $user
+    ): array {
+        return array_map(
+            static fn (string $type): array => [
+                'value' => $type,
+                'label' =>
+                    $type === 'mac'
+                        ? 'MAC'
+                        : 'Hotspot',
+            ],
+            $this->allowedServiceTypes(
+                $user
+            )
+        );
+    }
 
     private function nextZoneCode(
 

@@ -24,6 +24,7 @@ class HotspotVoucher extends Model
     protected $fillable = [
         'hotspot_batch_id',
         'hotspot_seller_id',
+        'zone_id',
         'hotspot_server_id',
         'hotspot_plan_id',
         'username',
@@ -58,6 +59,22 @@ class HotspotVoucher extends Model
         return $this->belongsTo(
             HotspotSeller::class,
             'hotspot_seller_id'
+        );
+    }
+
+    public function zone(): BelongsTo
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
+        );
+    }
+
+    public function routerSyncs(): HasMany
+    {
+        return $this->hasMany(
+            HotspotVoucherRouterSync::class,
+            'hotspot_voucher_id'
         );
     }
 
