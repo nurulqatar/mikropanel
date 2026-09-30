@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\SuperAdmin\DashboardController;
+use App\Http\Controllers\SuperAdmin\CompanyModuleController;
 use App\Http\Controllers\SuperAdmin\ResellerController;
 use App\Http\Controllers\SuperAdmin\ResellerFinanceController;
 use App\Http\Controllers\SuperAdmin\ResellerPlanController;
@@ -21,6 +22,30 @@ Route::middleware([
             DashboardController::class
         )->name(
             'dashboard'
+        );
+
+
+        /*
+         * COMPANY_MODULE_ENTITLEMENTS_V1
+         */
+        Route::get(
+            'company-modules',
+            [
+                CompanyModuleController::class,
+                'index',
+            ]
+        )->name(
+            'company-modules.index'
+        );
+
+        Route::put(
+            'company-modules/{reseller}',
+            [
+                CompanyModuleController::class,
+                'update',
+            ]
+        )->name(
+            'company-modules.update'
         );
 
         /*

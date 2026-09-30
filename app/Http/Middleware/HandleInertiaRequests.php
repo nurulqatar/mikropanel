@@ -37,6 +37,51 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
 
+
+            /*
+             * COMPANY_MODULE_ENTITLEMENTS_V1
+             */
+            'companyModules' =>
+                function () use ($request): array {
+                    $user =
+                        $request->user();
+
+                    $service =
+                        app(
+                            \App\Services\Reseller\ResellerModuleService::class
+                        );
+
+                    if (
+                        !$user
+                        || !$user->reseller_id
+                    ) {
+                        return [
+                            'enabled' => [],
+
+                            'definitions' =>
+                                array_values(
+                                    $service
+                                        ->definitions()
+                                ),
+                        ];
+                    }
+
+                    return [
+                        'enabled' =>
+                            $service
+                                ->enabledKeysForResellerId(
+                                    (int)
+                                    $user->reseller_id
+                                ),
+
+                        'definitions' =>
+                            array_values(
+                                $service
+                                    ->definitions()
+                            ),
+                    ];
+                },
+
             'companyBranding' =>
                 function () use ($request): ?array {
                     $user =

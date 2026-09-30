@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Reseller;
+use App\Services\Reseller\ResellerModuleService;
 use App\Services\Reseller\ResellerUsageService;
 use Closure;
 use Illuminate\Http\Request;
@@ -13,7 +14,8 @@ use Symfony\Component\HttpFoundation\Response;
 class EnforceResellerAccess
 {
     public function __construct(
-        private ResellerUsageService $usage
+        private ResellerUsageService $usage,
+        private ResellerModuleService $modules
     ) {
     }
 
@@ -150,6 +152,27 @@ class EnforceResellerAccess
         ) {
             return $next(
                 $request
+            );
+        }
+
+
+        /*
+         * COMPANY_MODULE_ROUTE_GUARD_V1
+         *
+         * Disabled modules are blocked even when
+         * somebody manually types the URL.
+         */
+        if (
+            !$this->modules
+                ->routeAllowedForReseller(
+                    (int)
+                    $reseller->id,
+                    $routeName
+                )
+        ) {
+            abort(
+                403,
+                'This service module is not enabled for your company.'
             );
         }
 

@@ -105,6 +105,9 @@ function SidebarContent({ url, closeMenu }) {
                                 '/super-admin/resellers',
                             )
                             || (url || '').startsWith(
+                                '/super-admin/company-modules',
+                            )
+                            || (url || '').startsWith(
                                 '/super-admin/reseller-plans',
                             )
                             || (url || '').startsWith(
@@ -146,6 +149,24 @@ function SidebarContent({ url, closeMenu }) {
                                 ].join(' ')}
                             >
                                 Companies / Resellers
+                            </Link>
+
+                            {/* COMPANY_MODULE_GROUP_LINK_V1 */}
+                            <Link
+                                href={route(
+                                    'superadmin.company-modules.index',
+                                )}
+                                onClick={closeMenu}
+                                className={[
+                                    'block rounded-lg px-3 py-2 text-sm font-semibold transition',
+                                    route().current(
+                                        'superadmin.company-modules.*',
+                                    )
+                                        ? 'bg-cyan-600 text-white'
+                                        : 'text-slate-300 hover:bg-slate-800 hover:text-white',
+                                ].join(' ')}
+                            >
+                                Company Modules
                             </Link>
 
                             <Link

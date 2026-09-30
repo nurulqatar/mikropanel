@@ -9,4 +9,5 @@ return [
     App\Providers\ResellerTenancyServiceProvider::class,
     App\Providers\ZoneTenancyServiceProvider::class,
     App\Providers\ManagerCashServiceProvider::class,
+    App\Providers\ResellerModuleScopeServiceProvider::class,
 ];

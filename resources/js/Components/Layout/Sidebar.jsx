@@ -51,6 +51,10 @@ export default function Sidebar() {
                 can={can}
                 routeExists={routeExists}
                 isOwner={isResellerOwner}
+                modules={
+                    props.companyModules?.enabled
+                    ?? []
+                }
             />
         );
     }
@@ -72,7 +76,18 @@ function ResellerSidebar({
     can,
     routeExists,
     isOwner,
+    modules,
 }) {
+    /*
+     * COMPANY_MODULE_SIDEBAR_V1
+     */
+    const hasModule = (key) =>
+        modules.includes(key);
+
+    const hasAnyServiceModule =
+        hasModule('mac_client')
+        || hasModule('hotspot');
+
     const [open, setOpen] = useState({
         mac:
             route().current('reseller.mac-pos')
@@ -145,7 +160,8 @@ function ResellerSidebar({
         },
     ].filter(
         (item) =>
-            can(item.permission)
+            hasModule('mac_client')
+            && can(item.permission)
             && routeExists(item.route),
     );
 
@@ -212,19 +228,22 @@ function ResellerSidebar({
         },
     ].filter(
         (item) =>
-            can(item.permission)
+            hasModule('hotspot')
+            && can(item.permission)
             && routeExists(item.route),
     );
 
     const financeItems = [
         {
             label: 'Invoices',
+            module: 'mac_client',
             route: 'invoices.index',
             active: 'invoices.*',
             permission: 'invoices.view',
         },
         {
             label: 'Payments',
+            module: 'mac_client',
             route: 'payments.index',
             active: 'payments.*',
             permission: 'payments.view',
@@ -243,7 +262,12 @@ function ResellerSidebar({
         },
     ].filter(
         (item) =>
-            can(item.permission)
+            hasAnyServiceModule
+            && (
+                !item.module
+                || hasModule(item.module)
+            )
+            && can(item.permission)
             && routeExists(item.route),
     );
 
@@ -261,7 +285,8 @@ function ResellerSidebar({
     }
 
     if (
-        (
+        hasAnyServiceModule
+        && (
             isOwner
             || user?.staff_role === 'manager'
         )
@@ -277,7 +302,8 @@ function ResellerSidebar({
     }
 
     if (
-        isOwner
+        hasModule('mac_client')
+        && isOwner
         && routeExists(
             'reseller.managers.index',
         )
@@ -303,7 +329,8 @@ function ResellerSidebar({
     }
 
     if (
-        isOwner
+        hasModule('mac_client')
+        && isOwner
         && routeExists(
             'reseller.mac-clients.form-fields.index',
         )
@@ -316,7 +343,8 @@ function ResellerSidebar({
     }
 
     if (
-        (
+        hasModule('mac_client')
+        && (
             isOwner
             || user?.staff_role === 'manager'
         )
@@ -391,7 +419,8 @@ function ResellerSidebar({
                     />
                 )}
 
-                {can('routers.view')
+                {hasAnyServiceModule
+                    && can('routers.view')
                     && routeExists(
                         'routers.index',
                     ) && (
