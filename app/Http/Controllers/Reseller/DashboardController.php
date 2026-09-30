@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Models\Client;
+use App\Models\ClientRefund;
 use App\Models\Expense;
 use App\Models\HotspotInvoice;
 use App\Models\HotspotPayment;
@@ -163,6 +164,196 @@ class DashboardController extends Controller
             );
 
 
+        /*
+         * MAIN_ACCOUNT_RECONCILIATION_V1
+         *
+         * Hotspot Seller money belongs to the
+         * reseller/company Main Account, not the
+         * MAC Client Manager Cash account.
+         *
+         * Main Credit:
+         *   Client payments
+         *   + direct Hotspot payments
+         *   + Seller collections
+         *
+         * Main Debit:
+         *   Client refunds
+         *   + approved business expenses
+         */
+        $todayDate =
+            $today->toDateString();
+
+        $todayCredit =
+            round(
+                $normalCollection
+                + $hotspotCollection,
+                2
+            );
+
+        $todayRefund =
+            round(
+                (float)
+                ClientRefund::query()
+                    ->whereDate(
+                        'refund_date',
+                        $todayDate
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $todayExpense =
+            round(
+                (float)
+                Expense::query()
+                    ->where(
+                        'approval_status',
+                        '!=',
+                        'rejected'
+                    )
+                    ->whereDate(
+                        'expense_date',
+                        $todayDate
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $todayDebit =
+            round(
+                $todayRefund
+                + $todayExpense,
+                2
+            );
+
+        $mainCredit =
+            round(
+                (float)
+                Payment::query()
+                    ->sum(
+                        'amount'
+                    )
+                +
+                (float)
+                HotspotPayment::query()
+                    ->sum(
+                        'amount'
+                    )
+                +
+                (float)
+                HotspotSellerCollection::query()
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $mainRefund =
+            round(
+                (float)
+                ClientRefund::query()
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $mainExpense =
+            round(
+                (float)
+                Expense::query()
+                    ->where(
+                        'approval_status',
+                        '!=',
+                        'rejected'
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $mainDebit =
+            round(
+                $mainRefund
+                + $mainExpense,
+                2
+            );
+
+        $mainClosing =
+            round(
+                $mainCredit
+                - $mainDebit,
+                2
+            );
+
+        $sellerSales =
+            (float)
+            HotspotInvoice::query()
+                ->whereNotNull(
+                    'hotspot_seller_id'
+                )
+                ->where(
+                    'invoice_type',
+                    'sale'
+                )
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->selectRaw(
+                    '
+                        COALESCE(
+                            SUM(
+                                amount
+                                - discount
+                            ),
+                            0
+                        ) AS total
+                    '
+                )
+                ->value(
+                    'total'
+                );
+
+        $sellerCollected =
+            (float)
+            HotspotSellerCollection::query()
+                ->sum(
+                    'amount'
+                );
+
+        $sellerOutstanding =
+            max(
+                0,
+                round(
+                    $sellerSales
+                    - $sellerCollected,
+                    2
+                )
+            );
+
+        $hotspotCustomerDue =
+            round(
+                (float)
+                HotspotInvoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->sum(
+                        'due_amount'
+                    ),
+                2
+            );
+
+
         return Inertia::render(
             'Reseller/Dashboard',
             [
@@ -281,40 +472,43 @@ class DashboardController extends Controller
 
                     'hotspot_due' =>
                         round(
-                            (float)
-                            HotspotInvoice::query()
-                                ->where(
-                                    'status',
-                                    '!=',
-                                    'cancelled'
-                                )
-                                ->sum(
-                                    'due_amount'
-                                ),
+                            $hotspotCustomerDue
+                            + $sellerOutstanding,
                             2
                         ),
+
+                    'hotspot_customer_due' =>
+                        $hotspotCustomerDue,
+
+                    'seller_receivable' =>
+                        $sellerOutstanding,
 
                     'today_collection' =>
-                        round(
-                            $normalCollection
-                            + $hotspotCollection,
-                            2
-                        ),
+                        $todayCredit,
+
+                    'today_credit' =>
+                        $todayCredit,
+
+                    'today_refund' =>
+                        $todayRefund,
+
+                    'today_expense' =>
+                        $todayExpense,
+
+                    'today_debit' =>
+                        $todayDebit,
+
+                    'main_credit' =>
+                        $mainCredit,
+
+                    'main_debit' =>
+                        $mainDebit,
+
+                    'main_closing' =>
+                        $mainClosing,
 
                     'expenses' =>
-                        round(
-                            (float)
-                            Expense::query()
-                                ->whereDate(
-                                    'expense_date',
-                                    $today
-                                        ->toDateString()
-                                )
-                                ->sum(
-                                    'amount'
-                                ),
-                            2
-                        ),
+                        $todayExpense,
 
                     'hotspot_vouchers' =>
                         HotspotVoucher::query()

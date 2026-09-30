@@ -337,14 +337,21 @@ export default function Dashboard({
                         />
 
                         <Stat
-                            label="Today Collection"
+                            label="Today Credit"
                             value={`QAR ${money(
-                                stats.today_collection,
+                                stats.today_credit,
                             )}`}
                         />
 
                         <Stat
-                            label="Total Due"
+                            label="Today Debit"
+                            value={`QAR ${money(
+                                stats.today_debit,
+                            )}`}
+                        />
+
+                        <Stat
+                            label="Total Receivable"
                             value={`QAR ${money(
                                 Number(
                                     stats.normal_due ??
@@ -354,6 +361,34 @@ export default function Dashboard({
                                         stats.hotspot_due ??
                                             0,
                                     ),
+                            )}`}
+                        />
+
+                        <Stat
+                            label="Seller Receivable"
+                            value={`QAR ${money(
+                                stats.seller_receivable,
+                            )}`}
+                        />
+
+                        <Stat
+                            label="Main Credit"
+                            value={`QAR ${money(
+                                stats.main_credit,
+                            )}`}
+                        />
+
+                        <Stat
+                            label="Main Debit"
+                            value={`QAR ${money(
+                                stats.main_debit,
+                            )}`}
+                        />
+
+                        <Stat
+                            label="Main Balance"
+                            value={`QAR ${money(
+                                stats.main_closing,
                             )}`}
                         />
 

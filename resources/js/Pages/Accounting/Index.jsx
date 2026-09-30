@@ -337,6 +337,41 @@ export default function Index({
 
                 <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                     <SummaryCard
+                        label="Opening Balance"
+                        value={`QAR ${money(
+                            summary.main_opening,
+                        )}`}
+                        description="Balance before selected period"
+                    />
+
+                    <SummaryCard
+                        label="Main Credit"
+                        value={`QAR ${money(
+                            summary.main_credit,
+                        )}`}
+                        description="Client + Hotspot + Seller cash received"
+                        tone="green"
+                    />
+
+                    <SummaryCard
+                        label="Main Debit"
+                        value={`QAR ${money(
+                            summary.main_debit,
+                        )}`}
+                        description="Refunds + approved business expenses"
+                        tone="red"
+                    />
+
+                    <SummaryCard
+                        label="Closing Balance"
+                        value={`QAR ${money(
+                            summary.main_closing,
+                        )}`}
+                        description="Opening + Credit - Debit"
+                        tone="cyan"
+                    />
+
+                    <SummaryCard
                         label="Gross Collection"
                         value={`QAR ${money(
                             summary.gross_collection,
@@ -400,11 +435,29 @@ export default function Index({
                     />
 
                     <SummaryCard
-                        label="Current Customer Due"
+                        label="Customer Due"
+                        value={`QAR ${money(
+                            summary.customer_due,
+                        )}`}
+                        description={`${summary.due_client_count ?? 0} MAC clients with due`}
+                        tone="amber"
+                    />
+
+                    <SummaryCard
+                        label="Seller Receivable"
+                        value={`QAR ${money(
+                            summary.seller_receivable,
+                        )}`}
+                        description="Sold Hotspot vouchers not yet collected from sellers"
+                        tone="amber"
+                    />
+
+                    <SummaryCard
+                        label="Total Receivable"
                         value={`QAR ${money(
                             summary.current_receivable,
                         )}`}
-                        description={`${summary.due_client_count ?? 0} clients with due`}
+                        description="Customer Due + Seller Receivable"
                         tone="amber"
                     />
 

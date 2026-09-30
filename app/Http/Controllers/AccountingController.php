@@ -404,6 +404,109 @@ class AccountingController extends Controller
             2
         );
 
+
+        /*
+         * MAIN_ACCOUNT_OPENING_CLOSING_V1
+         *
+         * Opening + Credit - Debit = Closing
+         *
+         * Hotspot seller collections are Main
+         * Account Credit only. They never touch
+         * MAC Manager Cash.
+         */
+        $mainCredit =
+            $collection;
+
+        $mainDebit =
+            round(
+                $refundsTotal
+                + $expensesTotal,
+                2
+            );
+
+        $openingNormalCredit =
+            (float)
+            Payment::query()
+                ->whereDate(
+                    'payment_date',
+                    '<',
+                    $startDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $openingHotspotCredit =
+            (float)
+            HotspotPayment::query()
+                ->whereDate(
+                    'payment_date',
+                    '<',
+                    $startDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $openingSellerCredit =
+            (float)
+            HotspotSellerCollection::query()
+                ->whereDate(
+                    'collected_at',
+                    '<',
+                    $startDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $openingRefund =
+            (float)
+            ClientRefund::query()
+                ->whereDate(
+                    'refund_date',
+                    '<',
+                    $startDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $openingExpense =
+            (float)
+            Expense::query()
+                ->where(
+                    'approval_status',
+                    '!=',
+                    'rejected'
+                )
+                ->whereDate(
+                    'expense_date',
+                    '<',
+                    $startDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $openingBalance =
+            round(
+                $openingNormalCredit
+                + $openingHotspotCredit
+                + $openingSellerCredit
+                - $openingRefund
+                - $openingExpense,
+                2
+            );
+
+        $closingBalance =
+            round(
+                $openingBalance
+                + $mainCredit
+                - $mainDebit,
+                2
+            );
+
         $normalPeriodDue =
             round(
                 (float) (
@@ -548,10 +651,16 @@ class AccountingController extends Controller
                 2
             );
 
-        $currentReceivable =
+        $currentCustomerDue =
             round(
                 $normalCurrentReceivable
-                + $hotspotCurrentReceivable
+                + $hotspotCurrentReceivable,
+                2
+            );
+
+        $currentReceivable =
+            round(
+                $currentCustomerDue
                 + $sellerOutstanding,
                 2
             );
@@ -669,6 +778,19 @@ class AccountingController extends Controller
                 'collection' =>
                     $netCollection,
 
+                'main_opening' =>
+                    $openingBalance,
+
+                'main_credit' =>
+                    $mainCredit,
+
+                'main_debit' =>
+                    $mainDebit,
+
+                'main_closing' =>
+                    $closingBalance,
+
+
                 'hotspot_billed' =>
                     round(
                         $hotspotGrossBilled
@@ -697,6 +819,12 @@ class AccountingController extends Controller
 
                 'period_due' =>
                     $periodDue,
+
+                'customer_due' =>
+                    $currentCustomerDue,
+
+                'seller_receivable' =>
+                    $sellerOutstanding,
 
                 'current_receivable' =>
                     $currentReceivable,
@@ -806,7 +934,8 @@ class AccountingController extends Controller
                 $this->transactionRows(
                     $collections,
                     $expenses,
-                    $refunds
+                    $refunds,
+                    $openingBalance
                 ),
 
             'clients' =>
@@ -1784,7 +1913,8 @@ class AccountingController extends Controller
     private function transactionRows(
         Collection $collections,
         Collection $expenses,
-        Collection $refunds
+        Collection $refunds,
+        float $openingBalance = 0
     ): array {
         $collectionRows =
             $collections->map(
@@ -1931,7 +2061,11 @@ class AccountingController extends Controller
                 }
             );
 
-        $runningBalance = 0;
+        $runningBalance =
+            round(
+                $openingBalance,
+                2
+            );
 
         return $collectionRows
             ->concat(
