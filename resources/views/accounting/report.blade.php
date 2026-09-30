@@ -294,6 +294,7 @@
         <div class="toolbar">
             <a
                 href="{{ route('accounting.index', [
+                    'zone_id' => $selectedZoneId ?: null,
                     'preset' => $filters['preset'],
                     'start_date' => $filters['start_date'],
                     'end_date' => $filters['end_date'],
@@ -337,6 +338,10 @@
                     </h2>
 
                     <div class="report-period">
+                        Scope:
+                        {{ $accountingScopeLabel }}
+                        <br>
+
                         Period:
                         {{ $filters['label'] }}
                         <br>
@@ -351,7 +356,14 @@
         <table class="summary-grid">
             <tr>
                 <td class="summary-card">
-                    <div class="summary-label">Gross Collection</div>
+                    <div class="summary-label">Opening Balance</div>
+                    <div class="summary-value">
+                        QAR {{ number_format($summary['main_opening'], 2) }}
+                    </div>
+                </td>
+
+                <td class="summary-card">
+                    <div class="summary-label">Cash Received</div>
                     <div class="summary-value positive">
                         QAR {{ number_format($summary['gross_collection'], 2) }}
                     </div>
@@ -365,44 +377,54 @@
                 </td>
 
                 <td class="summary-card">
-                    <div class="summary-label">Net Collection</div>
-                    <div class="summary-value positive">
-                        QAR {{ number_format($summary['collection'], 2) }}
+                    <div class="summary-label">Business Expenses</div>
+                    <div class="summary-value negative">
+                        QAR {{ number_format($summary['expenses'], 2) }}
                     </div>
                 </td>
 
                 <td class="summary-card">
-                    <div class="summary-label">Business Expenses</div>
-                    <div class="summary-value negative">
-                        QAR {{ number_format($summary['expenses'], 2) }}
+                    <div class="summary-label">Closing Balance</div>
+                    <div class="summary-value positive">
+                        QAR {{ number_format($summary['main_closing'], 2) }}
                     </div>
                 </td>
             </tr>
 
             <tr>
                 <td class="summary-card">
-                    <div class="summary-label">Net Profit / Loss</div>
+                    <div class="summary-label">
+                        {{ $summary['net_profit'] >= 0 ? 'Net Profit' : 'Net Loss' }}
+                    </div>
+
                     <div class="summary-value {{ $summary['net_profit'] >= 0 ? 'positive' : 'negative' }}">
-                        QAR {{ number_format($summary['net_profit'], 2) }}
+                        QAR {{ number_format(abs($summary['net_profit']), 2) }}
                     </div>
                 </td>
 
                 <td class="summary-card">
-                    <div class="summary-label">Net Billed Before Refund</div>
-                    <div class="summary-value">
-                        QAR {{ number_format($summary['net_billed'], 2) }}
+                    <div class="summary-label">Current Customer Due</div>
+                    <div class="summary-value negative">
+                        QAR {{ number_format($summary['customer_due'], 2) }}
                     </div>
                 </td>
 
                 <td class="summary-card">
-                    <div class="summary-label">Customer Due</div>
+                    <div class="summary-label">Seller Receivable</div>
+                    <div class="summary-value negative">
+                        QAR {{ number_format($summary['seller_receivable'], 2) }}
+                    </div>
+                </td>
+
+                <td class="summary-card">
+                    <div class="summary-label">Total Receivable</div>
                     <div class="summary-value negative">
                         QAR {{ number_format($summary['current_receivable'], 2) }}
                     </div>
                 </td>
 
                 <td class="summary-card">
-                    <div class="summary-label">Overdue</div>
+                    <div class="summary-label">Overdue Customer Due</div>
                     <div class="summary-value negative">
                         QAR {{ number_format($summary['overdue_amount'], 2) }}
                     </div>
@@ -482,6 +504,13 @@
                 </table>
             </section>
 
+            @if(
+                count($monthlyTrend) > 1
+                || (($monthlyTrend[0]['billed'] ?? 0) != 0)
+                || (($monthlyTrend[0]['gross_collection'] ?? 0) != 0)
+                || (($monthlyTrend[0]['refunds'] ?? 0) != 0)
+                || (($monthlyTrend[0]['expenses'] ?? 0) != 0)
+            )
             <section class="section">
                 <h3 class="section-title">
                     Monthly Financial Trend
@@ -544,75 +573,22 @@
                 </table>
             </section>
 
-            <section class="section">
-                <h3 class="section-title">
-                    Invoice Status Summary
-                </h3>
-
-                <table class="report-table">
-                    <thead>
-                        <tr>
-                            <th>Status</th>
-                            <th class="text-right">Invoices</th>
-                            <th class="text-right">Gross</th>
-                            <th class="text-right">Discount</th>
-                            <th class="text-right">Paid</th>
-                            <th class="text-right">Due</th>
-                        </tr>
-                    </thead>
-
-                    <tbody>
-                        @forelse($invoiceStatuses as $row)
-                            <tr>
-                                <td>
-                                    <span class="status status-{{ $row['status'] }}">
-                                        {{ $row['status'] }}
-                                    </span>
-                                </td>
-
-                                <td class="text-right">
-                                    {{ $row['invoice_count'] }}
-                                </td>
-
-                                <td class="text-right">
-                                    QAR
-                                    {{ number_format($row['gross_amount'], 2) }}
-                                </td>
-
-                                <td class="text-right">
-                                    QAR
-                                    {{ number_format($row['discount_amount'], 2) }}
-                                </td>
-
-                                <td class="text-right positive">
-                                    QAR
-                                    {{ number_format($row['paid_amount'], 2) }}
-                                </td>
-
-                                <td class="text-right negative">
-                                    QAR
-                                    {{ number_format($row['due_amount'], 2) }}
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="6" class="text-center muted">
-                                    No invoices found.
-                                </td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </section>
+            @endif
         @endif
 
         @if(
-            $report === 'full'
-            || $report === 'collections'
+            $report === 'collections'
+            || (
+                $report === 'full'
+                && (
+                    count($collections) > 0
+                    || count($refunds) > 0
+                )
+            )
         )
             <section class="section {{ $report === 'full' ? 'new-page' : '' }}">
                 <h3 class="section-title">
-                    Gross Collection by Payment Method
+                    Cash Received by Payment Method
                 </h3>
 
                 <table class="report-table">
@@ -653,7 +629,7 @@
 
             <section class="section">
                 <h3 class="section-title">
-                    Gross Collection Details
+                    Cash Received Details
                 </h3>
 
                 <table class="report-table">
@@ -821,8 +797,11 @@
 
 
         @if(
-            $report === 'full'
-            || $report === 'expenses'
+            $report === 'expenses'
+            || (
+                $report === 'full'
+                && count($expenses) > 0
+            )
         )
             <section class="section {{ $report === 'full' ? 'new-page' : '' }}">
                 <h3 class="section-title">
@@ -925,8 +904,11 @@
         @endif
 
         @if(
-            $report === 'full'
-            || $report === 'receivables'
+            $report === 'receivables'
+            || (
+                $report === 'full'
+                && count($receivables) > 0
+            )
         )
             <section class="section {{ $report === 'full' ? 'new-page' : '' }}">
                 <h3 class="section-title">
@@ -1001,10 +983,7 @@
 
         @if(
             $canViewClients
-            && (
-                $report === 'full'
-                || $report === 'clients'
-            )
+            && $report === 'clients'
         )
             <section class="section {{ $report === 'full' ? 'new-page' : '' }}">
                 <h3 class="section-title">
@@ -1209,8 +1188,11 @@
         @endif
 
         @if(
-            $report === 'full'
-            || $report === 'transactions'
+            $report === 'transactions'
+            || (
+                $report === 'full'
+                && count($transactions) > 0
+            )
         )
             <section class="section {{ $report === 'full' ? 'new-page' : '' }}">
                 <h3 class="section-title">

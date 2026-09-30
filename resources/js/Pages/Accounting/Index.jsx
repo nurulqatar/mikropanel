@@ -1,4 +1,3 @@
-import UnifiedFinanceStrip from '@/Components/Finance/UnifiedFinanceStrip';
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Head,
@@ -16,14 +15,11 @@ export default function Index({
     monthlyTrend = [],
     paymentMethods = [],
     expenseCategories = [],
-    invoiceStatuses = [],
     collections = [],
     refunds = [],
     expenses = [],
     receivables = [],
     transactions = [],
-    clients = [],
-    canViewClients = true,
 }) {
     const {
         data,
@@ -74,43 +70,31 @@ export default function Index({
             key: 'profit-loss',
             title: 'Profit & Loss',
             description:
-                'Gross collection, cash refunds, expenses and net profit/loss',
+                'Cash received, refunds, expenses and net profit/loss',
         },
         {
             key: 'collections',
-            title: 'Collection Report',
+            title: 'Collections',
             description:
-                'Gross customer payments, cash refunds and net collection',
-        },
-        {
-            key: 'refunds',
-            title: 'Cash Refund Report',
-            description:
-                'All customer cash refunds, reasons and refund audit details',
+                'Customer and seller cash received, including refund details',
         },
         {
             key: 'expenses',
-            title: 'Expense Report',
+            title: 'Expenses',
             description:
-                'All business expenses and categories',
+                'Approved business expenses and categories',
         },
         {
             key: 'receivables',
             title: 'Customer Due',
             description:
-                'Current client outstanding balances',
+                'Current unpaid customer balances',
         },
         {
             key: 'transactions',
             title: 'Cash Flow',
             description:
                 'Money in, money out and running balance',
-        },
-        {
-            key: 'clients',
-            title: 'All Client Details',
-            description:
-                'Complete customer, network, package, payment and due information',
         },
     ];
 
@@ -122,6 +106,14 @@ export default function Index({
             numberValue(row.collection),
             numberValue(row.expenses),
         ]),
+    );
+
+    const hasTrendActivity = monthlyTrend.some(
+        (row) =>
+            numberValue(row.billed) !== 0
+            || numberValue(row.gross_collection) !== 0
+            || numberValue(row.refunds) !== 0
+            || numberValue(row.expenses) !== 0,
     );
 
     return (
@@ -335,186 +327,154 @@ export default function Index({
                     </div>
                 </form>
 
-                <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                    <SummaryCard
-                        label="Opening Balance"
-                        value={`QAR ${money(
-                            summary.main_opening,
-                        )}`}
-                        description="Balance before selected period"
-                    />
+                <section>
+                    <div className="mb-4">
+                        <h2 className="text-xl font-bold text-slate-900">
+                            Cash Position
+                        </h2>
 
-                    <SummaryCard
-                        label="Main Credit"
-                        value={`QAR ${money(
-                            summary.main_credit,
-                        )}`}
-                        description="Client + Hotspot + Seller cash received"
-                        tone="green"
-                    />
+                        <p className="mt-1 text-sm text-slate-500">
+                            Selected-period company cash movement and profit/loss
+                        </p>
+                    </div>
 
-                    <SummaryCard
-                        label="Main Debit"
-                        value={`QAR ${money(
-                            summary.main_debit,
-                        )}`}
-                        description="Refunds + approved business expenses"
-                        tone="red"
-                    />
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        <SummaryCard
+                            label="Opening Balance"
+                            value={`QAR ${money(
+                                summary.main_opening,
+                            )}`}
+                            description="Balance before selected period"
+                        />
 
-                    <SummaryCard
-                        label="Closing Balance"
-                        value={`QAR ${money(
-                            summary.main_closing,
-                        )}`}
-                        description="Opening + Credit - Debit"
-                        tone="cyan"
-                    />
+                        <SummaryCard
+                            label="Cash Received"
+                            value={`QAR ${money(
+                                summary.gross_collection,
+                            )}`}
+                            description={`${summary.payment_count ?? 0} cash receipt entries`}
+                            tone="green"
+                        />
 
-                    <SummaryCard
-                        label="Gross Collection"
-                        value={`QAR ${money(
-                            summary.gross_collection,
-                        )}`}
-                        description={`${summary.payment_count ?? 0} payment entries before refunds`}
-                        tone="green"
-                    />
+                        <SummaryCard
+                            label="Cash Refund"
+                            value={`QAR ${money(
+                                summary.refunds,
+                            )}`}
+                            description={`${summary.refund_count ?? 0} customer refund entries`}
+                            tone="amber"
+                        />
 
-                    <SummaryCard
-                        label="Cash Refund"
-                        value={`QAR ${money(
-                            summary.refunds,
-                        )}`}
-                        description={`${summary.refund_count ?? 0} refund entries`}
-                        tone="amber"
-                    />
+                        <SummaryCard
+                            label="Business Expenses"
+                            value={`QAR ${money(
+                                summary.expenses,
+                            )}`}
+                            description={`${summary.expense_count ?? 0} approved expense entries`}
+                            tone="red"
+                        />
 
-                    <SummaryCard
-                        label="Net Collection"
-                        value={`QAR ${money(
-                            summary.collection,
-                        )}`}
-                        description="Gross collection minus customer refunds"
-                        tone="cyan"
-                    />
+                        <SummaryCard
+                            label="Closing Balance"
+                            value={`QAR ${money(
+                                summary.main_closing,
+                            )}`}
+                            description="Opening + received - refunds - expenses"
+                            tone="cyan"
+                        />
 
-                    <SummaryCard
-                        label="Business Expenses"
-                        value={`QAR ${money(
-                            summary.expenses,
-                        )}`}
-                        description={`${summary.expense_count ?? 0} expense entries`}
-                        tone="red"
-                    />
-
-                    <SummaryCard
-                        label={
-                            numberValue(
-                                summary.net_profit,
-                            ) >= 0
-                                ? 'Net Profit'
-                                : 'Net Loss'
-                        }
-                        value={`QAR ${money(
-                            Math.abs(
+                        <SummaryCard
+                            label={
                                 numberValue(
                                     summary.net_profit,
+                                ) >= 0
+                                    ? 'Net Profit'
+                                    : 'Net Loss'
+                            }
+                            value={`QAR ${money(
+                                Math.abs(
+                                    numberValue(
+                                        summary.net_profit,
+                                    ),
                                 ),
-                            ),
-                        )}`}
-                        description={`Net collection - expenses · Margin ${money(
-                            summary.profit_margin,
-                        )}%`}
-                        tone={
-                            numberValue(
-                                summary.net_profit,
-                            ) >= 0
-                                ? 'cyan'
-                                : 'red'
-                        }
-                    />
-
-                    <SummaryCard
-                        label="Customer Due"
-                        value={`QAR ${money(
-                            summary.customer_due,
-                        )}`}
-                        description={`${summary.due_client_count ?? 0} MAC clients with due`}
-                        tone="amber"
-                    />
-
-                    <SummaryCard
-                        label="Seller Receivable"
-                        value={`QAR ${money(
-                            summary.seller_receivable,
-                        )}`}
-                        description="Sold Hotspot vouchers not yet collected from sellers"
-                        tone="amber"
-                    />
-
-                    <SummaryCard
-                        label="Total Receivable"
-                        value={`QAR ${money(
-                            summary.current_receivable,
-                        )}`}
-                        description="Customer Due + Seller Receivable"
-                        tone="amber"
-                    />
-
-                    <SummaryCard
-                        label="Gross Billed"
-                        value={`QAR ${money(
-                            summary.gross_billed,
-                        )}`}
-                        description={`${summary.invoice_count ?? 0} invoices`}
-                    />
-
-                    <SummaryCard
-                        label="Invoice Discount"
-                        value={`QAR ${money(
-                            summary.discount,
-                        )}`}
-                        description="Discount in selected period"
-                        tone="violet"
-                    />
-
-                    <SummaryCard
-                        label="Net Billed Before Refund"
-                        value={`QAR ${money(
-                            summary.net_billed,
-                        )}`}
-                        description="Gross billing minus invoice discount"
-                    />
-
-                    <SummaryCard
-                        label="Overdue Amount"
-                        value={`QAR ${money(
-                            summary.overdue_amount,
-                        )}`}
-                        description="Past due date"
-                        tone="red"
-                    />
+                            )}`}
+                            description={`Cash received - refunds - expenses · Margin ${money(
+                                summary.profit_margin,
+                            )}%`}
+                            tone={
+                                numberValue(
+                                    summary.net_profit,
+                                ) >= 0
+                                    ? 'cyan'
+                                    : 'red'
+                            }
+                        />
+                    </div>
                 </section>
 
                 <section>
                     <div className="mb-4">
                         <h2 className="text-xl font-bold text-slate-900">
-                            Downloadable Reports
+                            Current Receivables
                         </h2>
 
                         <p className="mt-1 text-sm text-slate-500">
-                            Every report can be printed or downloaded as PDF
+                            Current outstanding amounts, independent of the selected report period
                         </p>
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        {reports
-                            .filter(
-                                (report) =>
-                                    report.key !== 'clients'
-                                    || canViewClients,
-                            )
-                            .map((report) => (
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        <SummaryCard
+                            label="Customer Due"
+                            value={`QAR ${money(
+                                summary.customer_due,
+                            )}`}
+                            description="Current unpaid customer balance"
+                            tone="amber"
+                        />
+
+                        <SummaryCard
+                            label="Seller Receivable"
+                            value={`QAR ${money(
+                                summary.seller_receivable,
+                            )}`}
+                            description="Voucher cash still held by sellers"
+                            tone="amber"
+                        />
+
+                        <SummaryCard
+                            label="Total Receivable"
+                            value={`QAR ${money(
+                                summary.current_receivable,
+                            )}`}
+                            description="Customer due + seller receivable"
+                            tone="amber"
+                        />
+
+                        <SummaryCard
+                            label="Overdue Customer Due"
+                            value={`QAR ${money(
+                                summary.overdue_amount,
+                            )}`}
+                            description="Customer balances past due date"
+                            tone="red"
+                        />
+                    </div>
+                </section>
+
+                <section>
+                    <div className="mb-4">
+                        <h2 className="text-xl font-bold text-slate-900">
+                            Reports
+                        </h2>
+
+                        <p className="mt-1 text-sm text-slate-500">
+                            Print or download the selected-period financial reports
+                        </p>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                        {reports.map((report) => (
                             <div
                                 key={report.key}
                                 className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
@@ -644,520 +604,471 @@ export default function Index({
                                 value={summary.net_billed}
                             />
 
-                            <MiniStat
-                                label="Period Remaining Due"
-                                value={summary.period_due}
-                                danger
-                            />
                         </div>
                     </div>
                 </section>
 
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <h2 className="text-xl font-bold text-slate-900">
-                        Monthly Financial Trend
-                    </h2>
+                {hasTrendActivity && (
+                    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                        <h2 className="text-xl font-bold text-slate-900">
+                            Monthly Financial Trend
+                        </h2>
 
-                    <p className="mt-1 text-sm text-slate-500">
-                        Gross collection - cash refund = net collection; then less expenses
-                    </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                            Gross collection - cash refund = net collection; then less expenses
+                        </p>
 
-                    <div className="mt-6 space-y-5">
-                        {monthlyTrend.map((row) => (
-                            <div
-                                key={row.month}
-                                className="grid gap-3 md:grid-cols-[90px_1fr_180px]"
-                            >
-                                <div>
-                                    <p className="font-bold text-slate-700">
-                                        {row.label}
-                                    </p>
+                        <div className="mt-6 space-y-5">
+                            {monthlyTrend.map((row) => (
+                                <div
+                                    key={row.month}
+                                    className="grid gap-3 md:grid-cols-[90px_1fr_180px]"
+                                >
+                                    <div>
+                                        <p className="font-bold text-slate-700">
+                                            {row.label}
+                                        </p>
 
-                                    <p
-                                        className={`text-xs font-bold ${
-                                            numberValue(
-                                                row.profit,
-                                            ) >= 0
-                                                ? 'text-emerald-600'
-                                                : 'text-red-600'
-                                        }`}
-                                    >
-                                        {numberValue(
-                                            row.profit,
-                                        ) >= 0
-                                            ? 'Profit'
-                                            : 'Loss'}{' '}
-                                        {money(
-                                            Math.abs(
+                                        <p
+                                            className={`text-xs font-bold ${
                                                 numberValue(
                                                     row.profit,
+                                                ) >= 0
+                                                    ? 'text-emerald-600'
+                                                    : 'text-red-600'
+                                            }`}
+                                        >
+                                            {numberValue(
+                                                row.profit,
+                                            ) >= 0
+                                                ? 'Profit'
+                                                : 'Loss'}{' '}
+                                            {money(
+                                                Math.abs(
+                                                    numberValue(
+                                                        row.profit,
+                                                    ),
                                                 ),
-                                            ),
-                                        )}
-                                    </p>
+                                            )}
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <TrendBar
+                                            value={row.gross_collection}
+                                            maximum={maxTrend}
+                                            tone="green"
+                                        />
+
+                                        <TrendBar
+                                            value={row.refunds}
+                                            maximum={maxTrend}
+                                            tone="amber"
+                                        />
+
+                                        <TrendBar
+                                            value={row.collection}
+                                            maximum={maxTrend}
+                                            tone="cyan"
+                                        />
+
+                                        <TrendBar
+                                            value={row.expenses}
+                                            maximum={maxTrend}
+                                            tone="red"
+                                        />
+                                    </div>
+
+                                    <div className="text-right text-xs">
+                                        <p className="font-bold text-emerald-600">
+                                            Gross: QAR{' '}
+                                            {money(
+                                                row.gross_collection,
+                                            )}
+                                        </p>
+
+                                        <p className="mt-1 font-bold text-amber-600">
+                                            Refund: QAR{' '}
+                                            {money(
+                                                row.refunds,
+                                            )}
+                                        </p>
+
+                                        <p className="mt-1 font-bold text-cyan-700">
+                                            Net: QAR{' '}
+                                            {money(
+                                                row.collection,
+                                            )}
+                                        </p>
+
+                                        <p className="mt-1 font-bold text-red-600">
+                                            Expense: QAR{' '}
+                                            {money(
+                                                row.expenses,
+                                            )}
+                                        </p>
+                                    </div>
                                 </div>
+                            ))}
+                        </div>
+                    </section>
 
-                                <div className="space-y-2">
-                                    <TrendBar
-                                        value={row.gross_collection}
-                                        maximum={maxTrend}
-                                        tone="green"
-                                    />
+                )}
 
-                                    <TrendBar
-                                        value={row.refunds}
-                                        maximum={maxTrend}
-                                        tone="amber"
-                                    />
+                {(paymentMethods.length > 0
+                    || expenseCategories.length > 0) && (
+                    <section className="grid gap-6 xl:grid-cols-2">
+                        {paymentMethods.length > 0 && (
+                            <ReportTable
+                                title="Cash Received by Payment Method"
+                                description="Company cash received in the selected period"
+                                headers={[
+                                    'Method',
+                                    'Transactions',
+                                    'Amount',
+                                ]}
+                                empty={false}
+                            >
+                                {paymentMethods.map((row) => (
+                                    <tr key={row.name}>
+                                        <TableCell>
+                                            {row.name}
+                                        </TableCell>
 
-                                    <TrendBar
-                                        value={row.collection}
-                                        maximum={maxTrend}
-                                        tone="cyan"
-                                    />
+                                        <TableCell>
+                                            {row.transaction_count}
+                                        </TableCell>
 
-                                    <TrendBar
-                                        value={row.expenses}
-                                        maximum={maxTrend}
-                                        tone="red"
-                                    />
-                                </div>
+                                        <MoneyCell
+                                            value={row.total}
+                                            positive
+                                        />
+                                    </tr>
+                                ))}
+                            </ReportTable>
+                        )}
 
-                                <div className="text-right text-xs">
-                                    <p className="font-bold text-emerald-600">
-                                        Gross: QAR{' '}
-                                        {money(
-                                            row.gross_collection,
-                                        )}
-                                    </p>
+                        {expenseCategories.length > 0 && (
+                            <ReportTable
+                                title="Expenses by Category"
+                                description="Where business money was spent"
+                                headers={[
+                                    'Category',
+                                    'Transactions',
+                                    'Amount',
+                                ]}
+                                empty={false}
+                            >
+                                {expenseCategories.map((row) => (
+                                    <tr key={row.name}>
+                                        <TableCell>
+                                            {row.name}
+                                        </TableCell>
 
-                                    <p className="mt-1 font-bold text-amber-600">
-                                        Refund: QAR{' '}
-                                        {money(
-                                            row.refunds,
-                                        )}
-                                    </p>
+                                        <TableCell>
+                                            {row.transaction_count}
+                                        </TableCell>
 
-                                    <p className="mt-1 font-bold text-cyan-700">
-                                        Net: QAR{' '}
-                                        {money(
-                                            row.collection,
-                                        )}
-                                    </p>
+                                        <MoneyCell
+                                            value={row.total}
+                                            negative
+                                        />
+                                    </tr>
+                                ))}
+                            </ReportTable>
+                        )}
+                    </section>
+                )}
 
-                                    <p className="mt-1 font-bold text-red-600">
-                                        Expense: QAR{' '}
-                                        {money(
-                                            row.expenses,
-                                        )}
-                                    </p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-
-                <section className="grid gap-6 xl:grid-cols-2">
+                {receivables.length > 0 && (
                     <ReportTable
-                        title="Gross Collection by Payment Method"
-                        description="Customer money received before cash refunds"
+                        title="Customer Due / Receivables"
+                        description="Current unpaid customer balances"
                         headers={[
-                            'Method',
-                            'Transactions',
-                            'Amount',
+                            'Client',
+                            'Phone',
+                            'Invoices',
+                            'Oldest Due',
+                            'Total Due',
+                            'Overdue',
+                            'Action',
                         ]}
-                        empty={
-                            paymentMethods.length === 0
-                        }
+                        empty={receivables.length === 0}
                     >
-                        {paymentMethods.map((row) => (
-                            <tr key={row.name}>
+                        {receivables.map((row) => (
+                            <tr key={row.client_id}>
                                 <TableCell>
-                                    {row.name}
+                                    <Link
+                                        href={route(
+                                            'clients.show',
+                                            row.client_id,
+                                        )}
+                                        className="font-bold text-cyan-700 hover:underline"
+                                    >
+                                        {row.client_name ||
+                                            '-'}
+                                    </Link>
+
+                                    <p className="mt-1 font-mono text-xs text-slate-400">
+                                        {row.client_code ||
+                                            '-'}
+                                    </p>
                                 </TableCell>
 
                                 <TableCell>
-                                    {
-                                        row.transaction_count
-                                    }
+                                    {row.phone || '-'}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.invoice_count}
+                                </TableCell>
+
+                                <TableCell>
+                                    {formatDate(
+                                        row.oldest_due_date,
+                                    )}
                                 </TableCell>
 
                                 <MoneyCell
-                                    value={row.total}
+                                    value={row.total_due}
+                                    negative
+                                />
+
+                                <MoneyCell
+                                    value={row.overdue_due}
+                                    negative
+                                />
+
+                                <TableCell>
+                                    <Link
+                                        href={route(
+                                            'clients.index',
+                                        )}
+                                        className="rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white hover:bg-orange-700"
+                                    >
+                                        Receive Due
+                                    </Link>
+                                </TableCell>
+                            </tr>
+                        ))}
+                    </ReportTable>
+                )}
+
+                {collections.length > 0 && (
+                    <ReportTable
+                        title="Cash Received Details"
+                        description="Original customer payments before refunds"
+                        headers={[
+                            'Date',
+                            'Client',
+                            'Invoice',
+                            'Method',
+                            'Transaction',
+                            'Amount',
+                        ]}
+                        empty={collections.length === 0}
+                    >
+                        {collections.map((row) => (
+                            <tr key={row.id}>
+                                <TableCell>
+                                    {formatDate(row.date)}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.client_name || '-'}
+                                    <p className="mt-1 font-mono text-xs text-slate-400">
+                                        {row.client_code ||
+                                            '-'}
+                                    </p>
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.invoice_no || '-'}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.method || '-'}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.transaction_id ||
+                                        '-'}
+                                </TableCell>
+
+                                <MoneyCell
+                                    value={row.amount}
                                     positive
                                 />
                             </tr>
                         ))}
                     </ReportTable>
+                )}
 
+                {refunds.length > 0 && (
                     <ReportTable
-                        title="Expenses by Category"
-                        description="Where business money was spent"
+                        title="Cash Refund Details"
+                        description="Cash physically returned to MAC clients in selected period"
                         headers={[
-                            'Category',
-                            'Transactions',
-                            'Amount',
+                            'Date',
+                            'Client',
+                            'Invoice',
+                            'Reason',
+                            'Refunded By',
+                            'Cash Out',
                         ]}
-                        empty={
-                            expenseCategories.length ===
-                            0
-                        }
+                        empty={refunds.length === 0}
                     >
-                        {expenseCategories.map((row) => (
-                            <tr key={row.name}>
+                        {refunds.map((row) => (
+                            <tr
+                                key={
+                                    row.batch_uuid
+                                    || `refund-${row.id}`
+                                }
+                            >
                                 <TableCell>
-                                    {row.name}
+                                    {formatDate(
+                                        row.date,
+                                    )}
                                 </TableCell>
 
                                 <TableCell>
-                                    {
-                                        row.transaction_count
-                                    }
+                                    {row.client_name || '-'}
+
+                                    <p className="mt-1 font-mono text-xs text-slate-400">
+                                        {row.client_code || '-'}
+                                    </p>
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.invoice_no || '-'}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.reason || '-'}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.refunded_by || '-'}
                                 </TableCell>
 
                                 <MoneyCell
-                                    value={row.total}
+                                    value={row.amount}
+                                    negative
+                                    strong
+                                />
+                            </tr>
+                        ))}
+                    </ReportTable>
+                )}
+
+                {expenses.length > 0 && (
+                    <ReportTable
+                        title="Expense Details"
+                        description="Business expenses in selected period"
+                        headers={[
+                            'Date',
+                            'Category',
+                            'Title',
+                            'Method',
+                            'Notes',
+                            'Amount',
+                        ]}
+                        empty={expenses.length === 0}
+                    >
+                        {expenses.map((row) => (
+                            <tr key={row.id}>
+                                <TableCell>
+                                    {formatDate(row.date)}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.category || '-'}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.title || '-'}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.method || '-'}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.notes || '-'}
+                                </TableCell>
+
+                                <MoneyCell
+                                    value={row.amount}
                                     negative
                                 />
                             </tr>
                         ))}
                     </ReportTable>
-                </section>
+                )}
 
-                <ReportTable
-                    title="Invoice Status Summary"
-                    description="Billing, paid and outstanding amounts"
-                    headers={[
-                        'Status',
-                        'Invoices',
-                        'Gross',
-                        'Discount',
-                        'Paid',
-                        'Due',
-                    ]}
-                    empty={
-                        invoiceStatuses.length === 0
-                    }
-                >
-                    {invoiceStatuses.map((row) => (
-                        <tr key={row.status}>
-                            <TableCell>
-                                <StatusBadge
-                                    status={row.status}
+                {transactions.length > 0 && (
+                    <ReportTable
+                        title="Cash Flow Transactions"
+                        description="Money in, money out and running balance"
+                        headers={[
+                            'Date',
+                            'Type',
+                            'Description',
+                            'Category',
+                            'Reference',
+                            'Money In',
+                            'Money Out',
+                            'Balance',
+                        ]}
+                        empty={transactions.length === 0}
+                    >
+                        {transactions.map((row) => (
+                            <tr
+                                key={`${row.type}-${row.id}`}
+                            >
+                                <TableCell>
+                                    {formatDate(row.date)}
+                                </TableCell>
+
+                                <TableCell>
+                                    <TransactionBadge
+                                        type={row.type}
+                                    />
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.description ||
+                                        '-'}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.category || '-'}
+                                </TableCell>
+
+                                <TableCell>
+                                    {row.reference || '-'}
+                                </TableCell>
+
+                                <MoneyCell
+                                    value={row.money_in}
+                                    positive
                                 />
-                            </TableCell>
 
-                            <TableCell>
-                                {row.invoice_count}
-                            </TableCell>
-
-                            <MoneyCell
-                                value={
-                                    row.gross_amount
-                                }
-                            />
-
-                            <MoneyCell
-                                value={
-                                    row.discount_amount
-                                }
-                            />
-
-                            <MoneyCell
-                                value={
-                                    row.paid_amount
-                                }
-                                positive
-                            />
-
-                            <MoneyCell
-                                value={row.due_amount}
-                                negative
-                            />
-                        </tr>
-                    ))}
-                </ReportTable>
-
-                <ReportTable
-                    title="Customer Due / Receivables"
-                    description="Current unpaid customer balances"
-                    headers={[
-                        'Client',
-                        'Phone',
-                        'Invoices',
-                        'Oldest Due',
-                        'Total Due',
-                        'Overdue',
-                        'Action',
-                    ]}
-                    empty={receivables.length === 0}
-                >
-                    {receivables.map((row) => (
-                        <tr key={row.client_id}>
-                            <TableCell>
-                                <Link
-                                    href={route(
-                                        'clients.show',
-                                        row.client_id,
-                                    )}
-                                    className="font-bold text-cyan-700 hover:underline"
-                                >
-                                    {row.client_name ||
-                                        '-'}
-                                </Link>
-
-                                <p className="mt-1 font-mono text-xs text-slate-400">
-                                    {row.client_code ||
-                                        '-'}
-                                </p>
-                            </TableCell>
-
-                            <TableCell>
-                                {row.phone || '-'}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.invoice_count}
-                            </TableCell>
-
-                            <TableCell>
-                                {formatDate(
-                                    row.oldest_due_date,
-                                )}
-                            </TableCell>
-
-                            <MoneyCell
-                                value={row.total_due}
-                                negative
-                            />
-
-                            <MoneyCell
-                                value={row.overdue_due}
-                                negative
-                            />
-
-                            <TableCell>
-                                <Link
-                                    href={route(
-                                        'clients.index',
-                                    )}
-                                    className="rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white hover:bg-orange-700"
-                                >
-                                    Receive Due
-                                </Link>
-                            </TableCell>
-                        </tr>
-                    ))}
-                </ReportTable>
-
-                <ReportTable
-                    title="Gross Collection Details"
-                    description="Original customer payments before refunds"
-                    headers={[
-                        'Date',
-                        'Client',
-                        'Invoice',
-                        'Method',
-                        'Transaction',
-                        'Amount',
-                    ]}
-                    empty={collections.length === 0}
-                >
-                    {collections.map((row) => (
-                        <tr key={row.id}>
-                            <TableCell>
-                                {formatDate(row.date)}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.client_name || '-'}
-                                <p className="mt-1 font-mono text-xs text-slate-400">
-                                    {row.client_code ||
-                                        '-'}
-                                </p>
-                            </TableCell>
-
-                            <TableCell>
-                                {row.invoice_no || '-'}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.method || '-'}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.transaction_id ||
-                                    '-'}
-                            </TableCell>
-
-                            <MoneyCell
-                                value={row.amount}
-                                positive
-                            />
-                        </tr>
-                    ))}
-                </ReportTable>
-
-                <ReportTable
-                    title="Cash Refund Details"
-                    description="Cash physically returned to MAC clients in selected period"
-                    headers={[
-                        'Date',
-                        'Client',
-                        'Invoice',
-                        'Reason',
-                        'Refunded By',
-                        'Cash Out',
-                    ]}
-                    empty={refunds.length === 0}
-                >
-                    {refunds.map((row) => (
-                        <tr
-                            key={
-                                row.batch_uuid
-                                || `refund-${row.id}`
-                            }
-                        >
-                            <TableCell>
-                                {formatDate(
-                                    row.date,
-                                )}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.client_name || '-'}
-
-                                <p className="mt-1 font-mono text-xs text-slate-400">
-                                    {row.client_code || '-'}
-                                </p>
-                            </TableCell>
-
-                            <TableCell>
-                                {row.invoice_no || '-'}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.reason || '-'}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.refunded_by || '-'}
-                            </TableCell>
-
-                            <MoneyCell
-                                value={row.amount}
-                                negative
-                                strong
-                            />
-                        </tr>
-                    ))}
-                </ReportTable>
-
-                <ReportTable
-                    title="Expense Details"
-                    description="Business expenses in selected period"
-                    headers={[
-                        'Date',
-                        'Category',
-                        'Title',
-                        'Method',
-                        'Notes',
-                        'Amount',
-                    ]}
-                    empty={expenses.length === 0}
-                >
-                    {expenses.map((row) => (
-                        <tr key={row.id}>
-                            <TableCell>
-                                {formatDate(row.date)}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.category || '-'}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.title || '-'}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.method || '-'}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.notes || '-'}
-                            </TableCell>
-
-                            <MoneyCell
-                                value={row.amount}
-                                negative
-                            />
-                        </tr>
-                    ))}
-                </ReportTable>
-
-                <ReportTable
-                    title="Cash Flow Transactions"
-                    description="Money in, money out and running balance"
-                    headers={[
-                        'Date',
-                        'Type',
-                        'Description',
-                        'Category',
-                        'Reference',
-                        'Money In',
-                        'Money Out',
-                        'Balance',
-                    ]}
-                    empty={transactions.length === 0}
-                >
-                    {transactions.map((row) => (
-                        <tr
-                            key={`${row.type}-${row.id}`}
-                        >
-                            <TableCell>
-                                {formatDate(row.date)}
-                            </TableCell>
-
-                            <TableCell>
-                                <TransactionBadge
-                                    type={row.type}
+                                <MoneyCell
+                                    value={row.money_out}
+                                    negative
                                 />
-                            </TableCell>
 
-                            <TableCell>
-                                {row.description ||
-                                    '-'}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.category || '-'}
-                            </TableCell>
-
-                            <TableCell>
-                                {row.reference || '-'}
-                            </TableCell>
-
-                            <MoneyCell
-                                value={row.money_in}
-                                positive
-                            />
-
-                            <MoneyCell
-                                value={row.money_out}
-                                negative
-                            />
-
-                            <MoneyCell
-                                value={row.balance}
-                                strong
-                            />
-                        </tr>
-                    ))}
-                </ReportTable>
+                                <MoneyCell
+                                    value={row.balance}
+                                    strong
+                                />
+                            </tr>
+                        ))}
+                    </ReportTable>
+                )}
             </div>
 
-                <UnifiedFinanceStrip />
 </AppLayout>
     );
 }
@@ -1398,27 +1309,6 @@ function MoneyCell({
         >
             QAR {money(value)}
         </td>
-    );
-}
-
-function StatusBadge({ status }) {
-    const classes = {
-        paid: 'bg-emerald-100 text-emerald-700',
-        partial: 'bg-amber-100 text-amber-700',
-        unpaid: 'bg-red-100 text-red-700',
-        overdue: 'bg-red-100 text-red-700',
-        refunded: 'bg-amber-100 text-amber-800',
-    };
-
-    return (
-        <span
-            className={`inline-flex rounded-full px-3 py-1 text-xs font-bold capitalize ${
-                classes[status] ||
-                'bg-slate-100 text-slate-700'
-            }`}
-        >
-            {status || 'Unknown'}
-        </span>
     );
 }
 

@@ -665,7 +665,7 @@ class AccountingController extends Controller
                 2
             );
 
-        $overdueAmount = round(
+        $normalOverdueAmount =
             (float) Invoice::query()
                 ->where(
                     'status',
@@ -684,9 +684,35 @@ class AccountingController extends Controller
                         'Asia/Qatar'
                     )->toDateString()
                 )
-                ->sum('due_amount'),
-            2
-        );
+                ->sum('due_amount');
+
+        $hotspotOverdueAmount =
+            (float) HotspotInvoice::query()
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->where(
+                    'due_amount',
+                    '>',
+                    0
+                )
+                ->whereDate(
+                    'due_date',
+                    '<',
+                    Carbon::today(
+                        'Asia/Qatar'
+                    )->toDateString()
+                )
+                ->sum('due_amount');
+
+        $overdueAmount =
+            round(
+                $normalOverdueAmount
+                + $hotspotOverdueAmount,
+                2
+            );
 
         $profitMargin =
             $netCollection > 0
@@ -912,12 +938,6 @@ class AccountingController extends Controller
                     $endDate
                 ),
 
-            'invoiceStatuses' =>
-                $this->invoiceStatusSummary(
-                    $startDate,
-                    $endDate
-                ),
-
             'collections' =>
                 $collections,
 
@@ -939,7 +959,11 @@ class AccountingController extends Controller
                 ),
 
             'clients' =>
-                $this->canViewClientReport()
+                (
+                    request()->query('report')
+                    === 'clients'
+                    && $this->canViewClientReport()
+                )
                     ? $this->clientRows()
                     : [],
 
