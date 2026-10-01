@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\NetworkZone;
 use App\Models\Reseller;
 use App\Models\User;
+use App\Services\Reseller\ResellerModuleService;
 use App\Services\Reseller\ResellerPermissionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -17,7 +19,8 @@ class OperatorController extends Controller
 {
     public function index(
         Request $request,
-        ResellerPermissionService $permissions
+        ResellerPermissionService $permissions,
+        ResellerModuleService $modules
     ): Response {
         $reseller =
             $this->ownerReseller(
@@ -26,7 +29,8 @@ class OperatorController extends Controller
 
         $zones =
             $this->zones(
-                $reseller
+                $reseller,
+                $modules
             );
 
         return Inertia::render(
@@ -63,9 +67,23 @@ class OperatorController extends Controller
                   'zones' =>
                       $zones,
 
-                'permissionOptions' =>
-                    $permissions
-                        ->options(),
+                'permissionOptionsByZone' => [
+                    'mac' =>
+                        $this->permissionOptionsForZone(
+                            $reseller,
+                            'mac',
+                            $permissions,
+                            $modules
+                        ),
+
+                    'hotspot' =>
+                        $this->permissionOptionsForZone(
+                            $reseller,
+                            'hotspot',
+                            $permissions,
+                            $modules
+                        ),
+                ],
 
             ]
         );
@@ -73,7 +91,8 @@ class OperatorController extends Controller
 
     public function store(
         Request $request,
-        ResellerPermissionService $permissions
+        ResellerPermissionService $permissions,
+        ResellerModuleService $modules
     ): RedirectResponse {
         $reseller =
             $this->ownerReseller(
@@ -133,6 +152,33 @@ class OperatorController extends Controller
                   $data['zone_id']
               );
 
+        /*
+         * OPERATOR_MODULE_ZONE_POLICY_V2
+         */
+        $this->assertZoneModuleEnabled(
+            $reseller,
+            $zone,
+            $modules
+        );
+
+        $selectedPermissions =
+            array_values(
+                array_unique(
+                    $data[
+                        'permissions'
+                    ] ?? []
+                )
+            );
+
+        $this->assertPermissionsAllowedForZone(
+            $reseller,
+            $zone,
+            $selectedPermissions,
+            $permissions,
+            $modules
+        );
+
+
         User::create([
             'reseller_id' =>
                 $reseller->id,
@@ -163,13 +209,7 @@ class OperatorController extends Controller
                 $zone->id,
 
             'permissions' =>
-                array_values(
-                    array_unique(
-                        $data[
-                            'permissions'
-                        ] ?? []
-                    )
-                ),
+                $selectedPermissions,
 
             'is_active' =>
                 true,
@@ -187,7 +227,8 @@ class OperatorController extends Controller
     public function edit(
         Request $request,
         User $operator,
-        ResellerPermissionService $permissions
+        ResellerPermissionService $permissions,
+        ResellerModuleService $modules
     ): Response {
         $reseller =
             $this->ownerReseller(
@@ -202,7 +243,8 @@ class OperatorController extends Controller
 
           $zones =
               $this->zones(
-                  $reseller
+                  $reseller,
+                  $modules
               );
 
         return Inertia::render(
@@ -214,9 +256,23 @@ class OperatorController extends Controller
                   'zones' =>
                       $zones,
 
-                'permissionOptions' =>
-                    $permissions
-                        ->options(),
+                'permissionOptionsByZone' => [
+                    'mac' =>
+                        $this->permissionOptionsForZone(
+                            $reseller,
+                            'mac',
+                            $permissions,
+                            $modules
+                        ),
+
+                    'hotspot' =>
+                        $this->permissionOptionsForZone(
+                            $reseller,
+                            'hotspot',
+                            $permissions,
+                            $modules
+                        ),
+                ],
             ]
         );
     }
@@ -224,7 +280,8 @@ class OperatorController extends Controller
     public function update(
         Request $request,
         User $operator,
-        ResellerPermissionService $permissions
+        ResellerPermissionService $permissions,
+        ResellerModuleService $modules
     ): RedirectResponse {
         $reseller =
             $this->ownerReseller(
@@ -292,6 +349,30 @@ class OperatorController extends Controller
                   $data['zone_id']
               );
 
+        $this->assertZoneModuleEnabled(
+            $reseller,
+            $zone,
+            $modules
+        );
+
+        $selectedPermissions =
+            array_values(
+                array_unique(
+                    $data[
+                        'permissions'
+                    ] ?? []
+                )
+            );
+
+        $this->assertPermissionsAllowedForZone(
+            $reseller,
+            $zone,
+            $selectedPermissions,
+            $permissions,
+            $modules
+        );
+
+
           $operator->zone_id =
               $zone->id;
 
@@ -302,13 +383,7 @@ class OperatorController extends Controller
             $data['email'];
 
         $operator->permissions =
-            array_values(
-                array_unique(
-                    $data[
-                        'permissions'
-                    ] ?? []
-                )
-            );
+            $selectedPermissions;
 
         if (
             !empty(
@@ -380,6 +455,181 @@ class OperatorController extends Controller
         );
     }
 
+    private function permissionOptionsForZone(
+        Reseller $reseller,
+        string $zoneType,
+        ResellerPermissionService $permissions,
+        ResellerModuleService $modules
+    ): array {
+        $zoneModule =
+            $this->moduleForZoneType(
+                $zoneType
+            );
+
+        if (
+            !$zoneModule
+            || !$modules->enabled(
+                (int) $reseller->id,
+                $zoneModule
+            )
+        ) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach (
+            $permissions->options()
+            as $permission => $label
+        ) {
+            $permissionModule =
+                $this->moduleForPermission(
+                    $permission
+                );
+
+            /*
+             * null = shared Company permission.
+             * Dashboard, Routers, Expenses and
+             * Accounting stay available to either
+             * enabled service module.
+             */
+            if ($permissionModule === null) {
+                $result[
+                    $permission
+                ] = $label;
+
+                continue;
+            }
+
+            if (
+                $permissionModule
+                !== $zoneModule
+            ) {
+                continue;
+            }
+
+            $result[
+                $permission
+            ] = $label;
+        }
+
+        return $result;
+    }
+
+    private function assertZoneModuleEnabled(
+        Reseller $reseller,
+        NetworkZone $zone,
+        ResellerModuleService $modules
+    ): void {
+        $module =
+            $this->moduleForZoneType(
+                (string)
+                $zone->service_type
+            );
+
+        if (
+            !$module
+            || !$modules->enabled(
+                (int) $reseller->id,
+                $module
+            )
+        ) {
+            throw ValidationException::withMessages([
+                'zone_id' =>
+                    'Selected Network Zone belongs to a disabled Company module.',
+            ]);
+        }
+    }
+
+    private function assertPermissionsAllowedForZone(
+        Reseller $reseller,
+        NetworkZone $zone,
+        array $selected,
+        ResellerPermissionService $permissions,
+        ResellerModuleService $modules
+    ): void {
+        $allowed =
+            array_keys(
+                $this->permissionOptionsForZone(
+                    $reseller,
+                    (string)
+                    $zone->service_type,
+                    $permissions,
+                    $modules
+                )
+            );
+
+        $invalid =
+            array_values(
+                array_diff(
+                    $selected,
+                    $allowed
+                )
+            );
+
+        if ($invalid !== []) {
+            throw ValidationException::withMessages([
+                'permissions' =>
+                    'One or more permissions are not available for the selected Company module / Network Zone.',
+            ]);
+        }
+    }
+
+    private function moduleForZoneType(
+        string $zoneType
+    ): ?string {
+        return match (
+            strtolower(
+                trim(
+                    $zoneType
+                )
+            )
+        ) {
+            'mac' =>
+                ResellerModuleService::MAC_CLIENT,
+
+            'hotspot' =>
+                ResellerModuleService::HOTSPOT,
+
+            default =>
+                null,
+        };
+    }
+
+    private function moduleForPermission(
+        string $permission
+    ): ?string {
+        foreach ([
+            'clients.',
+            'packages.',
+            'ip_pools.',
+            'invoices.',
+            'payments.',
+        ] as $prefix) {
+            if (
+                str_starts_with(
+                    $permission,
+                    $prefix
+                )
+            ) {
+                return
+                    ResellerModuleService::MAC_CLIENT;
+            }
+        }
+
+        if (
+            str_starts_with(
+                $permission,
+                'hotspot.'
+            )
+        ) {
+            return
+                ResellerModuleService::HOTSPOT;
+        }
+
+        return null;
+    }
+
     private function ownerReseller(
         Request $request
     ): Reseller {
@@ -401,57 +651,57 @@ class OperatorController extends Controller
     }
 
     private function zones(
-
-        Reseller $reseller
-
+        Reseller $reseller,
+        ResellerModuleService $modules
     ) {
+        $types = [];
+
+        if (
+            $modules->enabled(
+                (int) $reseller->id,
+                ResellerModuleService::MAC_CLIENT
+            )
+        ) {
+            $types[] = 'mac';
+        }
+
+        if (
+            $modules->enabled(
+                (int) $reseller->id,
+                ResellerModuleService::HOTSPOT
+            )
+        ) {
+            $types[] = 'hotspot';
+        }
+
+        if ($types === []) {
+            return collect();
+        }
 
         return NetworkZone::query()
-
             ->where(
-
                 'reseller_id',
-
                 $reseller->id
-
             )
-
             ->where(
-
                 'enabled',
-
                 true
-
             )
-
             ->whereIn(
-
                 'service_type',
-
-                [
-
-                    'mac',
-
-                    'hotspot',
-
-                ]
-
+                $types
             )
-
-            ->orderBy('service_type')
-
-            ->orderBy('name')
-
+            ->orderBy(
+                'service_type'
+            )
+            ->orderBy(
+                'name'
+            )
             ->get([
-
                 'id',
-
                 'name',
-
                 'service_type',
-
             ]);
-
     }
 
 

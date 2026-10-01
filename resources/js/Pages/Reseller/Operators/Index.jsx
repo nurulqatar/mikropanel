@@ -9,7 +9,7 @@ import {
 export default function Index({
     operators = [],
     zones = [],
-    permissionOptions = {},
+    permissionOptionsByZone = {},
 }) {
     const form = useForm({
         name: '',
@@ -24,6 +24,64 @@ export default function Index({
         password_confirmation: '',
         permissions: [],
     });
+
+    /*
+     * OPERATOR_MODULE_ZONE_UI_V2
+     */
+    const optionsForZone = (
+        zoneId,
+    ) => {
+        const zone =
+            zones.find(
+                (item) =>
+                    String(item.id)
+                    === String(zoneId),
+            );
+
+        if (!zone) {
+            return {};
+        }
+
+        return (
+            permissionOptionsByZone[
+                zone.service_type
+            ]
+            ?? {}
+        );
+    };
+
+    const permissionOptions =
+        optionsForZone(
+            form.data.zone_id,
+        );
+
+    const changeZone = (
+        zoneId,
+    ) => {
+        const allowed =
+            new Set(
+                Object.keys(
+                    optionsForZone(
+                        zoneId,
+                    ),
+                ),
+            );
+
+        form.setData({
+            ...form.data,
+
+            zone_id:
+                zoneId,
+
+            permissions:
+                form.data.permissions.filter(
+                    (permission) =>
+                        allowed.has(
+                            permission,
+                        ),
+                ),
+        });
+    };
 
     const togglePermission = (
         permission,
@@ -130,8 +188,7 @@ export default function Index({
                                           form.data.zone_id
                                       }
                                       onChange={(e) =>
-                                          form.setData(
-                                              'zone_id',
+                                          changeZone(
                                               e.target.value,
                                           )
                                       }

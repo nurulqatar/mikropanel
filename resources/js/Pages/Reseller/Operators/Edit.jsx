@@ -8,8 +8,38 @@ import {
 export default function Edit({
     operator,
     zones = [],
-    permissionOptions = {},
+    permissionOptionsByZone = {},
 }) {
+    /*
+     * OPERATOR_MODULE_ZONE_UI_V2
+     */
+    const initialZone =
+        zones.find(
+            (item) =>
+                String(item.id)
+                === String(
+                    operator.zone_id
+                    ?? '',
+                ),
+        );
+
+    const initialPermissionOptions =
+        initialZone
+            ? (
+                permissionOptionsByZone[
+                    initialZone.service_type
+                ]
+                ?? {}
+            )
+            : {};
+
+    const initialAllowed =
+        new Set(
+            Object.keys(
+                initialPermissionOptions,
+            ),
+        );
+
     const form = useForm({
         name:
             operator.name ?? '',
@@ -24,8 +54,71 @@ export default function Edit({
         password: '',
         password_confirmation: '',
         permissions:
-            operator.permissions ?? [],
+            (
+                operator.permissions
+                ?? []
+            ).filter(
+                (permission) =>
+                    initialAllowed.has(
+                        permission,
+                    ),
+            ),
     });
+
+    const optionsForZone = (
+        zoneId,
+    ) => {
+        const zone =
+            zones.find(
+                (item) =>
+                    String(item.id)
+                    === String(zoneId),
+            );
+
+        if (!zone) {
+            return {};
+        }
+
+        return (
+            permissionOptionsByZone[
+                zone.service_type
+            ]
+            ?? {}
+        );
+    };
+
+    const permissionOptions =
+        optionsForZone(
+            form.data.zone_id,
+        );
+
+    const changeZone = (
+        zoneId,
+    ) => {
+        const allowed =
+            new Set(
+                Object.keys(
+                    optionsForZone(
+                        zoneId,
+                    ),
+                ),
+            );
+
+        form.setData({
+            ...form.data,
+
+            zone_id:
+                zoneId,
+
+            permissions:
+                form.data.permissions.filter(
+                    (permission) =>
+                        allowed.has(
+                            permission,
+                        ),
+                ),
+        });
+    };
 
     const toggle = (
         permission,
@@ -118,8 +211,7 @@ export default function Edit({
                                       form.data.zone_id
                                   }
                                   onChange={(e) =>
-                                      form.setData(
-                                          'zone_id',
+                                      changeZone(
                                           e.target.value,
                                       )
                                   }
