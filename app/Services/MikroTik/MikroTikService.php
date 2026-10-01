@@ -624,6 +624,39 @@ class MikroTikService
                     ])
                 );
 
+            /*
+             * HOTSPOT_WAN_AUTO_HIDE_V1
+             *
+             * Detect Internet/WAN interfaces dynamically.
+             * No interface name such as ether1 is hardcoded.
+             */
+            $interfaceListsRead =
+                $this->readRowsSafe(
+                    '/interface/list/member/print',
+                    implode(',', [
+                        '.id',
+                        'interface',
+                        'list',
+                        'disabled',
+                    ])
+                );
+
+            $routesRead =
+                $this->readRowsSafe(
+                    '/ip/route/print',
+                    implode(',', [
+                        '.id',
+                        'dst-address',
+                        'gateway',
+                        'immediate-gw',
+                        'routing-table',
+                        'active',
+                        'disabled',
+                        'dynamic',
+                        'distance',
+                    ])
+                );
+
             $bridgesByInterface = [];
 
             foreach (
@@ -734,6 +767,206 @@ class MikroTikService
                 ];
             }
 
+            /*
+             * Build a set of physical/logical interfaces
+             * that RouterOS indicates are WAN/Internet.
+             *
+             * Sources:
+             * 1. RouterOS interface list named WAN.
+             * 2. Bound DHCP client that installs default route.
+             * 3. Active main-table 0.0.0.0/0 route.
+             */
+            $wanInterfaces = [];
+
+            foreach (
+                $interfaceListsRead['rows'] ?? []
+                as $row
+            ) {
+                $list =
+                    strtolower(
+                        trim(
+                            (string) (
+                                $row['list']
+                                ?? ''
+                            )
+                        )
+                    );
+
+                $interface =
+                    trim(
+                        (string) (
+                            $row['interface']
+                            ?? ''
+                        )
+                    );
+
+                $disabled =
+                    ($row['disabled'] ?? 'false')
+                    === 'true';
+
+                if (
+                    !$disabled
+                    && $list === 'wan'
+                    && $interface !== ''
+                ) {
+                    $wanInterfaces[
+                        $interface
+                    ] = true;
+                }
+            }
+
+            foreach (
+                $dhcpClientsRead['rows'] ?? []
+                as $row
+            ) {
+                $interface =
+                    trim(
+                        (string) (
+                            $row['interface']
+                            ?? ''
+                        )
+                    );
+
+                $status =
+                    strtolower(
+                        trim(
+                            (string) (
+                                $row['status']
+                                ?? ''
+                            )
+                        )
+                    );
+
+                $disabled =
+                    ($row['disabled'] ?? 'false')
+                    === 'true';
+
+                $addsDefaultRoute =
+                    ($row['add-default-route']
+                        ?? 'false')
+                    === 'true';
+
+                if (
+                    !$disabled
+                    && $interface !== ''
+                    && $addsDefaultRoute
+                    && in_array(
+                        $status,
+                        [
+                            'bound',
+                            'renewing',
+                            'rebinding',
+                        ],
+                        true
+                    )
+                ) {
+                    $wanInterfaces[
+                        $interface
+                    ] = true;
+                }
+            }
+
+            foreach (
+                $routesRead['rows'] ?? []
+                as $row
+            ) {
+                $destination =
+                    trim(
+                        (string) (
+                            $row['dst-address']
+                            ?? ''
+                        )
+                    );
+
+                $routingTable =
+                    trim(
+                        (string) (
+                            $row['routing-table']
+                            ?? 'main'
+                        )
+                    );
+
+                $active =
+                    ($row['active'] ?? 'false')
+                    === 'true';
+
+                $disabled =
+                    ($row['disabled'] ?? 'false')
+                    === 'true';
+
+                if (
+                    $destination !== '0.0.0.0/0'
+                    || !$active
+                    || $disabled
+                    || (
+                        $routingTable !== ''
+                        && $routingTable !== 'main'
+                    )
+                ) {
+                    continue;
+                }
+
+                $immediateGateway =
+                    trim(
+                        (string) (
+                            $row['immediate-gw']
+                            ?? ''
+                        )
+                    );
+
+                /*
+                 * RouterOS commonly reports:
+                 * 192.168.1.1%ether1
+                 */
+                if (
+                    preg_match(
+                        '/%([^%]+)$/',
+                        $immediateGateway,
+                        $matches
+                    )
+                ) {
+                    $interface =
+                        trim(
+                            (string)
+                            $matches[1]
+                        );
+
+                    if ($interface !== '') {
+                        $wanInterfaces[
+                            $interface
+                        ] = true;
+                    }
+                }
+
+                /*
+                 * Interface gateways may also be
+                 * represented directly by name.
+                 */
+                $gateway =
+                    trim(
+                        (string) (
+                            $row['gateway']
+                            ?? ''
+                        )
+                    );
+
+                if (
+                    $gateway !== ''
+                    && !filter_var(
+                        $gateway,
+                        FILTER_VALIDATE_IP
+                    )
+                    && !str_contains(
+                        $gateway,
+                        ','
+                    )
+                ) {
+                    $wanInterfaces[
+                        $gateway
+                    ] = true;
+                }
+            }
+
             $interfaces = [];
 
             foreach (
@@ -805,6 +1038,13 @@ class MikroTikService
                     || $addresses !== []
                     || $dhcpClient !== null;
 
+                $isWan =
+                    isset(
+                        $wanInterfaces[
+                            $name
+                        ]
+                    );
+
                 $interfaces[] = [
                     'id' =>
                         $row['.id']
@@ -854,6 +1094,9 @@ class MikroTikService
 
                     'physical_ethernet' =>
                         $physicalEthernet,
+
+                    'is_wan' =>
+                        $isWan,
 
                     'existing_bridge' =>
                         $bridge[
@@ -910,6 +1153,32 @@ class MikroTikService
                             $row[
                                 'physical_ethernet'
                             ]
+                            && !(
+                                $row[
+                                    'is_wan'
+                                ]
+                                ?? false
+                            )
+                    )
+                );
+
+            $hiddenWanCount =
+                count(
+                    array_filter(
+                        $interfaces,
+                        fn (array $row): bool =>
+                            (bool) (
+                                $row[
+                                    'physical_ethernet'
+                                ]
+                                ?? false
+                            )
+                            && (bool) (
+                                $row[
+                                    'is_wan'
+                                ]
+                                ?? false
+                            )
                     )
                 );
 
@@ -957,6 +1226,37 @@ class MikroTikService
 
                 'ethernet_interfaces' =>
                     $ethernet,
+
+                /*
+                 * Only the count is exposed to the UI.
+                 * WAN port names are intentionally not
+                 * rendered in the setup selection.
+                 */
+                'hidden_wan_count' =>
+                    $hiddenWanCount,
+
+                'wan_detection' => [
+                    'interface_list_ok' =>
+                        (bool) (
+                            $interfaceListsRead[
+                                'success'
+                            ] ?? false
+                        ),
+
+                    'routes_ok' =>
+                        (bool) (
+                            $routesRead[
+                                'success'
+                            ] ?? false
+                        ),
+
+                    'dhcp_clients_ok' =>
+                        (bool) (
+                            $dhcpClientsRead[
+                                'success'
+                            ] ?? false
+                        ),
+                ],
 
                 'bridge_ports_read_ok' =>
                     (bool) (

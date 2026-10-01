@@ -17,6 +17,8 @@ import {
  * - Router identity
  * - live interface discovery
  * - bridge/IP/DHCP-client caution indicators
+ * - HOTSPOT_WAN_AUTO_HIDE_V1
+ * - automatic WAN/Internet port exclusion
  * - local bridge-port selection only
  *
  * RouterOS configuration is not changed here.
@@ -237,11 +239,26 @@ export default function HotspotSetup({
                                 </h2>
 
                                 <p className="mt-2 max-w-4xl text-sm text-slate-500">
-                                    These are live physical Ethernet/SFP interfaces from this MikroTik.
+                                    These are live LAN-capable physical Ethernet/SFP interfaces from this MikroTik.
+                                    Internet/WAN interfaces are detected automatically from RouterOS and excluded from this list.
                                     Selecting a port does not change RouterOS yet.
-                                    Ports already carrying an IP, DHCP client or another bridge are marked with a caution warning.
+                                    Remaining ports that already carry another bridge or local configuration are marked with a caution warning.
                                 </p>
                             </div>
+
+                            {(discovery.hidden_wan_count ??
+                                0) > 0 && (
+                                <div className="mx-6 mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+                                    Internet/WAN interface protection active —{' '}
+                                    {discovery.hidden_wan_count}{' '}
+                                    WAN port
+                                    {discovery.hidden_wan_count ===
+                                    1
+                                        ? ''
+                                        : 's'}{' '}
+                                    automatically excluded.
+                                </div>
+                            )}
 
                             {ethernetInterfaces.length ===
                             0 ? (
