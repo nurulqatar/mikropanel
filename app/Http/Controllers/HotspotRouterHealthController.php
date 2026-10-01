@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\HotspotRouterAlert;
 use App\Models\Router;
+use App\Services\Hotspot\HotspotRouterAlertService;
 use App\Services\Hotspot\HotspotRouterHealthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,6 +16,7 @@ class HotspotRouterHealthController extends Controller
 {
     /*
      * HOTSPOT_ROUTER_HEALTH_V2
+     * HOTSPOT_PERSISTENT_ALERTS_V1
      */
 
     public function index(
@@ -34,8 +37,8 @@ class HotspotRouterHealthController extends Controller
                 ])
                 ->whereHas(
                     'zone',
-                    fn ($q) =>
-                        $q->where(
+                    fn ($query) =>
+                        $query->where(
                             'service_type',
                             'hotspot'
                         )
@@ -56,8 +59,8 @@ class HotspotRouterHealthController extends Controller
 
             $query->whereHas(
                 'zone',
-                fn ($q) =>
-                    $q->where(
+                fn ($query) =>
+                    $query->where(
                         'reseller_id',
                         $user->reseller_id
                     )
@@ -82,51 +85,133 @@ class HotspotRouterHealthController extends Controller
             }
         }
 
-        $routers =
+        $routerModels =
             $query
-                ->orderBy('name')
-                ->get()
+                ->orderBy(
+                    'name'
+                )
+                ->get();
+
+        $routerIds =
+            $routerModels
+                ->pluck('id')
                 ->map(
-                    fn (Router $router) => [
-                        'id' =>
-                            $router->id,
+                    fn ($id) =>
+                        (int)
+                        $id
+                )
+                ->values()
+                ->all();
 
-                        'name' =>
-                            $router->name,
+        $activeAlerts =
+            $routerIds === []
+                ? collect()
+                : HotspotRouterAlert::query()
+                    ->whereIn(
+                        'router_id',
+                        $routerIds
+                    )
+                    ->where(
+                        'active',
+                        true
+                    )
+                    ->orderByRaw(
+                        "CASE WHEN severity = 'critical' THEN 0 ELSE 1 END"
+                    )
+                    ->orderByDesc(
+                        'last_seen_at'
+                    )
+                    ->get();
 
-                        'host' =>
-                            $router->host,
+        $alertsByRouter =
+            $activeAlerts
+                ->groupBy(
+                    'router_id'
+                );
 
-                        'enabled' =>
-                            (bool)
-                            $router->enabled,
+        $routerNames =
+            $routerModels
+                ->pluck(
+                    'name',
+                    'id'
+                );
 
-                        'connected' =>
-                            (bool)
-                            $router->connected,
+        $routers =
+            $routerModels
+                ->map(
+                    function (
+                        Router $router
+                    ) use (
+                        $alertsByRouter
+                    ): array {
+                        $routerAlerts =
+                            $alertsByRouter
+                                ->get(
+                                    $router->id,
+                                    collect()
+                                );
 
-                        'last_checked_at' =>
-                            $router
-                                ->last_checked_at
-                                ?->toISOString(),
-
-                        'zone' => [
+                        return [
                             'id' =>
-                                $router
-                                    ->zone
-                                    ->id,
+                                $router->id,
 
                             'name' =>
-                                $router
-                                    ->zone
-                                    ->name,
+                                $router->name,
 
-                            'code' =>
+                            'host' =>
+                                $router->host,
+
+                            'enabled' =>
+                                (bool)
+                                $router->enabled,
+
+                            'connected' =>
+                                (bool)
+                                $router->connected,
+
+                            'last_checked_at' =>
                                 $router
-                                    ->zone
-                                    ->code,
-                        ],
-                    ]
+                                    ->last_checked_at
+                                    ?->toISOString(),
+
+                            'alert_count' =>
+                                $routerAlerts
+                                    ->count(),
+
+                            'critical_count' =>
+                                $routerAlerts
+                                    ->where(
+                                        'severity',
+                                        'critical'
+                                    )
+                                    ->count(),
+
+                            'warning_count' =>
+                                $routerAlerts
+                                    ->where(
+                                        'severity',
+                                        'warning'
+                                    )
+                                    ->count(),
+
+                            'zone' => [
+                                'id' =>
+                                    $router
+                                        ->zone
+                                        ->id,
+
+                                'name' =>
+                                    $router
+                                        ->zone
+                                        ->name,
+
+                                'code' =>
+                                    $router
+                                        ->zone
+                                        ->code,
+                            ],
+                        ];
+                    }
                 )
                 ->values();
 
@@ -135,6 +220,95 @@ class HotspotRouterHealthController extends Controller
             [
                 'routers' =>
                     $routers,
+
+                'alertSummary' => [
+                    'total' =>
+                        $activeAlerts
+                            ->count(),
+
+                    'critical' =>
+                        $activeAlerts
+                            ->where(
+                                'severity',
+                                'critical'
+                            )
+                            ->count(),
+
+                    'warning' =>
+                        $activeAlerts
+                            ->where(
+                                'severity',
+                                'warning'
+                            )
+                            ->count(),
+                ],
+
+                'alerts' =>
+                    $activeAlerts
+                        ->take(50)
+                        ->map(
+                            function (
+                                HotspotRouterAlert $alert
+                            ) use (
+                                $routerNames
+                            ): array {
+                                return [
+                                    'id' =>
+                                        $alert->id,
+
+                                    'router_id' =>
+                                        $alert
+                                            ->router_id,
+
+                                    'router_name' =>
+                                        $routerNames[
+                                            $alert
+                                                ->router_id
+                                        ]
+                                        ?? (
+                                            'Router #'
+                                            . $alert
+                                                ->router_id
+                                        ),
+
+                                    'key' =>
+                                        $alert
+                                            ->alert_key,
+
+                                    'severity' =>
+                                        $alert
+                                            ->severity,
+
+                                    'title' =>
+                                        $alert
+                                            ->title,
+
+                                    'message' =>
+                                        $alert
+                                            ->message,
+
+                                    'repairable' =>
+                                        (bool)
+                                        $alert
+                                            ->repairable,
+
+                                    'occurrences' =>
+                                        $alert
+                                            ->occurrences,
+
+                                    'first_seen_at' =>
+                                        $alert
+                                            ->first_seen_at
+                                            ?->toISOString(),
+
+                                    'last_seen_at' =>
+                                        $alert
+                                            ->last_seen_at
+                                            ?->toISOString(),
+                                ];
+                            }
+                        )
+                        ->values(),
             ]
         );
     }
@@ -142,11 +316,22 @@ class HotspotRouterHealthController extends Controller
     public function show(
         Request $request,
         Router $router,
-        HotspotRouterHealthService $health
+        HotspotRouterHealthService $health,
+        HotspotRouterAlertService $alerts
     ): Response {
         $this->authorizeRouter(
             $request,
             $router
+        );
+
+        $snapshot =
+            $health->snapshot(
+                $router
+            );
+
+        $alerts->reconcile(
+            $router,
+            $snapshot
         );
 
         return Inertia::render(
@@ -158,9 +343,7 @@ class HotspotRouterHealthController extends Controller
                     ),
 
                 'health' =>
-                    $health->snapshot(
-                        $router
-                    ),
+                    $snapshot,
 
                 'importCandidate' =>
                     $health
@@ -174,18 +357,27 @@ class HotspotRouterHealthController extends Controller
     public function snapshot(
         Request $request,
         Router $router,
-        HotspotRouterHealthService $health
+        HotspotRouterHealthService $health,
+        HotspotRouterAlertService $alerts
     ): JsonResponse {
         $this->authorizeRouter(
             $request,
             $router
         );
 
+        $snapshot =
+            $health->snapshot(
+                $router
+            );
+
+        $alerts->reconcile(
+            $router,
+            $snapshot
+        );
+
         return response()->json([
             'health' =>
-                $health->snapshot(
-                    $router
-                ),
+                $snapshot,
 
             'importCandidate' =>
                 $health
@@ -215,7 +407,8 @@ class HotspotRouterHealthController extends Controller
     public function import(
         Request $request,
         Router $router,
-        HotspotRouterHealthService $health
+        HotspotRouterHealthService $health,
+        HotspotRouterAlertService $alerts
     ): JsonResponse {
         $this->authorizeRouter(
             $request,
@@ -229,6 +422,16 @@ class HotspotRouterHealthController extends Controller
                         $router
                     );
 
+            $snapshot =
+                $health->snapshot(
+                    $router
+                );
+
+            $alerts->reconcile(
+                $router,
+                $snapshot
+            );
+
             return response()->json([
                 'success' =>
                     true,
@@ -239,10 +442,7 @@ class HotspotRouterHealthController extends Controller
                         ->mikrotik_name,
 
                 'health' =>
-                    $health
-                        ->snapshot(
-                            $router
-                        ),
+                    $snapshot,
 
                 'importCandidate' =>
                     $health
@@ -269,7 +469,8 @@ class HotspotRouterHealthController extends Controller
     public function repair(
         Request $request,
         Router $router,
-        HotspotRouterHealthService $health
+        HotspotRouterHealthService $health,
+        HotspotRouterAlertService $alerts
     ): JsonResponse {
         $this->authorizeRouter(
             $request,
@@ -281,6 +482,16 @@ class HotspotRouterHealthController extends Controller
                 $health->repair(
                     $router
                 );
+
+            $snapshot =
+                $result[
+                    'health'
+                ];
+
+            $alerts->reconcile(
+                $router,
+                $snapshot
+            );
 
             return response()->json([
                 'success' =>
@@ -302,9 +513,7 @@ class HotspotRouterHealthController extends Controller
                             ),
 
                 'health' =>
-                    $result[
-                        'health'
-                    ],
+                    $snapshot,
 
                 'importCandidate' =>
                     $health

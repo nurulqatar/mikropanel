@@ -180,3 +180,15 @@ Schedule::command(
 )
     ->hourly()
     ->withoutOverlapping();
+
+/*
+ * HOTSPOT_PERSISTENT_ALERTS_SCHEDULE_V1
+ *
+ * RouterOS = READ ONLY.
+ * MySQL persistent alert state only.
+ */
+\Illuminate\Support\Facades\Schedule::command(
+    'hotspot:health-scan'
+)
+    ->everyMinute()
+    ->withoutOverlapping(2);
