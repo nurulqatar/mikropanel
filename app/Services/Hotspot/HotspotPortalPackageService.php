@@ -614,49 +614,128 @@ class HotspotPortalPackageService
                 'UTF-8'
             );
 
-        $pattern =
-            '~<div><strong data-i18n="move_title">'
-            . '.*?</strong>\s*'
-            . '<small data-i18n="move_desc">'
-            . '.*?</small></div>~s';
+        /*
+         * HOTSPOT_RESET_DEVICE_LOGIN_UI_V4
+         *
+         * Preferred captive portal layout:
+         *
+         * [ Login ]
+         * [ ↻ Reset Device ]
+         * Use this when changing your phone or device.
+         *
+         * Secure modal/backend is unchanged.
+         */
 
-        $replacement = <<<HTML
-<div>
-  <strong>MAC Reset / Release Voucher</strong>
-  <small>Check the voucher and review its current device before resetting.</small>
-</div>
-<button
-  class="btn btn-outline-danger"
-  id="mac-reset-btn"
-  type="button"
-  data-reset-url="{$safeUrl}"
-  style="width:100%;margin-top:12px"
+        $formPattern =
+            '~(<form '
+            . 'action="\$\(link-login-only\)" '
+            . 'method="post" '
+            . 'autocomplete="off" '
+            . 'onsubmit="return doVoucherLogin\(\);">'
+            . '.*?</form>)~s';
+
+        $entry = <<<HTML
+
+<!-- HOTSPOT_RESET_DEVICE_LOGIN_UI_V4 -->
+<div
+  id="voucher-self-reset-entry"
+  style="margin-top:12px"
 >
-  ↻ MAC Reset / Release Voucher
-</button>
+  <button
+    id="voucher-reset-open"
+    type="button"
+    class="btn"
+    data-reset-url="{$safeUrl}"
+    style="
+      width:100%;
+      border:1px solid rgba(59,130,246,.40);
+      background:rgba(59,130,246,.08);
+      color:inherit;
+      cursor:pointer;
+    "
+  >
+    ↻ Reset Device
+  </button>
+
+  <div
+    style="
+      margin-top:6px;
+      text-align:center;
+      font-size:11px;
+      opacity:.70;
+    "
+  >
+    Use this when changing your phone or device.
+  </div>
+</div>
 HTML;
 
         $contents =
             preg_replace(
-                $pattern,
-                $replacement,
+                $formPattern,
+                '$1'
+                . $entry,
                 $contents,
                 1,
-                $count
+                $formCount
             );
 
         if (
             !is_string($contents)
-            || $count !== 1
+            || $formCount !== 1
         ) {
             throw new RuntimeException(
-                'MAC Reset portal section could not be injected.'
+                'Reset Device button '
+                . 'could not be inserted.'
+            );
+        }
+
+        /*
+         * Remove only the obsolete Move Voucher
+         * visual card from Device Information.
+         */
+        $movePattern =
+            '~\s*'
+            . '<div class="macbox">'
+            . '\s*'
+            . '<div class="macbox-top">'
+            . '<div class="macbox-icon">⇄</div>'
+            . '\s*'
+            . '<div>'
+            . '<strong data-i18n="move_title">'
+            . '.*?</strong>'
+            . '\s*'
+            . '<small data-i18n="move_desc">'
+            . '.*?</small>'
+            . '</div>'
+            . '\s*'
+            . '</div>'
+            . '\s*'
+            . '</div>'
+            . '~s';
+
+        $contents =
+            preg_replace(
+                $movePattern,
+                '',
+                $contents,
+                1,
+                $moveCount
+            );
+
+        if (
+            !is_string($contents)
+            || $moveCount !== 1
+        ) {
+            throw new RuntimeException(
+                'Old Move Voucher card '
+                . 'could not be removed.'
             );
         }
 
         return $this->appendMacResetModal(
             $contents,
-            'mac-reset-btn'
+            'voucher-reset-open'
         );
     }
 
