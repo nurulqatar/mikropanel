@@ -240,6 +240,20 @@ function RouterCard({
                         WireGuard VPN
                     </Link>
 
+                    {/* HOTSPOT_ROUTER_SETUP_WIZARD_PHASE1_V1 */}
+                    {item.zone?.service_type ===
+                        'hotspot' && (
+                        <Link
+                            href={route(
+                                'routers.hotspot-setup',
+                                item.id,
+                            )}
+                            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                        >
+                            Setup Hotspot
+                        </Link>
+                    )}
+
                     {/* MAIN_HOTSPOT_PORTAL_PACKAGE_V1 */}
                     {item.zone?.service_type ===
                         'hotspot' && (

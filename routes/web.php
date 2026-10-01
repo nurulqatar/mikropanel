@@ -151,6 +151,22 @@ Route::delete(
 );
 
 /*
+ * HOTSPOT_ROUTER_SETUP_WIZARD_PHASE1_V1
+ *
+ * Read-only RouterOS discovery page used before
+ * MikroPanel applies any Hotspot configuration.
+ */
+Route::get(
+    'routers/{router}/hotspot-setup',
+    [
+        RouterController::class,
+        'hotspotSetup',
+    ]
+)->name(
+    'routers.hotspot-setup'
+);
+
+/*
  * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
  */
 Route::get(

@@ -91,7 +91,7 @@ class RouterController extends Controller
          * as Router Host automatically binds the peer.
          */
         $router->loadMissing([
-            'zone:id,reseller_id',
+            'zone:id,reseller_id,service_type',
         ]);
 
         $routerResellerId =
@@ -125,6 +125,27 @@ class RouterController extends Controller
         SyncRouterStatus::dispatch(
             $router->id
         );
+
+        /*
+         * HOTSPOT_ROUTER_SETUP_WIZARD_PHASE1_V1
+         *
+         * MAC routers keep the old workflow.
+         * Hotspot routers continue into the guided setup.
+         */
+        if (
+            $router->zone?->service_type
+            === 'hotspot'
+        ) {
+            return redirect()
+                ->route(
+                    'routers.hotspot-setup',
+                    $router
+                )
+                ->with(
+                    'success',
+                    'Router saved. Continue with the Hotspot Setup Wizard.'
+                );
+        }
 
         return redirect()
             ->route('routers.index')
@@ -283,6 +304,162 @@ class RouterController extends Controller
                     . $exception->getMessage()
             );
         }
+    }
+
+    /*
+     * HOTSPOT_ROUTER_SETUP_WIZARD_PHASE1_V1
+     *
+     * Phase 1 is strictly read-only against RouterOS.
+     */
+    public function hotspotSetup(
+        Request $request,
+        Router $router,
+        MikroTikService $mikrotik
+    ): Response {
+        $router->loadMissing([
+            'zone:id,reseller_id,name,code,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : (
+                    $router->reseller_id
+                        ? (int)
+                            $router
+                                ->reseller_id
+                        : null
+                );
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                abort_unless(
+                    $user->zone_id
+                    && (int)
+                        $user->zone_id
+                        === (int)
+                            $router
+                                ->zone_id,
+                    403
+                );
+            }
+        }
+
+        $discovery =
+            $router->enabled
+                ? $mikrotik
+                    ->hotspotSetupDiscovery(
+                        $router
+                    )
+                : [
+                    'success' => false,
+
+                    'message' =>
+                        'Router is disabled. Enable it before continuing Hotspot setup.',
+
+                    'interfaces' => [],
+                    'ethernet_interfaces' => [],
+
+                    'routeros_query_count' => 0,
+
+                    'checked_at' =>
+                        now()->toISOString(),
+                ];
+
+        return Inertia::render(
+            'Routers/HotspotSetup',
+            [
+                'router' => [
+                    'id' =>
+                        $router->id,
+
+                    'name' =>
+                        $router->name,
+
+                    'host' =>
+                        $router->host,
+
+                    'api_port' =>
+                        $router->api_port,
+
+                    'use_ssl' =>
+                        (bool)
+                        $router->use_ssl,
+
+                    'enabled' =>
+                        (bool)
+                        $router->enabled,
+
+                    'zone_id' =>
+                        $router->zone_id,
+
+                    'zone' => [
+                        'id' =>
+                            $router
+                                ->zone
+                                ->id,
+
+                        'name' =>
+                            $router
+                                ->zone
+                                ->name,
+
+                        'code' =>
+                            $router
+                                ->zone
+                                ->code,
+
+                        'service_type' =>
+                            $router
+                                ->zone
+                                ->service_type,
+                    ],
+                ],
+
+                'discovery' =>
+                    $discovery,
+            ]
+        );
     }
 
     /*

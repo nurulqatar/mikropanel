@@ -500,6 +500,512 @@ class MikroTikService
     }
 
     /*
+     * HOTSPOT_ROUTER_DISCOVERY_PHASE1_V1
+     *
+     * Read-only discovery for the Hotspot Setup Wizard.
+     *
+     * Nothing in this method changes RouterOS.
+     */
+    public function hotspotSetupDiscovery(
+        array|Router $router
+    ): array {
+        $this->queryCount = 0;
+
+        if (!$this->connect($router)) {
+            return [
+                'success' => false,
+
+                'message' =>
+                    $this->lastError
+                    ?? 'Unable to connect to MikroTik API.',
+
+                'interfaces' => [],
+                'ethernet_interfaces' => [],
+
+                'routeros_query_count' =>
+                    $this->queryCount,
+
+                'checked_at' =>
+                    now()->toISOString(),
+            ];
+        }
+
+        try {
+            $resource =
+                $this->queryFirst(
+                    '/system/resource/print',
+                    implode(',', [
+                        'version',
+                        'board-name',
+                        'architecture-name',
+                        'platform',
+                        'uptime',
+                    ])
+                );
+
+            $identity =
+                $this->queryFirst(
+                    '/system/identity/print',
+                    'name'
+                );
+
+            $interfacesRead =
+                $this->readRowsSafe(
+                    '/interface/print',
+                    implode(',', [
+                        '.id',
+                        'name',
+                        'default-name',
+                        'type',
+                        'mac-address',
+                        'running',
+                        'disabled',
+                        'comment',
+                        'mtu',
+                        'actual-mtu',
+                    ])
+                );
+
+            if (
+                !(
+                    $interfacesRead[
+                        'success'
+                    ] ?? false
+                )
+            ) {
+                throw new \RuntimeException(
+                    'Unable to read MikroTik interfaces: '
+                    . (
+                        $interfacesRead[
+                            'error'
+                        ]
+                        ?? 'Unknown RouterOS error.'
+                    )
+                );
+            }
+
+            $bridgePortsRead =
+                $this->readRowsSafe(
+                    '/interface/bridge/port/print',
+                    implode(',', [
+                        '.id',
+                        'interface',
+                        'bridge',
+                        'disabled',
+                        'hw',
+                        'comment',
+                    ])
+                );
+
+            $addressesRead =
+                $this->readRowsSafe(
+                    '/ip/address/print',
+                    implode(',', [
+                        '.id',
+                        'address',
+                        'network',
+                        'interface',
+                        'disabled',
+                        'dynamic',
+                        'comment',
+                    ])
+                );
+
+            $dhcpClientsRead =
+                $this->readRowsSafe(
+                    '/ip/dhcp-client/print',
+                    implode(',', [
+                        '.id',
+                        'interface',
+                        'status',
+                        'disabled',
+                        'add-default-route',
+                        'comment',
+                    ])
+                );
+
+            $bridgesByInterface = [];
+
+            foreach (
+                $bridgePortsRead['rows'] ?? []
+                as $row
+            ) {
+                $interface =
+                    trim(
+                        (string) (
+                            $row['interface']
+                            ?? ''
+                        )
+                    );
+
+                if ($interface === '') {
+                    continue;
+                }
+
+                $bridgesByInterface[
+                    $interface
+                ] = [
+                    'bridge' =>
+                        $row['bridge']
+                        ?? null,
+
+                    'disabled' =>
+                        ($row['disabled'] ?? 'false')
+                        === 'true',
+
+                    'hardware_offload' =>
+                        ($row['hw'] ?? 'false')
+                        === 'true',
+                ];
+            }
+
+            $addressesByInterface = [];
+
+            foreach (
+                $addressesRead['rows'] ?? []
+                as $row
+            ) {
+                $interface =
+                    trim(
+                        (string) (
+                            $row['interface']
+                            ?? ''
+                        )
+                    );
+
+                if ($interface === '') {
+                    continue;
+                }
+
+                $addressesByInterface[
+                    $interface
+                ][] = [
+                    'address' =>
+                        $row['address']
+                        ?? null,
+
+                    'network' =>
+                        $row['network']
+                        ?? null,
+
+                    'dynamic' =>
+                        ($row['dynamic'] ?? 'false')
+                        === 'true',
+
+                    'disabled' =>
+                        ($row['disabled'] ?? 'false')
+                        === 'true',
+                ];
+            }
+
+            $dhcpByInterface = [];
+
+            foreach (
+                $dhcpClientsRead['rows'] ?? []
+                as $row
+            ) {
+                $interface =
+                    trim(
+                        (string) (
+                            $row['interface']
+                            ?? ''
+                        )
+                    );
+
+                if ($interface === '') {
+                    continue;
+                }
+
+                $dhcpByInterface[
+                    $interface
+                ] = [
+                    'status' =>
+                        $row['status']
+                        ?? null,
+
+                    'disabled' =>
+                        ($row['disabled'] ?? 'false')
+                        === 'true',
+
+                    'add_default_route' =>
+                        ($row['add-default-route']
+                            ?? 'false')
+                        === 'true',
+                ];
+            }
+
+            $interfaces = [];
+
+            foreach (
+                $interfacesRead['rows'] ?? []
+                as $row
+            ) {
+                $name =
+                    trim(
+                        (string) (
+                            $row['name']
+                            ?? ''
+                        )
+                    );
+
+                if ($name === '') {
+                    continue;
+                }
+
+                $type =
+                    strtolower(
+                        trim(
+                            (string) (
+                                $row['type']
+                                ?? ''
+                            )
+                        )
+                    );
+
+                $defaultName =
+                    trim(
+                        (string) (
+                            $row['default-name']
+                            ?? ''
+                        )
+                    );
+
+                $physicalEthernet =
+                    $type === 'ether'
+                    || str_starts_with(
+                        strtolower($defaultName),
+                        'ether'
+                    )
+                    || str_starts_with(
+                        strtolower($defaultName),
+                        'sfp'
+                    );
+
+                $bridge =
+                    $bridgesByInterface[
+                        $name
+                    ] ?? null;
+
+                $addresses =
+                    $addressesByInterface[
+                        $name
+                    ] ?? [];
+
+                $dhcpClient =
+                    $dhcpByInterface[
+                        $name
+                    ] ?? null;
+
+                /*
+                 * Caution is informational only.
+                 * Phase 1 never changes the port.
+                 */
+                $inUse =
+                    $bridge !== null
+                    || $addresses !== []
+                    || $dhcpClient !== null;
+
+                $interfaces[] = [
+                    'id' =>
+                        $row['.id']
+                        ?? null,
+
+                    'name' =>
+                        $name,
+
+                    'default_name' =>
+                        $defaultName !== ''
+                            ? $defaultName
+                            : null,
+
+                    'type' =>
+                        $type !== ''
+                            ? $type
+                            : null,
+
+                    'mac_address' =>
+                        $row['mac-address']
+                        ?? null,
+
+                    'running' =>
+                        ($row['running'] ?? 'false')
+                        === 'true',
+
+                    'disabled' =>
+                        ($row['disabled'] ?? 'false')
+                        === 'true',
+
+                    'comment' =>
+                        $row['comment']
+                        ?? null,
+
+                    'mtu' =>
+                        isset($row['mtu'])
+                            ? (int) $row['mtu']
+                            : null,
+
+                    'actual_mtu' =>
+                        isset(
+                            $row['actual-mtu']
+                        )
+                            ? (int)
+                                $row['actual-mtu']
+                            : null,
+
+                    'physical_ethernet' =>
+                        $physicalEthernet,
+
+                    'existing_bridge' =>
+                        $bridge[
+                            'bridge'
+                        ] ?? null,
+
+                    'bridge_port' =>
+                        $bridge,
+
+                    'ip_addresses' =>
+                        $addresses,
+
+                    'dhcp_client' =>
+                        $dhcpClient,
+
+                    'in_use' =>
+                        $inUse,
+
+                    'caution' =>
+                        $physicalEthernet
+                        && $inUse,
+                ];
+            }
+
+            usort(
+                $interfaces,
+                function (
+                    array $a,
+                    array $b
+                ): int {
+                    if (
+                        $a['physical_ethernet']
+                        !== $b['physical_ethernet']
+                    ) {
+                        return
+                            $a['physical_ethernet']
+                                ? -1
+                                : 1;
+                    }
+
+                    return strnatcasecmp(
+                        (string) $a['name'],
+                        (string) $b['name']
+                    );
+                }
+            );
+
+            $ethernet =
+                array_values(
+                    array_filter(
+                        $interfaces,
+                        fn (array $row): bool =>
+                            (bool)
+                            $row[
+                                'physical_ethernet'
+                            ]
+                    )
+                );
+
+            return [
+                'success' => true,
+
+                'message' =>
+                    'RouterOS connected. Interfaces discovered in read-only mode.',
+
+                'identity' =>
+                    $identity['name']
+                    ?? (
+                        $router instanceof Router
+                            ? $router->identity
+                            : null
+                    ),
+
+                'version' =>
+                    $resource['version']
+                    ?? null,
+
+                'board_name' =>
+                    $resource['board-name']
+                    ?? (
+                        $router instanceof Router
+                            ? $router->board_name
+                            : null
+                    ),
+
+                'architecture' =>
+                    $resource[
+                        'architecture-name'
+                    ] ?? null,
+
+                'platform' =>
+                    $resource['platform']
+                    ?? null,
+
+                'uptime' =>
+                    $resource['uptime']
+                    ?? null,
+
+                'interfaces' =>
+                    $interfaces,
+
+                'ethernet_interfaces' =>
+                    $ethernet,
+
+                'bridge_ports_read_ok' =>
+                    (bool) (
+                        $bridgePortsRead[
+                            'success'
+                        ] ?? false
+                    ),
+
+                'addresses_read_ok' =>
+                    (bool) (
+                        $addressesRead[
+                            'success'
+                        ] ?? false
+                    ),
+
+                'dhcp_clients_read_ok' =>
+                    (bool) (
+                        $dhcpClientsRead[
+                            'success'
+                        ] ?? false
+                    ),
+
+                'routeros_query_count' =>
+                    $this->queryCount,
+
+                'checked_at' =>
+                    now()->toISOString(),
+            ];
+
+        } catch (Throwable $exception) {
+            return [
+                'success' => false,
+
+                'message' =>
+                    $exception->getMessage(),
+
+                'interfaces' => [],
+                'ethernet_interfaces' => [],
+
+                'routeros_query_count' =>
+                    $this->queryCount,
+
+                'checked_at' =>
+                    now()->toISOString(),
+            ];
+        }
+    }
+
+    /*
      * Backward compatible health method.
      */
     public function inspect(
