@@ -4,33 +4,98 @@ namespace App\Services\Hotspot;
 
 use App\Models\HotspotDeviceReset;
 use App\Models\HotspotVoucher;
+use App\Models\ResellerSetting;
 use App\Models\Router;
 use Illuminate\Support\Facades\DB;
 
 class HotspotSelfDeviceResetService
 {
     /*
-     * HOTSPOT_SELF_DEVICE_RESET_V2
+     * HOTSPOT_SELF_DEVICE_RESET_MONTHLY_POLICY_V3
      *
-     * Policy:
+     * Default company policy:
+     * - Maximum 5 successful/partial resets per calendar month.
      * - 10 minute cooldown after successful/partial reset.
-     * - Maximum 3 successful/partial resets in rolling 24 hours.
-     * - Processing reset blocks concurrent reset attempts.
-     * - New MAC is captured later from HotspotVoucher.mac_address
-     *   after the existing RouterOS auto-bind engine observes login.
+     *
+     * Both values are reseller/company settings and can
+     * be changed from the Router Health control panel.
      */
 
-    public const COOLDOWN_MINUTES = 10;
+    public const DEFAULT_MONTHLY_LIMIT = 5;
 
-    public const DAILY_LIMIT = 3;
+    public const DEFAULT_COOLDOWN_MINUTES = 10;
 
     public const PROCESSING_LOCK_MINUTES = 5;
+
+    public const MONTHLY_LIMIT_KEY =
+        'hotspot_device_reset_monthly_limit';
+
+    public const COOLDOWN_KEY =
+        'hotspot_device_reset_cooldown_minutes';
+
+    public function monthlyLimit(
+        HotspotVoucher $voucher
+    ): int {
+        $resellerId =
+            $this->resellerId(
+                $voucher
+            );
+
+        if (!$resellerId) {
+            return self::DEFAULT_MONTHLY_LIMIT;
+        }
+
+        $value =
+            (int)
+            ResellerSetting::getValue(
+                $resellerId,
+                self::MONTHLY_LIMIT_KEY,
+                self::DEFAULT_MONTHLY_LIMIT
+            );
+
+        return max(
+            1,
+            min(
+                100,
+                $value
+            )
+        );
+    }
+
+    public function cooldownMinutes(
+        HotspotVoucher $voucher
+    ): int {
+        $resellerId =
+            $this->resellerId(
+                $voucher
+            );
+
+        if (!$resellerId) {
+            return self::DEFAULT_COOLDOWN_MINUTES;
+        }
+
+        $value =
+            (int)
+            ResellerSetting::getValue(
+                $resellerId,
+                self::COOLDOWN_KEY,
+                self::DEFAULT_COOLDOWN_MINUTES
+            );
+
+        return max(
+            0,
+            min(
+                1440,
+                $value
+            )
+        );
+    }
 
     public function policy(
         HotspotVoucher $voucher
     ): array {
         return $this->policyForVoucher(
-            (int) $voucher->id,
+            $voucher,
             now()
         );
     }
@@ -49,8 +114,8 @@ class HotspotSelfDeviceResetService
                 $ipHash
             ): array {
                 /*
-                 * Voucher row lock serializes reset creation
-                 * for the same voucher.
+                 * Lock the voucher row so two requests
+                 * cannot create resets simultaneously.
                  */
                 $lockedVoucher =
                     HotspotVoucher::withoutGlobalScopes()
@@ -79,8 +144,7 @@ class HotspotSelfDeviceResetService
 
                 $policy =
                     $this->policyForVoucher(
-                        (int)
-                        $lockedVoucher->id,
+                        $lockedVoucher,
                         now()
                     );
 
@@ -267,9 +331,29 @@ class HotspotSelfDeviceResetService
     }
 
     private function policyForVoucher(
-        int $voucherId,
+        HotspotVoucher $voucher,
         \Illuminate\Support\Carbon $now
     ): array {
+        $voucherId =
+            (int)
+            $voucher->id;
+
+        $monthlyLimit =
+            $this->monthlyLimit(
+                $voucher
+            );
+
+        $cooldownMinutes =
+            $this->cooldownMinutes(
+                $voucher
+            );
+
+        $usedThisMonth =
+            $this->successfulCountThisMonth(
+                $voucherId,
+                $now
+            );
+
         $processing =
             HotspotDeviceReset::query()
                 ->where(
@@ -318,34 +402,22 @@ class HotspotSelfDeviceResetService
                     ),
 
                 'cooldown_minutes' =>
-                    self::COOLDOWN_MINUTES,
+                    $cooldownMinutes,
 
-                'daily_limit' =>
-                    self::DAILY_LIMIT,
+                'monthly_limit' =>
+                    $monthlyLimit,
 
-                'used_today' =>
-                    $this->successfulCount(
-                        $voucherId,
-                        $now
-                    ),
+                'used_this_month' =>
+                    $usedThisMonth,
 
-                'remaining_today' =>
+                'remaining_this_month' =>
                     max(
                         0,
-                        self::DAILY_LIMIT
-                        - $this->successfulCount(
-                            $voucherId,
-                            $now
-                        )
+                        $monthlyLimit
+                        - $usedThisMonth
                     ),
             ];
         }
-
-        $successfulCount =
-            $this->successfulCount(
-                $voucherId,
-                $now
-            );
 
         $latest =
             HotspotDeviceReset::query()
@@ -366,7 +438,10 @@ class HotspotSelfDeviceResetService
                 ->latest('id')
                 ->first();
 
-        if ($latest) {
+        if (
+            $latest
+            && $cooldownMinutes > 0
+        ) {
             $base =
                 $latest->completed_at
                 ?: $latest->created_at;
@@ -375,7 +450,7 @@ class HotspotSelfDeviceResetService
                 $base
                     ->copy()
                     ->addMinutes(
-                        self::COOLDOWN_MINUTES
+                        $cooldownMinutes
                     );
 
             if (
@@ -399,91 +474,67 @@ class HotspotSelfDeviceResetService
                         ),
 
                     'cooldown_minutes' =>
-                        self::COOLDOWN_MINUTES,
+                        $cooldownMinutes,
 
-                    'daily_limit' =>
-                        self::DAILY_LIMIT,
+                    'monthly_limit' =>
+                        $monthlyLimit,
 
-                    'used_today' =>
-                        $successfulCount,
+                    'used_this_month' =>
+                        $usedThisMonth,
 
-                    'remaining_today' =>
+                    'remaining_this_month' =>
                         max(
                             0,
-                            self::DAILY_LIMIT
-                            - $successfulCount
+                            $monthlyLimit
+                            - $usedThisMonth
                         ),
                 ];
             }
         }
 
         if (
-            $successfulCount
-            >= self::DAILY_LIMIT
+            $usedThisMonth
+            >= $monthlyLimit
         ) {
-            $oldest =
-                HotspotDeviceReset::query()
-                    ->where(
-                        'hotspot_voucher_id',
-                        $voucherId
-                    )
-                    ->whereIn(
-                        'status',
-                        [
-                            'success',
-                            'partial',
-                        ]
-                    )
-                    ->where(
-                        'created_at',
-                        '>=',
-                        $now
-                            ->copy()
-                            ->subDay()
-                    )
-                    ->oldest(
-                        'created_at'
-                    )
-                    ->first();
-
-            $retryAfter =
-                3600;
-
-            if ($oldest) {
-                $retryAfter =
-                    max(
-                        1,
-                        $now->diffInSeconds(
-                            $oldest
-                                ->created_at
-                                ->copy()
-                                ->addDay(),
-                            false
-                        )
-                    );
-            }
+            $nextMonth =
+                $now
+                    ->copy()
+                    ->addMonthNoOverflow()
+                    ->startOfMonth();
 
             return [
                 'allowed' =>
                     false,
 
                 'message' =>
-                    'Device reset limit reached for this voucher. Maximum 3 resets are allowed within 24 hours.',
+                    'Monthly device reset limit reached for this voucher. Maximum '
+                    . $monthlyLimit
+                    . ' reset(s) are allowed per calendar month.',
 
                 'retry_after' =>
-                    $retryAfter,
+                    max(
+                        1,
+                        $now->diffInSeconds(
+                            $nextMonth,
+                            false
+                        )
+                    ),
 
                 'cooldown_minutes' =>
-                    self::COOLDOWN_MINUTES,
+                    $cooldownMinutes,
 
-                'daily_limit' =>
-                    self::DAILY_LIMIT,
+                'monthly_limit' =>
+                    $monthlyLimit,
 
-                'used_today' =>
-                    $successfulCount,
+                'used_this_month' =>
+                    $usedThisMonth,
 
-                'remaining_today' =>
+                'remaining_this_month' =>
                     0,
+
+                'resets_again_at' =>
+                    $nextMonth
+                        ->toIso8601String(),
             ];
         }
 
@@ -498,27 +549,38 @@ class HotspotSelfDeviceResetService
                 0,
 
             'cooldown_minutes' =>
-                self::COOLDOWN_MINUTES,
+                $cooldownMinutes,
 
-            'daily_limit' =>
-                self::DAILY_LIMIT,
+            'monthly_limit' =>
+                $monthlyLimit,
 
-            'used_today' =>
-                $successfulCount,
+            'used_this_month' =>
+                $usedThisMonth,
 
-            'remaining_today' =>
+            'remaining_this_month' =>
                 max(
                     0,
-                    self::DAILY_LIMIT
-                    - $successfulCount
+                    $monthlyLimit
+                    - $usedThisMonth
                 ),
         ];
     }
 
-    private function successfulCount(
+    private function successfulCountThisMonth(
         int $voucherId,
         \Illuminate\Support\Carbon $now
     ): int {
+        $start =
+            $now
+                ->copy()
+                ->startOfMonth();
+
+        $end =
+            $now
+                ->copy()
+                ->addMonthNoOverflow()
+                ->startOfMonth();
+
         return HotspotDeviceReset::query()
             ->where(
                 'hotspot_voucher_id',
@@ -534,11 +596,46 @@ class HotspotSelfDeviceResetService
             ->where(
                 'created_at',
                 '>=',
-                $now
-                    ->copy()
-                    ->subDay()
+                $start
+            )
+            ->where(
+                'created_at',
+                '<',
+                $end
             )
             ->count();
+    }
+
+    private function resellerId(
+        HotspotVoucher $voucher
+    ): ?int {
+        if (
+            (int) (
+                $voucher
+                    ->reseller_id
+                ?? 0
+            ) > 0
+        ) {
+            return (int)
+                $voucher
+                    ->reseller_id;
+        }
+
+        $voucher->loadMissing(
+            'server'
+        );
+
+        $resellerId =
+            (int) (
+                $voucher
+                    ->server
+                    ?->reseller_id
+                ?? 0
+            );
+
+        return $resellerId > 0
+            ? $resellerId
+            : null;
     }
 
     private function normaliseMac(

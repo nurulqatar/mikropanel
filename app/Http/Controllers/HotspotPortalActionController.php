@@ -688,10 +688,16 @@ class HotspotPortalActionController extends Controller
                     ],
 
                     'cooldown_minutes' =>
-                        \App\Services\Hotspot\HotspotSelfDeviceResetService::COOLDOWN_MINUTES,
+                        $resetService
+                            ->cooldownMinutes(
+                                $voucher
+                            ),
 
-                    'daily_limit' =>
-                        \App\Services\Hotspot\HotspotSelfDeviceResetService::DAILY_LIMIT,
+                    'monthly_limit' =>
+                        $resetService
+                            ->monthlyLimit(
+                                $voucher
+                            ),
                 ]
             );
 

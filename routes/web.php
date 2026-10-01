@@ -234,6 +234,16 @@ Route::get(
     'hotspot.router-health.index'
 );
 
+Route::post(
+    'router-health/reset-policy',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'updateResetPolicy',
+    ]
+)->name(
+    'hotspot.router-health.reset-policy'
+);
+
 Route::get(
     'router-health/{router}',
     [
