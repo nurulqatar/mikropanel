@@ -206,6 +206,22 @@ Route::post(
 );
 
 /*
+ * HOTSPOT_WIZARD_FINAL_V1
+ *
+ * Steps 5-9 are completed in one safe operation:
+ * Hotspot/Profile -> Login -> NAT -> Portal -> Validation.
+ */
+Route::post(
+    'routers/{router}/hotspot-setup/finalize',
+    [
+        RouterController::class,
+        'hotspotSetupFinalize',
+    ]
+)->name(
+    'routers.hotspot-setup.finalize'
+);
+
+/*
  * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
  */
 Route::get(

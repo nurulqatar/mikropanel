@@ -530,6 +530,38 @@ class RouterController extends Controller
 
                 'dhcpSuggestion' =>
                     $dhcpSuggestion,
+
+                'activeHotspotServer' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'hotspot',
+                            ''
+                        )
+                    ) ?: null,
+
+                'activeHotspotProfile' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'profile',
+                            ''
+                        )
+                    ) ?: null,
+
+                'activeDnsName' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'dns',
+                            ''
+                        )
+                    ) ?: null,
+
+                'finalCompleted' =>
+                    $request->boolean(
+                        'completed'
+                    ),
             ]
         );
     }
@@ -1007,6 +1039,353 @@ class RouterController extends Controller
             ->with(
                 'success',
                 'DHCP server and client IP pool are ready. Continue with Hotspot Server & Profile.'
+            );
+    }
+
+    /*
+     * HOTSPOT_WIZARD_FINAL_V1
+     *
+     * Completes Steps 5-9 in one operation.
+     */
+    public function hotspotSetupFinalize(
+        Request $request,
+        Router $router,
+        \App\Services\Hotspot\HotspotWizardFinalizerService $finalizer
+    ): RedirectResponse {
+        $router->loadMissing([
+            'zone:id,reseller_id,name,code,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : (
+                    $router->reseller_id
+                        ? (int)
+                            $router
+                                ->reseller_id
+                        : null
+                );
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                abort_unless(
+                    $user->zone_id
+                    && (int)
+                        $user->zone_id
+                        === (int)
+                            $router
+                                ->zone_id,
+                    403
+                );
+            }
+        }
+
+        $data =
+            $request->validate([
+                'mode' => [
+                    'required',
+                    'string',
+                    'in:existing,new',
+                ],
+
+                'bridge_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'gateway_cidr' => [
+                    'required',
+                    'string',
+                    'max:50',
+                ],
+
+                'pool_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'dhcp_server' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'hotspot_server' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'hotspot_profile' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'dns_name' => [
+                    'required',
+                    'string',
+                    'max:253',
+                ],
+
+                'cookie_lifetime' => [
+                    'required',
+                    'string',
+                    'max:50',
+                ],
+            ]);
+
+        /*
+         * Resolve company branding without making
+         * the finalizer dependent on one reseller model.
+         */
+        $brandName = null;
+
+        if ($resellerId) {
+            try {
+                $brandName =
+                    \Illuminate\Support\Facades\DB::table(
+                        'resellers'
+                    )
+                        ->where(
+                            'id',
+                            $resellerId
+                        )
+                        ->value(
+                            'name'
+                        );
+
+            } catch (Throwable) {
+                $brandName = null;
+            }
+        }
+
+        $brandName =
+            trim(
+                (string) (
+                    $brandName
+                    ?: (
+                        $router
+                            ->zone
+                            ->name
+                        ?: $router->name
+                    )
+                )
+            );
+
+        try {
+            $result =
+                $finalizer
+                    ->finalize(
+                        $router,
+                        [
+                            ...$data,
+
+                            'brand_name' =>
+                                $brandName,
+                        ]
+                    );
+
+        } catch (Throwable $exception) {
+            return back()
+                ->withInput()
+                ->with(
+                    'error',
+                    $exception
+                        ->getMessage()
+                );
+        }
+
+        /*
+         * Register/synchronize the RouterOS Hotspot
+         * server into the panel only after full RouterOS
+         * validation passed.
+         */
+        $server =
+            \App\Models\HotspotServer::withoutGlobalScopes()
+                ->where(
+                    'router_id',
+                    $router->id
+                )
+                ->where(
+                    'zone_id',
+                    $router->zone_id
+                )
+                ->where(
+                    'mikrotik_name',
+                    $result[
+                        'hotspot_server'
+                    ]
+                )
+                ->first();
+
+        if (!$server) {
+            $server =
+                \App\Models\HotspotServer::withoutGlobalScopes()
+                    ->where(
+                        'router_id',
+                        $router->id
+                    )
+                    ->where(
+                        'zone_id',
+                        $router->zone_id
+                    )
+                    ->first();
+        }
+
+        $server ??=
+            new \App\Models\HotspotServer();
+
+        $server->fill([
+            'reseller_id' =>
+                $resellerId,
+
+            'zone_id' =>
+                $router->zone_id,
+
+            'router_id' =>
+                $router->id,
+
+            'name' =>
+                $result[
+                    'hotspot_server'
+                ],
+
+            'mikrotik_name' =>
+                $result[
+                    'hotspot_server'
+                ],
+
+            'interface' =>
+                $result[
+                    'bridge'
+                ],
+
+            'address_pool' =>
+                $result[
+                    'pool_name'
+                ],
+
+            'hotspot_profile' =>
+                $result[
+                    'hotspot_profile'
+                ],
+
+            'dns_name' =>
+                $result[
+                    'dns_name'
+                ],
+
+            'enabled' =>
+                true,
+
+            'connected' =>
+                true,
+
+            'last_synced_at' =>
+                now(),
+
+            'last_error' =>
+                null,
+        ]);
+
+        $server->save();
+
+        return redirect()
+            ->route(
+                'routers.hotspot-setup',
+                [
+                    'router' =>
+                        $router,
+
+                    'step' =>
+                        9,
+
+                    'bridge' =>
+                        $result[
+                            'bridge'
+                        ],
+
+                    'gateway' =>
+                        $result[
+                            'gateway_cidr'
+                        ],
+
+                    'pool' =>
+                        $result[
+                            'pool_name'
+                        ],
+
+                    'dhcp' =>
+                        $result[
+                            'dhcp_server'
+                        ],
+
+                    'hotspot' =>
+                        $result[
+                            'hotspot_server'
+                        ],
+
+                    'profile' =>
+                        $result[
+                            'hotspot_profile'
+                        ],
+
+                    'dns' =>
+                        $result[
+                            'dns_name'
+                        ],
+
+                    'completed' =>
+                        1,
+                ]
+            )
+            ->with(
+                'success',
+                'HOTSPOT READY — server, login, Internet/NAT, branded portal and full validation completed.'
             );
     }
 

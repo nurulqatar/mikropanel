@@ -32,6 +32,10 @@ export default function HotspotSetup({
     activePool = null,
     activeDhcpServer = null,
     dhcpSuggestion = null,
+    activeHotspotServer = null,
+    activeHotspotProfile = null,
+    activeDnsName = null,
+    finalCompleted = false,
     flash = {},
 }) {
     const [selectedPorts, setSelectedPorts] =
@@ -214,6 +218,91 @@ export default function HotspotSetup({
         setApplyingDhcp,
     ] = useState(false);
 
+    /*
+     * HOTSPOT_WIZARD_FINAL_V1
+     *
+     * Existing RouterOS Hotspot topology is reused
+     * automatically when it matches Steps 1-4.
+     */
+    const finalTopology =
+        useMemo(
+            () =>
+                (
+                    discovery
+                        ?.hotspot_topologies
+                    ?? []
+                ).find(
+                    (item) =>
+                        item.interface ===
+                            activeBridge
+                        && item.gateway_cidr ===
+                            activeGateway
+                        && item.pool_name ===
+                            activePool
+                        && item.dhcp_server ===
+                            activeDhcpServer,
+                ) ?? null,
+            [
+                discovery
+                    ?.hotspot_topologies,
+                activeBridge,
+                activeGateway,
+                activePool,
+                activeDhcpServer,
+            ],
+        );
+
+    const [
+        finalMode,
+        setFinalMode,
+    ] = useState(
+        finalTopology
+            ? 'existing'
+            : 'new',
+    );
+
+    const [
+        hotspotServerName,
+        setHotspotServerName,
+    ] = useState(
+        finalTopology
+            ?.hotspot_server
+        ?? activeHotspotServer
+        ?? `mp-hotspot-${router.id}`,
+    );
+
+    const [
+        hotspotProfileName,
+        setHotspotProfileName,
+    ] = useState(
+        finalTopology
+            ?.hotspot_profile
+        ?? activeHotspotProfile
+        ?? `mp-hsprof-${router.id}`,
+    );
+
+    const [
+        dnsName,
+        setDnsName,
+    ] = useState(
+        finalTopology
+            ?.dns_name
+        ?? activeDnsName
+        ?? `login.${router.id}.hotspot`,
+    );
+
+    const [
+        cookieLifetime,
+        setCookieLifetime,
+    ] = useState(
+        '3d',
+    );
+
+    const [
+        finalizing,
+        setFinalizing,
+    ] = useState(false);
+
     const ethernetInterfaces =
         useMemo(
             () =>
@@ -388,6 +477,70 @@ export default function HotspotSetup({
 
                 onFinish: () =>
                     setApplyingDhcp(
+                        false,
+                    ),
+            },
+        );
+    };
+
+    const finalizeHotspot = () => {
+        if (
+            !activeBridge ||
+            !activeGateway ||
+            !activePool ||
+            !activeDhcpServer ||
+            !hotspotServerName.trim() ||
+            !hotspotProfileName.trim() ||
+            !dnsName.trim() ||
+            !cookieLifetime.trim()
+        ) {
+            return;
+        }
+
+        inertiaRouter.post(
+            route(
+                'routers.hotspot-setup.finalize',
+                router.id,
+            ),
+            {
+                mode:
+                    finalMode,
+
+                bridge_name:
+                    activeBridge,
+
+                gateway_cidr:
+                    activeGateway,
+
+                pool_name:
+                    activePool,
+
+                dhcp_server:
+                    activeDhcpServer,
+
+                hotspot_server:
+                    hotspotServerName.trim(),
+
+                hotspot_profile:
+                    hotspotProfileName.trim(),
+
+                dns_name:
+                    dnsName.trim(),
+
+                cookie_lifetime:
+                    cookieLifetime.trim(),
+            },
+            {
+                preserveScroll:
+                    true,
+
+                onStart: () =>
+                    setFinalizing(
+                        true,
+                    ),
+
+                onFinish: () =>
+                    setFinalizing(
                         false,
                     ),
             },
@@ -1509,41 +1662,414 @@ export default function HotspotSetup({
                                     </button>
                                 </div>
                             </section>
-                        ) : (
-                            <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
-                                <div className="text-lg font-black text-emerald-800">
-                                    ✓ DHCP & Client Pool Ready
+                        ) : Number(wizardStep) <
+                          9 ? (
+                            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                                <div>
+                                    <div className="text-sm font-bold text-emerald-700">
+                                        ✓ Bridge, Gateway, DHCP & Pool Ready
+                                    </div>
+
+                                    <h2 className="mt-1 text-xl font-black text-slate-900">
+                                        Finish Hotspot Setup — Steps 5–9
+                                    </h2>
+
+                                    <p className="mt-2 max-w-4xl text-sm text-slate-500">
+                                        One operation will configure/verify the Hotspot server and profile,
+                                        enable cookie + MAC-cookie login, verify DNS and Internet NAT,
+                                        install the branded captive portal into RouterOS Files,
+                                        then perform full validation.
+                                    </p>
                                 </div>
 
-                                <p className="mt-2 text-slate-700">
-                                    Pool:{' '}
-                                    <span className="font-mono font-bold">
-                                        {activePool ||
-                                            poolName ||
-                                            '-'}
-                                    </span>
+                                {finalTopology && (
+                                    <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+                                        <div className="font-black text-emerald-800">
+                                            Existing Hotspot detected
+                                        </div>
+
+                                        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                            <InfoCard
+                                                label="Server"
+                                                value={
+                                                    finalTopology.hotspot_server ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="Profile"
+                                                value={
+                                                    finalTopology.hotspot_profile ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="DNS Name"
+                                                value={
+                                                    finalTopology.dns_name ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="Current Portal"
+                                                value={
+                                                    finalTopology.html_directory ||
+                                                    '-'
+                                                }
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                                    <label
+                                        className={`rounded-xl border p-4 ${
+                                            finalMode ===
+                                            'existing'
+                                                ? 'border-cyan-400 bg-cyan-50'
+                                                : 'border-slate-200'
+                                        } ${
+                                            !finalTopology
+                                                ? 'opacity-50'
+                                                : ''
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                name="final-mode"
+                                                checked={
+                                                    finalMode ===
+                                                    'existing'
+                                                }
+                                                disabled={
+                                                    !finalTopology
+                                                }
+                                                onChange={() => {
+                                                    setFinalMode(
+                                                        'existing',
+                                                    );
+
+                                                    if (
+                                                        finalTopology
+                                                    ) {
+                                                        setHotspotServerName(
+                                                            finalTopology.hotspot_server ||
+                                                                '',
+                                                        );
+
+                                                        setHotspotProfileName(
+                                                            finalTopology.hotspot_profile ||
+                                                                '',
+                                                        );
+
+                                                        setDnsName(
+                                                            finalTopology.dns_name ||
+                                                                '',
+                                                        );
+                                                    }
+                                                }}
+                                            />
+
+                                            <span className="font-bold">
+                                                Use Existing Hotspot
+                                            </span>
+                                        </div>
+
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            Existing server/profile must exactly match. They will not be blindly overwritten.
+                                        </p>
+                                    </label>
+
+                                    <label
+                                        className={`rounded-xl border p-4 ${
+                                            finalMode ===
+                                            'new'
+                                                ? 'border-cyan-400 bg-cyan-50'
+                                                : 'border-slate-200'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                name="final-mode"
+                                                checked={
+                                                    finalMode ===
+                                                    'new'
+                                                }
+                                                onChange={() => {
+                                                    setFinalMode(
+                                                        'new',
+                                                    );
+
+                                                    setHotspotServerName(
+                                                        `mp-hotspot-${router.id}`,
+                                                    );
+
+                                                    setHotspotProfileName(
+                                                        `mp-hsprof-${router.id}`,
+                                                    );
+
+                                                    setDnsName(
+                                                        `login.${router.id}.hotspot`,
+                                                    );
+                                                }}
+                                            />
+
+                                            <span className="font-bold">
+                                                Create New Hotspot
+                                            </span>
+                                        </div>
+
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            Existing unrelated RouterOS server/profile names are protected by conflict checks.
+                                        </p>
+                                    </label>
+                                </div>
+
+                                <div className="mt-6 grid gap-5 md:grid-cols-2">
+                                    <FieldBox
+                                        label="Hotspot Server Name"
+                                    >
+                                        <input
+                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 font-mono"
+                                            value={
+                                                hotspotServerName
+                                            }
+                                            readOnly={
+                                                finalMode ===
+                                                'existing'
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                setHotspotServerName(
+                                                    event
+                                                        .target
+                                                        .value,
+                                                )
+                                            }
+                                        />
+                                    </FieldBox>
+
+                                    <FieldBox
+                                        label="Hotspot Profile"
+                                    >
+                                        <input
+                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 font-mono"
+                                            value={
+                                                hotspotProfileName
+                                            }
+                                            readOnly={
+                                                finalMode ===
+                                                'existing'
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                setHotspotProfileName(
+                                                    event
+                                                        .target
+                                                        .value,
+                                                )
+                                            }
+                                        />
+                                    </FieldBox>
+
+                                    <FieldBox
+                                        label="Hotspot DNS Name"
+                                    >
+                                        <input
+                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 font-mono"
+                                            value={
+                                                dnsName
+                                            }
+                                            readOnly={
+                                                finalMode ===
+                                                'existing'
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                setDnsName(
+                                                    event
+                                                        .target
+                                                        .value,
+                                                )
+                                            }
+                                            placeholder="login.example"
+                                        />
+                                    </FieldBox>
+
+                                    <FieldBox
+                                        label="Cookie Lifetime"
+                                    >
+                                        <input
+                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 font-mono"
+                                            value={
+                                                cookieLifetime
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                setCookieLifetime(
+                                                    event
+                                                        .target
+                                                        .value,
+                                                )
+                                            }
+                                            placeholder="3d"
+                                        />
+                                    </FieldBox>
+                                </div>
+
+                                <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                    <div className="font-bold text-slate-800">
+                                        Automatic final configuration
+                                    </div>
+
+                                    <div className="mt-2 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+                                        <div>✓ cookie + HTTP login</div>
+                                        <div>✓ MAC-cookie login</div>
+                                        <div>✓ DNS remote requests</div>
+                                        <div>✓ WAN-aware masquerade/NAT</div>
+                                        <div>✓ Company-branded captive portal</div>
+                                        <div>✓ RouterOS file validation</div>
+                                        <div>✓ Panel Hotspot server registration</div>
+                                        <div>✓ Final HOTSPOT READY check</div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
+                                    <p className="max-w-2xl text-xs text-slate-500">
+                                        WAN interfaces are detected automatically. Existing unrelated bridge,
+                                        IP, DHCP, NAT, Hotspot and management configuration is not removed.
+                                    </p>
+
+                                    <button
+                                        type="button"
+                                        onClick={
+                                            finalizeHotspot
+                                        }
+                                        disabled={
+                                            finalizing ||
+                                            !activeBridge ||
+                                            !activeGateway ||
+                                            !activePool ||
+                                            !activeDhcpServer ||
+                                            !hotspotServerName.trim() ||
+                                            !hotspotProfileName.trim() ||
+                                            !dnsName.trim() ||
+                                            !cookieLifetime.trim()
+                                        }
+                                        className="rounded-xl bg-emerald-600 px-6 py-3 font-black text-white hover:bg-emerald-700 disabled:opacity-50"
+                                    >
+                                        {finalizing
+                                            ? 'Finalizing Hotspot...'
+                                            : 'Finish Hotspot Setup'}
+                                    </button>
+                                </div>
+                            </section>
+                        ) : (
+                            <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-7 shadow-sm">
+                                <div className="text-3xl font-black text-emerald-800">
+                                    ✓ HOTSPOT READY
+                                </div>
+
+                                <p className="mt-2 text-emerald-900">
+                                    Full RouterOS Hotspot setup and validation completed successfully.
                                 </p>
 
-                                <p className="mt-1 text-slate-700">
-                                    DHCP:{' '}
-                                    <span className="font-mono font-bold">
-                                        {activeDhcpServer ||
-                                            dhcpServerName ||
-                                            '-'}
-                                    </span>
-                                </p>
+                                <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                    <InfoCard
+                                        label="Bridge"
+                                        value={
+                                            activeBridge ||
+                                            '-'
+                                        }
+                                    />
 
-                                <p className="mt-3 text-sm text-slate-600">
-                                    Next: MikroTik Hotspot Server & Profile.
-                                </p>
+                                    <InfoCard
+                                        label="Gateway"
+                                        value={
+                                            activeGateway ||
+                                            '-'
+                                        }
+                                    />
 
-                                <button
-                                    type="button"
-                                    disabled
-                                    className="mt-5 rounded-xl bg-slate-300 px-5 py-3 font-bold text-white"
-                                >
-                                    Step 5 — Hotspot Server & Profile
-                                </button>
+                                    <InfoCard
+                                        label="Pool"
+                                        value={
+                                            activePool ||
+                                            '-'
+                                        }
+                                    />
+
+                                    <InfoCard
+                                        label="DHCP"
+                                        value={
+                                            activeDhcpServer ||
+                                            '-'
+                                        }
+                                    />
+
+                                    <InfoCard
+                                        label="Hotspot"
+                                        value={
+                                            activeHotspotServer ||
+                                            hotspotServerName ||
+                                            '-'
+                                        }
+                                    />
+
+                                    <InfoCard
+                                        label="Profile"
+                                        value={
+                                            activeHotspotProfile ||
+                                            hotspotProfileName ||
+                                            '-'
+                                        }
+                                    />
+
+                                    <InfoCard
+                                        label="DNS"
+                                        value={
+                                            activeDnsName ||
+                                            dnsName ||
+                                            '-'
+                                        }
+                                    />
+                                </div>
+
+                                <div className="mt-6 flex flex-wrap gap-3">
+                                    <Link
+                                        href={route(
+                                            'routers.index',
+                                        )}
+                                        className="rounded-xl bg-emerald-700 px-5 py-3 font-bold text-white hover:bg-emerald-800"
+                                    >
+                                        Back to Routers
+                                    </Link>
+
+                                    <a
+                                        href={route(
+                                            'routers.hotspot-portal.download',
+                                            router.id,
+                                        )}
+                                        className="rounded-xl border border-emerald-300 bg-white px-5 py-3 font-bold text-emerald-800"
+                                    >
+                                        Download Portal Backup
+                                    </a>
+                                </div>
+
+                                {!finalCompleted && (
+                                    <p className="mt-5 text-xs text-amber-700">
+                                        Open the final setup step again if you need to re-validate or repair this router.
+                                    </p>
+                                )}
                             </section>
                         )}
                     </>
