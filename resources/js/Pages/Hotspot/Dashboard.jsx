@@ -61,12 +61,6 @@ export default function Dashboard({
             description:
                 'Collection and operator reports',
         },
-        {
-            label: 'Branding & Portal',
-            route: 'hotspot.branding.index',
-            description:
-                'Voucher and login portal design',
-        },
     ];
 
     return (

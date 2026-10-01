@@ -215,12 +215,6 @@ function ResellerSidebar({
             permission: 'hotspot.view',
         },
         {
-            label: 'Branding & Portal',
-            route: 'hotspot.branding.index',
-            active: 'hotspot.branding.*',
-            permission: 'hotspot.manage',
-        },
-        {
             label: 'Reports',
             route: 'hotspot.reports.index',
             active: 'hotspot.reports.*',
@@ -826,12 +820,6 @@ function NormalSidebar({
                     route: 'hotspot.reports.index',
                     active: 'hotspot.reports.*',
                     permission: 'hotspot.view',
-                },
-                {
-                    label: 'Branding & Portal',
-                    route: 'hotspot.branding.index',
-                    active: 'hotspot.branding.*',
-                    permission: 'hotspot.manage',
                 },
             ],
         },
