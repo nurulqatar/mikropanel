@@ -583,16 +583,6 @@ export default function HotspotHealth({
                         </button>
 
                         <Link
-                            href={`${route(
-                                'routers.hotspot-setup',
-                                router.id,
-                            )}?force_wizard=1`}
-                            className="rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 font-bold text-cyan-800"
-                        >
-                            Advanced Setup
-                        </Link>
-
-                        <Link
                             href={route(
                                 'hotspot.router-health.index',
                             )}
