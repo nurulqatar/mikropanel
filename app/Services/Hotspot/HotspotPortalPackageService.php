@@ -12,7 +12,7 @@ use ZipArchive;
 class HotspotPortalPackageService
 {
     private const TEMPLATE_SHA256 =
-        'e0001af47c04c571f62bc1e304df7be27a167b06cc0e4adea54a7dd6124e91d4';
+        '9e54cadc51bf328280c0079eb89f2463bf41c2b8547fe04ddd1896ece2395f71';
 
     public function __construct(
         private readonly CompanyBrandingService $branding
