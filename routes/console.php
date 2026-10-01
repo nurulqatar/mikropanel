@@ -192,3 +192,15 @@ Schedule::command(
 )
     ->everyMinute()
     ->withoutOverlapping(2);
+
+/*
+ * HOTSPOT_DEVICE_RESET_MAINTENANCE_V2
+ *
+ * DB-only audit maintenance.
+ * Captures the new voucher MAC after RouterOS auto-bind.
+ */
+\Illuminate\Support\Facades\Schedule::command(
+    'hotspot:device-reset-maintain'
+)
+    ->everyMinute()
+    ->withoutOverlapping(2);

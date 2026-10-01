@@ -208,6 +208,315 @@ class HotspotZoneVoucherService
         ];
     }
 
+    /*
+     * HOTSPOT_SELF_DEVICE_RESET_ZONE_V2
+     *
+     * Read current voucher device information from all
+     * available routers in the same Network Zone.
+     */
+    public function voucherDeviceInfoAcrossZone(
+        HotspotVoucher $voucher
+    ): array {
+        $voucher->loadMissing(
+            'server'
+        );
+
+        $zoneId =
+            (int) (
+                $voucher->zone_id
+                ?: $voucher->server?->zone_id
+            );
+
+        if (!$zoneId) {
+            throw new \RuntimeException(
+                'Voucher zone is unavailable.'
+            );
+        }
+
+        $routers =
+            $this->targetRouters(
+                $voucher,
+                $zoneId
+            );
+
+        $fallback = null;
+        $checked = 0;
+        $failed = 0;
+
+        foreach ($routers as $router) {
+            $server =
+                $this->serverForRouter(
+                    $voucher,
+                    $zoneId,
+                    $router
+                );
+
+            if (
+                !$server
+                || !$server->connected
+            ) {
+                $failed++;
+                continue;
+            }
+
+            try {
+                $shadow =
+                    clone $voucher;
+
+                $shadow->setAttribute(
+                    'hotspot_server_id',
+                    $server->id
+                );
+
+                $shadow->unsetRelation(
+                    'server'
+                );
+
+                $info =
+                    $this->routerService
+                        ->voucherDeviceInfo(
+                            $shadow
+                        );
+
+                $info[
+                    'zone_router_id'
+                ] =
+                    $router->id;
+
+                $checked++;
+
+                if (
+                    $info[
+                        'online'
+                    ] ?? false
+                ) {
+                    $info[
+                        'routers_checked'
+                    ] =
+                        $checked;
+
+                    $info[
+                        'routers_unavailable'
+                    ] =
+                        $failed;
+
+                    return $info;
+                }
+
+                $fallback ??=
+                    $info;
+
+            } catch (Throwable) {
+                $failed++;
+            }
+        }
+
+        if ($fallback) {
+            $fallback[
+                'routers_checked'
+            ] =
+                $checked;
+
+            $fallback[
+                'routers_unavailable'
+            ] =
+                $failed;
+
+            return $fallback;
+        }
+
+        return [
+            'online' =>
+                false,
+
+            'mac_address' =>
+                $voucher->mac_address
+                    ? strtoupper(
+                        (string)
+                        $voucher->mac_address
+                    )
+                    : null,
+
+            'ip_address' =>
+                null,
+
+            'login_by' =>
+                null,
+
+            'uptime' =>
+                null,
+
+            'hotspot_server' =>
+                null,
+
+            'router_name' =>
+                null,
+
+            'router_user_found' =>
+                false,
+
+            'routers_checked' =>
+                $checked,
+
+            'routers_unavailable' =>
+                $failed,
+        ];
+    }
+
+    /*
+     * Release the voucher MAC restriction and active
+     * session from every available MikroTik router in
+     * the same Network Zone.
+     *
+     * Offline routers are intentionally reported as
+     * failed; the normal voucher provisioning queue
+     * converges them after reconnect.
+     */
+    public function resetVoucherMacAcrossZone(
+        HotspotVoucher $voucher
+    ): array {
+        $voucher->loadMissing(
+            'server'
+        );
+
+        $zoneId =
+            (int) (
+                $voucher->zone_id
+                ?: $voucher->server?->zone_id
+            );
+
+        if (!$zoneId) {
+            throw new \RuntimeException(
+                'Voucher zone is unavailable.'
+            );
+        }
+
+        $routers =
+            $this->targetRouters(
+                $voucher,
+                $zoneId
+            );
+
+        if ($routers->isEmpty()) {
+            throw new \RuntimeException(
+                'No enabled MikroTik router exists in this Hotspot zone.'
+            );
+        }
+
+        $success = [];
+        $failed = [];
+
+        foreach ($routers as $router) {
+            $server =
+                $this->serverForRouter(
+                    $voucher,
+                    $zoneId,
+                    $router
+                );
+
+            if (!$server) {
+                $failed[
+                    $router->id
+                ] =
+                    'Hotspot server not found.';
+
+                continue;
+            }
+
+            if (!$server->connected) {
+                $failed[
+                    $router->id
+                ] =
+                    'Router is offline; reset will converge after reconnect.';
+
+                continue;
+            }
+
+            try {
+                $shadow =
+                    clone $voucher;
+
+                $shadow->setAttribute(
+                    'hotspot_server_id',
+                    $server->id
+                );
+
+                $shadow->unsetRelation(
+                    'server'
+                );
+
+                $found =
+                    $this->routerService
+                        ->resetVoucherMac(
+                            $shadow
+                        );
+
+                $success[
+                    $router->id
+                ] = [
+                    'router_id' =>
+                        $router->id,
+
+                    'server_id' =>
+                        $server->id,
+
+                    'router_user_found' =>
+                        (bool)
+                        $found,
+                ];
+
+            } catch (Throwable $exception) {
+                $failed[
+                    $router->id
+                ] =
+                    $exception
+                        ->getMessage();
+
+                Log::warning(
+                    'Zone voucher device reset skipped a MikroTik.',
+                    [
+                        'voucher_id' =>
+                            $voucher->id,
+
+                        'zone_id' =>
+                            $zoneId,
+
+                        'router_id' =>
+                            $router->id,
+
+                        'message' =>
+                            $exception
+                                ->getMessage(),
+                    ]
+                );
+            }
+        }
+
+        return [
+            'zone_id' =>
+                $zoneId,
+
+            'routers' =>
+                $routers->count(),
+
+            'reset' =>
+                count(
+                    $success
+                ),
+
+            'failed' =>
+                count(
+                    $failed
+                ),
+
+            'success' =>
+                $success,
+
+            'errors' =>
+                $failed,
+        ];
+    }
+
     public function suspendVoucher(
         HotspotVoucher $voucher
     ): array {

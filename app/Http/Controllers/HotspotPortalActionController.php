@@ -30,12 +30,28 @@ class HotspotPortalActionController extends Controller
      *   Voucher Code + confirmation token
      *   -> clear RouterOS MAC + disconnect old session.
      */
+    /*
+     * HOTSPOT_SELF_DEVICE_RESET_V2
+     *
+     * Public captive-portal device reset:
+     * - HMAC router token
+     * - 6-digit sold voucher verification
+     * - IP/voucher rate limits
+     * - 120 second one-time confirmation
+     * - 10 minute cooldown
+     * - max 3 successful resets / rolling 24h
+     * - zone-wide RouterOS MAC/session release
+     * - audit history
+     * - normal provisioning queue convergence
+     */
     public function resetMac(
         Request $request,
         int $router,
         string $token,
         HotspotPortalPackageService $packages,
-        HotspotRouterService $routerService
+        HotspotRouterService $routerService,
+        \App\Services\Hotspot\HotspotZoneVoucherService $zoneService,
+        \App\Services\Hotspot\HotspotSelfDeviceResetService $resetService
     ): JsonResponse {
         $routerModel =
             Router::withoutGlobalScopes()
@@ -50,7 +66,7 @@ class HotspotPortalActionController extends Controller
                 ->service_type !== 'hotspot'
         ) {
             return $this->reply(
-                'MAC reset request is not available.',
+                'Device reset request is not available.',
                 404
             );
         }
@@ -67,7 +83,7 @@ class HotspotPortalActionController extends Controller
             )
         ) {
             return $this->reply(
-                'MAC reset request is not available.',
+                'Device reset request is not available.',
                 404
             );
         }
@@ -94,7 +110,7 @@ class HotspotPortalActionController extends Controller
             )
         ) {
             return $this->reply(
-                'Invalid MAC reset action.',
+                'Invalid device reset action.',
                 422
             );
         }
@@ -129,17 +145,18 @@ class HotspotPortalActionController extends Controller
                 ?: 'unknown'
             );
 
+        /*
+         * Do not store a reversible/plain IP value
+         * in reset confirmation or audit state.
+         */
         $ipHash =
-            hash(
+            hash_hmac(
                 'sha256',
-                $ip
+                $ip,
+                (string)
+                config('app.key')
             );
 
-        /*
-         * Voucher discovery is protected here.
-         * The actual reset cannot happen without
-         * the short-lived confirmation token.
-         */
         if ($action === 'inspect') {
             $ipKey =
                 'hotspot-mac-reset:ip:'
@@ -149,11 +166,13 @@ class HotspotPortalActionController extends Controller
 
             $voucherKey =
                 'hotspot-mac-reset:voucher:'
-                . $routerModel->id
+                . $routerModel->zone_id
                 . ':'
-                . hash(
+                . hash_hmac(
                     'sha256',
-                    $code
+                    $code,
+                    (string)
+                    config('app.key')
                 );
 
             if (
@@ -203,29 +222,58 @@ class HotspotPortalActionController extends Controller
             );
         }
 
+        /*
+         * Zone ownership is the primary boundary.
+         * Legacy vouchers without zone_id may still
+         * match the current router's Hotspot server.
+         */
         $serverIds =
             HotspotServer::withoutGlobalScopes()
                 ->where(
                     'router_id',
                     $routerModel->id
                 )
+                ->where(
+                    'zone_id',
+                    $routerModel->zone_id
+                )
                 ->pluck('id');
-
-        if ($serverIds->isEmpty()) {
-            return $this->reply(
-                'Voucher could not be verified.',
-                422
-            );
-        }
 
         $voucher =
             HotspotVoucher::withoutGlobalScopes()
                 ->whereNull(
                     'deleted_at'
                 )
-                ->whereIn(
-                    'hotspot_server_id',
-                    $serverIds
+                ->where(
+                    function ($query) use (
+                        $routerModel,
+                        $serverIds
+                    ): void {
+                        $query->where(
+                            'zone_id',
+                            $routerModel->zone_id
+                        );
+
+                        if (
+                            !$serverIds
+                                ->isEmpty()
+                        ) {
+                            $query->orWhere(
+                                function ($legacy) use (
+                                    $serverIds
+                                ): void {
+                                    $legacy
+                                        ->whereNull(
+                                            'zone_id'
+                                        )
+                                        ->whereIn(
+                                            'hotspot_server_id',
+                                            $serverIds
+                                        );
+                                }
+                            );
+                        }
+                    }
                 )
                 ->where(
                     'username',
@@ -258,11 +306,67 @@ class HotspotPortalActionController extends Controller
             );
         }
 
+        /*
+         * Extra tenant guard for vouchers that already
+         * carry reseller ownership.
+         */
+        if (
+            $voucher->reseller_id
+            && $routerModel
+                ->zone
+                ->reseller_id
+            && (int)
+                $voucher
+                    ->reseller_id
+                !== (int)
+                    $routerModel
+                        ->zone
+                        ->reseller_id
+        ) {
+            return $this->reply(
+                'Voucher could not be verified.',
+                422
+            );
+        }
+
         if ($action === 'inspect') {
+            $policy =
+                $resetService
+                    ->policy(
+                        $voucher
+                    );
+
+            if (
+                !(
+                    $policy[
+                        'allowed'
+                    ] ?? false
+                )
+            ) {
+                return $this->reply(
+                    $policy[
+                        'message'
+                    ]
+                    ?? 'Device reset is temporarily unavailable.',
+                    429,
+                    [
+                        'retry_after' =>
+                            (int) (
+                                $policy[
+                                    'retry_after'
+                                ] ?? 0
+                            ),
+
+                        'reset_policy' =>
+                            $policy,
+                    ]
+                );
+            }
+
             try {
                 $device =
-                    $routerService
-                        ->voucherDeviceInfo(
+                    $zoneService
+                        ->voucherDeviceInfoAcrossZone(
                             $voucher
                         );
 
@@ -285,12 +389,24 @@ class HotspotPortalActionController extends Controller
                             (int)
                             $routerModel->id,
 
+                        'zone_id' =>
+                            (int)
+                            $routerModel
+                                ->zone_id,
+
                         'voucher_id' =>
                             (int)
                             $voucher->id,
 
                         'ip_hash' =>
                             $ipHash,
+
+                        'old_mac' =>
+                            $device[
+                                'mac_address'
+                            ]
+                            ?? $voucher
+                                ->mac_address,
                     ],
                     now()->addSeconds(
                         120
@@ -322,6 +438,9 @@ class HotspotPortalActionController extends Controller
 
                         'device' =>
                             $device,
+
+                        'reset_policy' =>
+                            $policy,
 
                         'confirm_token' =>
                             $confirmToken,
@@ -373,25 +492,41 @@ class HotspotPortalActionController extends Controller
                 $confirmToken
             );
 
+        /*
+         * Pull makes confirmation strictly one-time.
+         * Even a failed RouterOS attempt requires a
+         * fresh voucher inspection.
+         */
         $confirmation =
-            \Illuminate\Support\Facades\Cache::get(
+            \Illuminate\Support\Facades\Cache::pull(
                 $cacheKey
             );
 
         if (
             !is_array($confirmation)
             || (int) (
-                $confirmation['router_id']
-                ?? 0
-            ) !== (int) $routerModel->id
+                $confirmation[
+                    'router_id'
+                ] ?? 0
+            ) !== (int)
+                $routerModel->id
             || (int) (
-                $confirmation['voucher_id']
-                ?? 0
-            ) !== (int) $voucher->id
+                $confirmation[
+                    'zone_id'
+                ] ?? 0
+            ) !== (int)
+                $routerModel->zone_id
+            || (int) (
+                $confirmation[
+                    'voucher_id'
+                ] ?? 0
+            ) !== (int)
+                $voucher->id
             || !hash_equals(
                 (string) (
-                    $confirmation['ip_hash']
-                    ?? ''
+                    $confirmation[
+                        'ip_hash'
+                    ] ?? ''
                 ),
                 $ipHash
             )
@@ -402,12 +537,74 @@ class HotspotPortalActionController extends Controller
             );
         }
 
+        $begin =
+            $resetService
+                ->beginReset(
+                    $voucher,
+                    $routerModel,
+                    $confirmation[
+                        'old_mac'
+                    ]
+                    ?? $voucher
+                        ->mac_address,
+                    $ipHash
+                );
+
+        if (
+            !(
+                $begin[
+                    'allowed'
+                ] ?? false
+            )
+        ) {
+            return $this->reply(
+                $begin[
+                    'message'
+                ]
+                ?? 'Device reset is temporarily unavailable.',
+                429,
+                [
+                    'retry_after' =>
+                        (int) (
+                            $begin[
+                                'retry_after'
+                            ] ?? 0
+                        ),
+                ]
+            );
+        }
+
+        /** @var \App\Models\HotspotDeviceReset $audit */
+        $audit =
+            $begin['audit'];
+
         try {
-            $routerUserFound =
-                $routerService
-                    ->resetVoucherMac(
+            $zoneResult =
+                $zoneService
+                    ->resetVoucherMacAcrossZone(
                         $voucher
                     );
+
+            if (
+                (int) (
+                    $zoneResult[
+                        'reset'
+                    ] ?? 0
+                ) < 1
+            ) {
+                $resetService
+                    ->complete(
+                        $audit,
+                        'failed',
+                        $zoneResult,
+                        'No online router accepted the device reset.'
+                    );
+
+                return $this->reply(
+                    'Router is temporarily unavailable. Voucher was not reset.',
+                    503
+                );
+            }
 
             DB::table(
                 'hotspot_vouchers'
@@ -424,18 +621,41 @@ class HotspotPortalActionController extends Controller
                         now(),
                 ]);
 
+            /*
+             * Existing zone voucher sync engine now
+             * reprovisions the MAC-free voucher.
+             *
+             * On next login the existing
+             * AUTO_BIND_HOTSPOT_MAC logic binds the
+             * newly observed device automatically.
+             */
             ProvisionHotspotVoucher::dispatch(
                 $voucher->id
             );
 
-            \Illuminate\Support\Facades\Cache::forget(
-                $cacheKey
-            );
+            $partial =
+                (int) (
+                    $zoneResult[
+                        'failed'
+                    ] ?? 0
+                ) > 0;
+
+            $resetService
+                ->complete(
+                    $audit,
+                    $partial
+                        ? 'partial'
+                        : 'success',
+                    $zoneResult,
+                    $partial
+                        ? 'One or more offline routers will converge through the normal provisioning queue.'
+                        : null
+                );
 
             return $this->reply(
-                $routerUserFound
-                    ? 'Voucher reset successful. You can now use it on the new device.'
-                    : 'Voucher reset accepted. Router synchronization has been queued.',
+                $partial
+                    ? 'Device reset successful. The new device can now log in. Offline routers will synchronize automatically after reconnect.'
+                    : 'Device reset successful. Connect the new device and log in with the same voucher.',
                 200,
                 [
                     'success' =>
@@ -443,10 +663,52 @@ class HotspotPortalActionController extends Controller
 
                     'action' =>
                         'reset',
+
+                    'zone_sync' => [
+                        'routers' =>
+                            (int) (
+                                $zoneResult[
+                                    'routers'
+                                ] ?? 0
+                            ),
+
+                        'reset' =>
+                            (int) (
+                                $zoneResult[
+                                    'reset'
+                                ] ?? 0
+                            ),
+
+                        'failed' =>
+                            (int) (
+                                $zoneResult[
+                                    'failed'
+                                ] ?? 0
+                            ),
+                    ],
+
+                    'cooldown_minutes' =>
+                        \App\Services\Hotspot\HotspotSelfDeviceResetService::COOLDOWN_MINUTES,
+
+                    'daily_limit' =>
+                        \App\Services\Hotspot\HotspotSelfDeviceResetService::DAILY_LIMIT,
                 ]
             );
 
         } catch (Throwable $exception) {
+            try {
+                $resetService
+                    ->complete(
+                        $audit,
+                        'failed',
+                        [],
+                        $exception
+                            ->getMessage()
+                    );
+            } catch (Throwable) {
+                // Preserve the original reset error.
+            }
+
             report(
                 $exception
             );
@@ -457,6 +719,7 @@ class HotspotPortalActionController extends Controller
             );
         }
     }
+
 
     private function reply(
         string $message,
