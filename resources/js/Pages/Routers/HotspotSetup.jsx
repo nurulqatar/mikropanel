@@ -28,6 +28,7 @@ export default function HotspotSetup({
     discovery = {},
     wizardStep = 1,
     activeBridge = null,
+    activeGateway = null,
     flash = {},
 }) {
     const [selectedPorts, setSelectedPorts] =
@@ -65,6 +66,58 @@ export default function HotspotSetup({
     const [
         applyingBridge,
         setApplyingBridge,
+    ] = useState(false);
+
+    /*
+     * HOTSPOT_GATEWAY_STEP3_V1
+     *
+     * Match Hotspot server/profile/DHCP topology,
+     * not simply the first IP on the bridge.
+     */
+    const existingHotspotTopology =
+        useMemo(
+            () =>
+                (
+                    discovery
+                        ?.hotspot_topologies
+                    ?? []
+                ).find(
+                    (item) =>
+                        item.interface ===
+                            activeBridge
+                        && Boolean(
+                            item.gateway_cidr,
+                        ),
+                ) ?? null,
+            [
+                discovery
+                    ?.hotspot_topologies,
+                activeBridge,
+            ],
+        );
+
+    const [
+        gatewayMode,
+        setGatewayMode,
+    ] = useState(
+        existingHotspotTopology
+            ? 'existing'
+            : 'new',
+    );
+
+    const [
+        gatewayCidr,
+        setGatewayCidr,
+    ] = useState(
+        existingHotspotTopology
+            ?.gateway_cidr
+        ?? activeGateway
+        ?? '',
+    );
+
+    const [
+        applyingGateway,
+        setApplyingGateway,
     ] = useState(false);
 
     const ethernetInterfaces =
@@ -145,6 +198,46 @@ export default function HotspotSetup({
 
                 onFinish: () =>
                     setApplyingBridge(
+                        false,
+                    ),
+            },
+        );
+    };
+
+    const applyGateway = () => {
+        if (
+            !activeBridge
+            || !gatewayCidr.trim()
+        ) {
+            return;
+        }
+
+        inertiaRouter.post(
+            route(
+                'routers.hotspot-setup.gateway',
+                router.id,
+            ),
+            {
+                mode:
+                    gatewayMode,
+
+                bridge_name:
+                    activeBridge,
+
+                gateway_cidr:
+                    gatewayCidr.trim(),
+            },
+            {
+                preserveScroll:
+                    true,
+
+                onStart: () =>
+                    setApplyingGateway(
+                        true,
+                    ),
+
+                onFinish: () =>
+                    setApplyingGateway(
                         false,
                     ),
             },
@@ -715,22 +808,264 @@ export default function HotspotSetup({
                                     Existing unrelated RouterOS configuration is never removed automatically.
                                 </p>
                             </section>
+                        ) : Number(wizardStep) ===
+                          3 ? (
+                            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                                <div className="flex flex-wrap items-start justify-between gap-4">
+                                    <div>
+                                        <div className="text-sm font-bold text-emerald-700">
+                                            ✓ Bridge Ready
+                                        </div>
+
+                                        <h2 className="mt-1 text-xl font-black text-slate-900">
+                                            Step 3 — Gateway & Subnet
+                                        </h2>
+
+                                        <p className="mt-1 text-sm text-slate-500">
+                                            Bridge:{' '}
+                                            <span className="font-mono font-bold">
+                                                {activeBridge}
+                                            </span>
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {existingHotspotTopology && (
+                                    <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                                        <div className="text-sm font-black text-emerald-800">
+                                            Existing Hotspot configuration detected
+                                        </div>
+
+                                        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                                            <InfoCard
+                                                label="Gateway"
+                                                value={
+                                                    existingHotspotTopology.gateway_cidr ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="Network"
+                                                value={
+                                                    existingHotspotTopology.network_cidr ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="Pool"
+                                                value={
+                                                    existingHotspotTopology.pool_name ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="Pool Range"
+                                                value={
+                                                    existingHotspotTopology.pool_ranges ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="DHCP"
+                                                value={
+                                                    existingHotspotTopology.dhcp_server ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="Hotspot"
+                                                value={
+                                                    existingHotspotTopology.hotspot_server ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="Profile"
+                                                value={
+                                                    existingHotspotTopology.hotspot_profile ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="DNS Name"
+                                                value={
+                                                    existingHotspotTopology.dns_name ||
+                                                    '-'
+                                                }
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                                    <label
+                                        className={`rounded-xl border p-4 ${
+                                            gatewayMode ===
+                                            'existing'
+                                                ? 'border-cyan-400 bg-cyan-50'
+                                                : 'border-slate-200'
+                                        } ${
+                                            !existingHotspotTopology
+                                                ? 'opacity-50'
+                                                : ''
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                name="gateway-mode"
+                                                checked={
+                                                    gatewayMode ===
+                                                    'existing'
+                                                }
+                                                disabled={
+                                                    !existingHotspotTopology
+                                                }
+                                                onChange={() => {
+                                                    setGatewayMode(
+                                                        'existing',
+                                                    );
+
+                                                    setGatewayCidr(
+                                                        existingHotspotTopology
+                                                            ?.gateway_cidr ||
+                                                            '',
+                                                    );
+                                                }}
+                                            />
+
+                                            <span className="font-bold text-slate-800">
+                                                Use Existing Hotspot Gateway
+                                            </span>
+                                        </div>
+
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            Verification only. No IP address will be changed.
+                                        </p>
+                                    </label>
+
+                                    <label
+                                        className={`rounded-xl border p-4 ${
+                                            gatewayMode ===
+                                            'new'
+                                                ? 'border-cyan-400 bg-cyan-50'
+                                                : 'border-slate-200'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                name="gateway-mode"
+                                                checked={
+                                                    gatewayMode ===
+                                                    'new'
+                                                }
+                                                onChange={() =>
+                                                    setGatewayMode(
+                                                        'new',
+                                                    )
+                                                }
+                                            />
+
+                                            <span className="font-bold text-slate-800">
+                                                Configure New Gateway
+                                            </span>
+                                        </div>
+
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            MikroPanel will add only this IP to the selected bridge after subnet-overlap checks.
+                                        </p>
+                                    </label>
+                                </div>
+
+                                <div className="mt-5">
+                                    <label className="block text-sm font-bold text-slate-700">
+                                        Gateway IP / CIDR
+                                    </label>
+
+                                    <input
+                                        className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 font-mono"
+                                        value={
+                                            gatewayCidr
+                                        }
+                                        readOnly={
+                                            gatewayMode ===
+                                            'existing'
+                                        }
+                                        onChange={(
+                                            event,
+                                        ) =>
+                                            setGatewayCidr(
+                                                event
+                                                    .target
+                                                    .value,
+                                            )
+                                        }
+                                        placeholder="10.20.0.1/21"
+                                    />
+
+                                    <p className="mt-2 text-xs text-slate-500">
+                                        Example: 10.20.0.1/21. Existing unrelated bridge IP addresses are never deleted.
+                                    </p>
+                                </div>
+
+                                <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
+                                    <p className="text-xs text-slate-500">
+                                        The backend re-reads all RouterOS interface subnets before adding a new gateway.
+                                    </p>
+
+                                    <button
+                                        type="button"
+                                        onClick={
+                                            applyGateway
+                                        }
+                                        disabled={
+                                            applyingGateway ||
+                                            !activeBridge ||
+                                            !gatewayCidr.trim()
+                                        }
+                                        className="rounded-xl bg-cyan-600 px-5 py-3 font-bold text-white hover:bg-cyan-700 disabled:opacity-50"
+                                    >
+                                        {applyingGateway
+                                            ? 'Checking Gateway...'
+                                            : gatewayMode ===
+                                                'existing'
+                                              ? 'Use Existing & Continue'
+                                              : 'Apply Gateway & Continue'}
+                                    </button>
+                                </div>
+                            </section>
                         ) : (
                             <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
                                 <div className="text-lg font-black text-emerald-800">
-                                    ✓ Hotspot Bridge Ready
+                                    ✓ Gateway & Subnet Ready
                                 </div>
 
                                 <p className="mt-2 text-slate-700">
                                     Bridge:{' '}
                                     <span className="font-mono font-bold">
-                                        {activeBridge ||
-                                            'Configured'}
+                                        {activeBridge}
+                                    </span>
+                                </p>
+
+                                <p className="mt-1 text-slate-700">
+                                    Gateway:{' '}
+                                    <span className="font-mono font-bold">
+                                        {activeGateway ||
+                                            gatewayCidr ||
+                                            '-'}
                                     </span>
                                 </p>
 
                                 <p className="mt-3 text-sm text-slate-600">
-                                    Next: Gateway IP, subnet and Hotspot address pool.
+                                    Next: DHCP server and client address pool.
                                 </p>
 
                                 <button
@@ -738,7 +1073,7 @@ export default function HotspotSetup({
                                     disabled
                                     className="mt-5 rounded-xl bg-slate-300 px-5 py-3 font-bold text-white"
                                 >
-                                    Step 3 — Gateway & Subnet
+                                    Step 4 — DHCP & Client Pool
                                 </button>
                             </section>
                         )}

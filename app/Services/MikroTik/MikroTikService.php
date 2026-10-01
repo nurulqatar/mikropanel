@@ -673,6 +673,79 @@ class MikroTikService
                     ])
                 );
 
+            /*
+             * HOTSPOT_GATEWAY_STEP3_V1
+             *
+             * Read current Hotspot topology so the
+             * wizard can distinguish the actual
+             * Hotspot gateway from unrelated IPs on
+             * the same bridge.
+             */
+            $poolsRead =
+                $this->readRowsSafe(
+                    '/ip/pool/print',
+                    implode(',', [
+                        '.id',
+                        'name',
+                        'ranges',
+                        'comment',
+                    ])
+                );
+
+            $dhcpServersRead =
+                $this->readRowsSafe(
+                    '/ip/dhcp-server/print',
+                    implode(',', [
+                        '.id',
+                        'name',
+                        'interface',
+                        'address-pool',
+                        'lease-time',
+                        'disabled',
+                        'comment',
+                    ])
+                );
+
+            $dhcpNetworksRead =
+                $this->readRowsSafe(
+                    '/ip/dhcp-server/network/print',
+                    implode(',', [
+                        '.id',
+                        'address',
+                        'gateway',
+                        'dns-server',
+                        'domain',
+                        'comment',
+                    ])
+                );
+
+            $hotspotServersRead =
+                $this->readRowsSafe(
+                    '/ip/hotspot/print',
+                    implode(',', [
+                        '.id',
+                        'name',
+                        'interface',
+                        'address-pool',
+                        'profile',
+                        'disabled',
+                    ])
+                );
+
+            $hotspotProfilesRead =
+                $this->readRowsSafe(
+                    '/ip/hotspot/profile/print',
+                    implode(',', [
+                        '.id',
+                        'name',
+                        'hotspot-address',
+                        'dns-name',
+                        'html-directory',
+                        'login-by',
+                        'use-radius',
+                    ])
+                );
+
             $bridgesByInterface = [];
 
             foreach (
@@ -835,6 +908,445 @@ class MikroTikService
                         $b['name']
                     )
             );
+
+            $pools = [];
+            $poolsByName = [];
+
+            foreach (
+                $poolsRead['rows'] ?? []
+                as $row
+            ) {
+                $name =
+                    trim(
+                        (string) (
+                            $row['name']
+                            ?? ''
+                        )
+                    );
+
+                if ($name === '') {
+                    continue;
+                }
+
+                $item = [
+                    'id' =>
+                        $row['.id']
+                        ?? null,
+
+                    'name' =>
+                        $name,
+
+                    'ranges' =>
+                        $row['ranges']
+                        ?? null,
+
+                    'comment' =>
+                        $row['comment']
+                        ?? null,
+                ];
+
+                $pools[] = $item;
+                $poolsByName[$name] = $item;
+            }
+
+            $dhcpServers = [];
+
+            foreach (
+                $dhcpServersRead['rows'] ?? []
+                as $row
+            ) {
+                $dhcpServers[] = [
+                    'id' =>
+                        $row['.id']
+                        ?? null,
+
+                    'name' =>
+                        $row['name']
+                        ?? null,
+
+                    'interface' =>
+                        $row['interface']
+                        ?? null,
+
+                    'address_pool' =>
+                        $row['address-pool']
+                        ?? null,
+
+                    'lease_time' =>
+                        $row['lease-time']
+                        ?? null,
+
+                    'disabled' =>
+                        ($row['disabled'] ?? 'false')
+                        === 'true',
+
+                    'comment' =>
+                        $row['comment']
+                        ?? null,
+                ];
+            }
+
+            $dhcpNetworks = [];
+
+            foreach (
+                $dhcpNetworksRead['rows'] ?? []
+                as $row
+            ) {
+                $dhcpNetworks[] = [
+                    'id' =>
+                        $row['.id']
+                        ?? null,
+
+                    'address' =>
+                        $row['address']
+                        ?? null,
+
+                    'gateway' =>
+                        $row['gateway']
+                        ?? null,
+
+                    'dns_server' =>
+                        $row['dns-server']
+                        ?? null,
+
+                    'domain' =>
+                        $row['domain']
+                        ?? null,
+
+                    'comment' =>
+                        $row['comment']
+                        ?? null,
+                ];
+            }
+
+            $hotspotProfiles = [];
+            $profilesByName = [];
+
+            foreach (
+                $hotspotProfilesRead['rows'] ?? []
+                as $row
+            ) {
+                $name =
+                    trim(
+                        (string) (
+                            $row['name']
+                            ?? ''
+                        )
+                    );
+
+                if ($name === '') {
+                    continue;
+                }
+
+                $item = [
+                    'id' =>
+                        $row['.id']
+                        ?? null,
+
+                    'name' =>
+                        $name,
+
+                    'hotspot_address' =>
+                        $row['hotspot-address']
+                        ?? null,
+
+                    'dns_name' =>
+                        $row['dns-name']
+                        ?? null,
+
+                    'html_directory' =>
+                        $row['html-directory']
+                        ?? null,
+
+                    'login_by' =>
+                        $row['login-by']
+                        ?? null,
+
+                    'use_radius' =>
+                        ($row['use-radius'] ?? 'false')
+                        === 'true',
+                ];
+
+                $hotspotProfiles[] = $item;
+                $profilesByName[$name] = $item;
+            }
+
+            $hotspotServers = [];
+            $hotspotTopologies = [];
+
+            foreach (
+                $hotspotServersRead['rows'] ?? []
+                as $row
+            ) {
+                $serverName =
+                    trim(
+                        (string) (
+                            $row['name']
+                            ?? ''
+                        )
+                    );
+
+                $interface =
+                    trim(
+                        (string) (
+                            $row['interface']
+                            ?? ''
+                        )
+                    );
+
+                $poolName =
+                    trim(
+                        (string) (
+                            $row['address-pool']
+                            ?? ''
+                        )
+                    );
+
+                $profileName =
+                    trim(
+                        (string) (
+                            $row['profile']
+                            ?? ''
+                        )
+                    );
+
+                $server = [
+                    'id' =>
+                        $row['.id']
+                        ?? null,
+
+                    'name' =>
+                        $serverName !== ''
+                            ? $serverName
+                            : null,
+
+                    'interface' =>
+                        $interface !== ''
+                            ? $interface
+                            : null,
+
+                    'address_pool' =>
+                        $poolName !== ''
+                            ? $poolName
+                            : null,
+
+                    'profile' =>
+                        $profileName !== ''
+                            ? $profileName
+                            : null,
+
+                    'disabled' =>
+                        ($row['disabled'] ?? 'false')
+                        === 'true',
+                ];
+
+                $hotspotServers[] =
+                    $server;
+
+                $profile =
+                    $profilesByName[
+                        $profileName
+                    ] ?? null;
+
+                $gatewayIp =
+                    trim(
+                        (string) (
+                            $profile[
+                                'hotspot_address'
+                            ]
+                            ?? ''
+                        )
+                    );
+
+                if (
+                    $gatewayIp === '0.0.0.0'
+                ) {
+                    $gatewayIp = '';
+                }
+
+                $dhcpServer = null;
+
+                foreach (
+                    $dhcpServers
+                    as $candidate
+                ) {
+                    if (
+                        ($candidate['interface']
+                            ?? null)
+                            !== $interface
+                    ) {
+                        continue;
+                    }
+
+                    if (
+                        $poolName !== ''
+                        && (
+                            $candidate[
+                                'address_pool'
+                            ] ?? null
+                        ) === $poolName
+                    ) {
+                        $dhcpServer =
+                            $candidate;
+                        break;
+                    }
+
+                    if ($dhcpServer === null) {
+                        $dhcpServer =
+                            $candidate;
+                    }
+                }
+
+                $networkRow = null;
+
+                if ($gatewayIp !== '') {
+                    foreach (
+                        $dhcpNetworks
+                        as $candidate
+                    ) {
+                        if (
+                            trim(
+                                (string) (
+                                    $candidate[
+                                        'gateway'
+                                    ] ?? ''
+                                )
+                            ) === $gatewayIp
+                        ) {
+                            $networkRow =
+                                $candidate;
+                            break;
+                        }
+                    }
+                }
+
+                if (
+                    $gatewayIp === ''
+                    && $networkRow
+                ) {
+                    $gatewayIp =
+                        trim(
+                            (string) (
+                                $networkRow[
+                                    'gateway'
+                                ] ?? ''
+                            )
+                        );
+                }
+
+                $gatewayCidr = null;
+
+                foreach (
+                    $addressesByInterface[
+                        $interface
+                    ] ?? []
+                    as $address
+                ) {
+                    $cidr =
+                        trim(
+                            (string) (
+                                $address[
+                                    'address'
+                                ] ?? ''
+                            )
+                        );
+
+                    if ($cidr === '') {
+                        continue;
+                    }
+
+                    $ip =
+                        explode(
+                            '/',
+                            $cidr,
+                            2
+                        )[0];
+
+                    if (
+                        $gatewayIp !== ''
+                        && $ip === $gatewayIp
+                    ) {
+                        $gatewayCidr =
+                            $cidr;
+                        break;
+                    }
+                }
+
+                $pool =
+                    $poolsByName[
+                        $poolName
+                    ] ?? null;
+
+                $hotspotTopologies[] = [
+                    'interface' =>
+                        $interface !== ''
+                            ? $interface
+                            : null,
+
+                    'gateway_ip' =>
+                        $gatewayIp !== ''
+                            ? $gatewayIp
+                            : null,
+
+                    'gateway_cidr' =>
+                        $gatewayCidr,
+
+                    'network_cidr' =>
+                        $networkRow[
+                            'address'
+                        ] ?? null,
+
+                    'dns_server' =>
+                        $networkRow[
+                            'dns_server'
+                        ] ?? null,
+
+                    'dhcp_network_id' =>
+                        $networkRow[
+                            'id'
+                        ] ?? null,
+
+                    'pool_name' =>
+                        $poolName !== ''
+                            ? $poolName
+                            : null,
+
+                    'pool_ranges' =>
+                        $pool[
+                            'ranges'
+                        ] ?? null,
+
+                    'dhcp_server' =>
+                        $dhcpServer[
+                            'name'
+                        ] ?? null,
+
+                    'dhcp_lease_time' =>
+                        $dhcpServer[
+                            'lease_time'
+                        ] ?? null,
+
+                    'hotspot_server' =>
+                        $serverName !== ''
+                            ? $serverName
+                            : null,
+
+                    'hotspot_profile' =>
+                        $profileName !== ''
+                            ? $profileName
+                            : null,
+
+                    'dns_name' =>
+                        $profile[
+                            'dns_name'
+                        ] ?? null,
+
+                    'html_directory' =>
+                        $profile[
+                            'html_directory'
+                        ] ?? null,
+                ];
+            }
 
             /*
              * Build a set of physical/logical interfaces
@@ -1298,6 +1810,24 @@ class MikroTikService
 
                 'bridges' =>
                     $bridges,
+
+                'ip_pools' =>
+                    $pools,
+
+                'dhcp_servers' =>
+                    $dhcpServers,
+
+                'dhcp_networks' =>
+                    $dhcpNetworks,
+
+                'hotspot_servers' =>
+                    $hotspotServers,
+
+                'hotspot_profiles' =>
+                    $hotspotProfiles,
+
+                'hotspot_topologies' =>
+                    $hotspotTopologies,
 
                 /*
                  * Only the count is exposed to the UI.
@@ -1864,6 +2394,442 @@ class MikroTikService
     }
 
     /*
+     * HOTSPOT_GATEWAY_STEP3_V1
+     *
+     * Existing mode is verification-only.
+     * New mode adds only one IP address to the
+     * selected Hotspot bridge after overlap checks.
+     */
+    public function applyHotspotGateway(
+        Router $router,
+        string $mode,
+        string $bridgeName,
+        string $gatewayCidr
+    ): array {
+        $mode =
+            strtolower(
+                trim($mode)
+            );
+
+        if (
+            !in_array(
+                $mode,
+                [
+                    'existing',
+                    'new',
+                ],
+                true
+            )
+        ) {
+            throw new \RuntimeException(
+                'Invalid gateway setup mode.'
+            );
+        }
+
+        $bridgeName =
+            trim($bridgeName);
+
+        $gatewayCidr =
+            trim($gatewayCidr);
+
+        if (
+            $bridgeName === ''
+            || $gatewayCidr === ''
+        ) {
+            throw new \RuntimeException(
+                'Bridge and gateway CIDR are required.'
+            );
+        }
+
+        $before =
+            $this->hotspotSetupDiscovery(
+                $router
+            );
+
+        if (
+            !(
+                $before['success']
+                ?? false
+            )
+        ) {
+            throw new \RuntimeException(
+                $before['message']
+                ?? 'Unable to inspect MikroTik.'
+            );
+        }
+
+        $bridgeExists = false;
+
+        foreach (
+            $before['bridges']
+                ?? []
+            as $bridge
+        ) {
+            if (
+                ($bridge['name'] ?? null)
+                === $bridgeName
+            ) {
+                $bridgeExists = true;
+                break;
+            }
+        }
+
+        if (!$bridgeExists) {
+            throw new \RuntimeException(
+                "Bridge {$bridgeName} was not found."
+            );
+        }
+
+        $target =
+            $this->ipv4CidrInfo(
+                $gatewayCidr
+            );
+
+        /*
+         * Existing Hotspot configuration:
+         * verify exact RouterOS topology only.
+         * No write.
+         */
+        if ($mode === 'existing') {
+            foreach (
+                $before[
+                    'hotspot_topologies'
+                ] ?? []
+                as $topology
+            ) {
+                if (
+                    ($topology[
+                        'interface'
+                    ] ?? null)
+                        === $bridgeName
+                    && ($topology[
+                        'gateway_cidr'
+                    ] ?? null)
+                        === $gatewayCidr
+                ) {
+                    return [
+                        'success' => true,
+
+                        'mode' =>
+                            'existing',
+
+                        'bridge' =>
+                            $bridgeName,
+
+                        'gateway_cidr' =>
+                            $gatewayCidr,
+
+                        'gateway_ip' =>
+                            $target[
+                                'ip'
+                            ],
+
+                        'network_cidr' =>
+                            $target[
+                                'network_cidr'
+                            ],
+
+                        'prefix' =>
+                            $target[
+                                'prefix'
+                            ],
+
+                        'routeros_write' =>
+                            false,
+
+                        'topology' =>
+                            $topology,
+                    ];
+                }
+            }
+
+            throw new \RuntimeException(
+                'The selected existing Hotspot gateway could not be verified on this bridge.'
+            );
+        }
+
+        /*
+         * New gateway must not overlap an existing
+         * subnet anywhere else on this router.
+         */
+        $exactExisting = false;
+
+        foreach (
+            $before[
+                'interfaces'
+            ] ?? []
+            as $interface
+        ) {
+            $interfaceName =
+                $interface['name']
+                ?? null;
+
+            foreach (
+                $interface[
+                    'ip_addresses'
+                ] ?? []
+                as $address
+            ) {
+                $existingCidr =
+                    trim(
+                        (string) (
+                            $address[
+                                'address'
+                            ] ?? ''
+                        )
+                    );
+
+                if ($existingCidr === '') {
+                    continue;
+                }
+
+                try {
+                    $existing =
+                        $this->ipv4CidrInfo(
+                            $existingCidr,
+                            true
+                        );
+                } catch (Throwable) {
+                    continue;
+                }
+
+                if (
+                    $interfaceName
+                        === $bridgeName
+                    && $existingCidr
+                        === $gatewayCidr
+                ) {
+                    $exactExisting = true;
+                    continue;
+                }
+
+                $overlap =
+                    max(
+                        $target[
+                            'network_long'
+                        ],
+                        $existing[
+                            'network_long'
+                        ]
+                    )
+                    <= min(
+                        $target[
+                            'broadcast_long'
+                        ],
+                        $existing[
+                            'broadcast_long'
+                        ]
+                    );
+
+                if ($overlap) {
+                    throw new \RuntimeException(
+                        "Gateway subnet {$target['network_cidr']} overlaps existing {$existingCidr} on {$interfaceName}."
+                    );
+                }
+            }
+        }
+
+        if ($exactExisting) {
+            return [
+                'success' => true,
+
+                'mode' =>
+                    'new',
+
+                'bridge' =>
+                    $bridgeName,
+
+                'gateway_cidr' =>
+                    $gatewayCidr,
+
+                'gateway_ip' =>
+                    $target['ip'],
+
+                'network_cidr' =>
+                    $target[
+                        'network_cidr'
+                    ],
+
+                'prefix' =>
+                    $target['prefix'],
+
+                'routeros_write' =>
+                    false,
+
+                'already_present' =>
+                    true,
+            ];
+        }
+
+        if (!$this->connect($router)) {
+            throw new \RuntimeException(
+                $this->lastError
+                ?? 'Unable to connect to MikroTik API.'
+            );
+        }
+
+        $comment =
+            'MIKROPANEL:HOTSPOT:GATEWAY:ROUTER-'
+            . $router->id;
+
+        $created = false;
+
+        try {
+            $this->readQuery(
+                (new Query(
+                    '/ip/address/add'
+                ))
+                    ->equal(
+                        'address',
+                        $gatewayCidr
+                    )
+                    ->equal(
+                        'interface',
+                        $bridgeName
+                    )
+                    ->equal(
+                        'comment',
+                        $comment
+                    )
+            );
+
+            $created = true;
+
+            $after =
+                $this->hotspotSetupDiscovery(
+                    $router
+                );
+
+            $verified = false;
+
+            foreach (
+                $after[
+                    'interfaces'
+                ] ?? []
+                as $interface
+            ) {
+                if (
+                    ($interface['name']
+                        ?? null)
+                        !== $bridgeName
+                ) {
+                    continue;
+                }
+
+                foreach (
+                    $interface[
+                        'ip_addresses'
+                    ] ?? []
+                    as $address
+                ) {
+                    if (
+                        ($address[
+                            'address'
+                        ] ?? null)
+                        === $gatewayCidr
+                    ) {
+                        $verified = true;
+                        break 2;
+                    }
+                }
+            }
+
+            if (!$verified) {
+                throw new \RuntimeException(
+                    'Gateway IP verification failed.'
+                );
+            }
+
+            return [
+                'success' => true,
+
+                'mode' =>
+                    'new',
+
+                'bridge' =>
+                    $bridgeName,
+
+                'gateway_cidr' =>
+                    $gatewayCidr,
+
+                'gateway_ip' =>
+                    $target['ip'],
+
+                'network_cidr' =>
+                    $target[
+                        'network_cidr'
+                    ],
+
+                'prefix' =>
+                    $target['prefix'],
+
+                'broadcast' =>
+                    $target[
+                        'broadcast'
+                    ],
+
+                'routeros_write' =>
+                    true,
+            ];
+
+        } catch (Throwable $exception) {
+            if ($created) {
+                try {
+                    $rows =
+                        $this->readRowsSafe(
+                            '/ip/address/print',
+                            '.id,address,interface,comment',
+                            [
+                                'interface',
+                                $bridgeName,
+                            ]
+                        );
+
+                    foreach (
+                        $rows['rows']
+                            ?? []
+                        as $row
+                    ) {
+                        if (
+                            ($row['address']
+                                ?? null)
+                                !== $gatewayCidr
+                            || ($row['comment']
+                                ?? null)
+                                !== $comment
+                            || !isset(
+                                $row['.id']
+                            )
+                        ) {
+                            continue;
+                        }
+
+                        $this->readQuery(
+                            (new Query(
+                                '/ip/address/remove'
+                            ))
+                                ->equal(
+                                    '.id',
+                                    $row['.id']
+                                )
+                        );
+                    }
+
+                } catch (Throwable) {
+                    // Best effort rollback only.
+                }
+            }
+
+            throw new \RuntimeException(
+                'Hotspot gateway setup failed. MikroPanel attempted to roll back only its new IP address: '
+                . $exception->getMessage(),
+                0,
+                $exception
+            );
+        }
+    }
+
+    /*
      * Backward compatible health method.
      */
     public function inspect(
@@ -2019,6 +2985,127 @@ class MikroTikService
                 'cached' => false,
             ]
         );
+    }
+
+    /*
+     * IPv4 CIDR parser used by the Hotspot wizard.
+     */
+    protected function ipv4CidrInfo(
+        string $cidr,
+        bool $allowHostBoundary = false
+    ): array {
+        $cidr =
+            trim($cidr);
+
+        if (
+            !preg_match(
+                '/^([^\/]+)\/(\d{1,2})$/',
+                $cidr,
+                $matches
+            )
+        ) {
+            throw new \RuntimeException(
+                'Gateway must be entered as IPv4/CIDR, for example 10.20.0.1/21.'
+            );
+        }
+
+        $ip =
+            trim(
+                $matches[1]
+            );
+
+        $prefix =
+            (int)
+            $matches[2];
+
+        if (
+            !filter_var(
+                $ip,
+                FILTER_VALIDATE_IP,
+                FILTER_FLAG_IPV4
+            )
+            || $prefix < 1
+            || $prefix > 30
+        ) {
+            throw new \RuntimeException(
+                'Gateway IPv4/CIDR is invalid. Prefix must be /1 through /30.'
+            );
+        }
+
+        $ipLong =
+            ip2long($ip);
+
+        if ($ipLong === false) {
+            throw new \RuntimeException(
+                'Gateway IPv4 address is invalid.'
+            );
+        }
+
+        $ipLong =
+            $ipLong & 0xFFFFFFFF;
+
+        $mask =
+            (
+                0xFFFFFFFF
+                << (32 - $prefix)
+            ) & 0xFFFFFFFF;
+
+        $network =
+            $ipLong
+            & $mask;
+
+        $broadcast =
+            $network
+            | (
+                (~$mask)
+                & 0xFFFFFFFF
+            );
+
+        if (
+            !$allowHostBoundary
+            && (
+                $ipLong === $network
+                || $ipLong === $broadcast
+            )
+        ) {
+            throw new \RuntimeException(
+                'Gateway IP cannot be the subnet network or broadcast address.'
+            );
+        }
+
+        return [
+            'ip' =>
+                $ip,
+
+            'prefix' =>
+                $prefix,
+
+            'ip_long' =>
+                $ipLong,
+
+            'network_long' =>
+                $network,
+
+            'broadcast_long' =>
+                $broadcast,
+
+            'network' =>
+                long2ip(
+                    $network
+                ),
+
+            'broadcast' =>
+                long2ip(
+                    $broadcast
+                ),
+
+            'network_cidr' =>
+                long2ip(
+                    $network
+                )
+                . '/'
+                . $prefix,
+        ];
     }
 
     protected function queryFirst(

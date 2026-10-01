@@ -180,6 +180,19 @@ Route::post(
 );
 
 /*
+ * HOTSPOT_GATEWAY_STEP3_V1
+ */
+Route::post(
+    'routers/{router}/hotspot-setup/gateway',
+    [
+        RouterController::class,
+        'hotspotSetupGateway',
+    ]
+)->name(
+    'routers.hotspot-setup.gateway'
+);
+
+/*
  * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
  */
 Route::get(

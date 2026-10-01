@@ -480,6 +480,15 @@ class RouterController extends Controller
                             ''
                         )
                     ) ?: null,
+
+                'activeGateway' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'gateway',
+                            ''
+                        )
+                    ) ?: null,
             ]
         );
     }
@@ -629,6 +638,151 @@ class RouterController extends Controller
             ->with(
                 'success',
                 'Hotspot bridge is ready. Continue with Gateway & Subnet.'
+            );
+    }
+
+    /*
+     * HOTSPOT_GATEWAY_STEP3_V1
+     */
+    public function hotspotSetupGateway(
+        Request $request,
+        Router $router,
+        MikroTikService $mikrotik
+    ): RedirectResponse {
+        $router->loadMissing([
+            'zone:id,reseller_id,name,code,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : (
+                    $router->reseller_id
+                        ? (int)
+                            $router
+                                ->reseller_id
+                        : null
+                );
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                abort_unless(
+                    $user->zone_id
+                    && (int)
+                        $user->zone_id
+                        === (int)
+                            $router
+                                ->zone_id,
+                    403
+                );
+            }
+        }
+
+        $data =
+            $request->validate([
+                'mode' => [
+                    'required',
+                    'string',
+                    'in:existing,new',
+                ],
+
+                'bridge_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'gateway_cidr' => [
+                    'required',
+                    'string',
+                    'max:50',
+                ],
+            ]);
+
+        try {
+            $result =
+                $mikrotik
+                    ->applyHotspotGateway(
+                        $router,
+                        $data['mode'],
+                        $data['bridge_name'],
+                        $data['gateway_cidr']
+                    );
+
+        } catch (Throwable $exception) {
+            return back()
+                ->withInput()
+                ->with(
+                    'error',
+                    $exception
+                        ->getMessage()
+                );
+        }
+
+        return redirect()
+            ->route(
+                'routers.hotspot-setup',
+                [
+                    'router' =>
+                        $router,
+
+                    'step' =>
+                        4,
+
+                    'bridge' =>
+                        $result[
+                            'bridge'
+                        ],
+
+                    'gateway' =>
+                        $result[
+                            'gateway_cidr'
+                        ],
+                ]
+            )
+            ->with(
+                'success',
+                'Gateway and subnet are ready. Continue with DHCP & Client Pool.'
             );
     }
 
