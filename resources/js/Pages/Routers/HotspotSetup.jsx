@@ -29,6 +29,9 @@ export default function HotspotSetup({
     wizardStep = 1,
     activeBridge = null,
     activeGateway = null,
+    activePool = null,
+    activeDhcpServer = null,
+    dhcpSuggestion = null,
     flash = {},
 }) {
     const [selectedPorts, setSelectedPorts] =
@@ -118,6 +121,97 @@ export default function HotspotSetup({
     const [
         applyingGateway,
         setApplyingGateway,
+    ] = useState(false);
+
+    /*
+     * HOTSPOT_DHCP_STEP4_V1
+     */
+    const step4Topology =
+        useMemo(
+            () =>
+                (
+                    discovery
+                        ?.hotspot_topologies
+                    ?? []
+                ).find(
+                    (item) =>
+                        item.interface ===
+                            activeBridge
+                        && item.gateway_cidr ===
+                            activeGateway
+                        && Boolean(
+                            item.pool_name,
+                        )
+                        && Boolean(
+                            item.dhcp_server,
+                        ),
+                ) ?? null,
+            [
+                discovery
+                    ?.hotspot_topologies,
+                activeBridge,
+                activeGateway,
+            ],
+        );
+
+    const [
+        dhcpMode,
+        setDhcpMode,
+    ] = useState(
+        step4Topology
+            ? 'existing'
+            : 'new',
+    );
+
+    const [
+        poolName,
+        setPoolName,
+    ] = useState(
+        step4Topology
+            ?.pool_name
+        ?? activePool
+        ?? dhcpSuggestion
+            ?.pool_name
+        ?? '',
+    );
+
+    const [
+        poolRanges,
+        setPoolRanges,
+    ] = useState(
+        step4Topology
+            ?.pool_ranges
+        ?? dhcpSuggestion
+            ?.pool_ranges
+        ?? '',
+    );
+
+    const [
+        dhcpServerName,
+        setDhcpServerName,
+    ] = useState(
+        step4Topology
+            ?.dhcp_server
+        ?? activeDhcpServer
+        ?? dhcpSuggestion
+            ?.dhcp_server
+        ?? '',
+    );
+
+    const [
+        leaseTime,
+        setLeaseTime,
+    ] = useState(
+        step4Topology
+            ?.dhcp_lease_time
+        ?? dhcpSuggestion
+            ?.lease_time
+        ?? '30m',
+    );
+
+    const [
+        applyingDhcp,
+        setApplyingDhcp,
     ] = useState(false);
 
     const ethernetInterfaces =
@@ -238,6 +332,62 @@ export default function HotspotSetup({
 
                 onFinish: () =>
                     setApplyingGateway(
+                        false,
+                    ),
+            },
+        );
+    };
+
+    const applyDhcp = () => {
+        if (
+            !activeBridge
+            || !activeGateway
+            || !poolName.trim()
+            || !poolRanges.trim()
+            || !dhcpServerName.trim()
+            || !leaseTime.trim()
+        ) {
+            return;
+        }
+
+        inertiaRouter.post(
+            route(
+                'routers.hotspot-setup.dhcp',
+                router.id,
+            ),
+            {
+                mode:
+                    dhcpMode,
+
+                bridge_name:
+                    activeBridge,
+
+                gateway_cidr:
+                    activeGateway,
+
+                pool_name:
+                    poolName.trim(),
+
+                pool_ranges:
+                    poolRanges.trim(),
+
+                dhcp_server:
+                    dhcpServerName.trim(),
+
+                lease_time:
+                    leaseTime.trim(),
+            },
+            {
+                preserveScroll:
+                    true,
+
+                onStart: () =>
+                    setApplyingDhcp(
+                        true,
+                    ),
+
+                onFinish: () =>
+                    setApplyingDhcp(
                         false,
                     ),
             },
@@ -1042,30 +1192,349 @@ export default function HotspotSetup({
                                     </button>
                                 </div>
                             </section>
+                        ) : Number(wizardStep) ===
+                          4 ? (
+                            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                                <div>
+                                    <div className="text-sm font-bold text-emerald-700">
+                                        ✓ Gateway & Subnet Ready
+                                    </div>
+
+                                    <h2 className="mt-1 text-xl font-black text-slate-900">
+                                        Step 4 — DHCP & Client Pool
+                                    </h2>
+
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        {activeBridge}
+                                        {' • '}
+                                        {activeGateway}
+                                    </p>
+                                </div>
+
+                                {step4Topology && (
+                                    <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+                                        <div className="font-black text-emerald-800">
+                                            Existing DHCP configuration detected
+                                        </div>
+
+                                        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                            <InfoCard
+                                                label="Network"
+                                                value={
+                                                    step4Topology.network_cidr ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="Pool"
+                                                value={
+                                                    step4Topology.pool_name ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="Pool Range"
+                                                value={
+                                                    step4Topology.pool_ranges ||
+                                                    '-'
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                label="DHCP Server"
+                                                value={
+                                                    step4Topology.dhcp_server ||
+                                                    '-'
+                                                }
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                                    <label
+                                        className={`rounded-xl border p-4 ${
+                                            dhcpMode ===
+                                            'existing'
+                                                ? 'border-cyan-400 bg-cyan-50'
+                                                : 'border-slate-200'
+                                        } ${
+                                            !step4Topology
+                                                ? 'opacity-50'
+                                                : ''
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                name="dhcp-mode"
+                                                checked={
+                                                    dhcpMode ===
+                                                    'existing'
+                                                }
+                                                disabled={
+                                                    !step4Topology
+                                                }
+                                                onChange={() => {
+                                                    setDhcpMode(
+                                                        'existing',
+                                                    );
+
+                                                    if (
+                                                        step4Topology
+                                                    ) {
+                                                        setPoolName(
+                                                            step4Topology.pool_name ||
+                                                                '',
+                                                        );
+
+                                                        setPoolRanges(
+                                                            step4Topology.pool_ranges ||
+                                                                '',
+                                                        );
+
+                                                        setDhcpServerName(
+                                                            step4Topology.dhcp_server ||
+                                                                '',
+                                                        );
+
+                                                        setLeaseTime(
+                                                            step4Topology.dhcp_lease_time ||
+                                                                '30m',
+                                                        );
+                                                    }
+                                                }}
+                                            />
+
+                                            <span className="font-bold">
+                                                Use Existing DHCP & Pool
+                                            </span>
+                                        </div>
+
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            Verification only. RouterOS configuration will not be changed.
+                                        </p>
+                                    </label>
+
+                                    <label
+                                        className={`rounded-xl border p-4 ${
+                                            dhcpMode ===
+                                            'new'
+                                                ? 'border-cyan-400 bg-cyan-50'
+                                                : 'border-slate-200'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="radio"
+                                                name="dhcp-mode"
+                                                checked={
+                                                    dhcpMode ===
+                                                    'new'
+                                                }
+                                                onChange={() => {
+                                                    setDhcpMode(
+                                                        'new',
+                                                    );
+
+                                                    if (
+                                                        dhcpSuggestion
+                                                    ) {
+                                                        setPoolName(
+                                                            dhcpSuggestion.pool_name ||
+                                                                '',
+                                                        );
+
+                                                        setPoolRanges(
+                                                            dhcpSuggestion.pool_ranges ||
+                                                                '',
+                                                        );
+
+                                                        setDhcpServerName(
+                                                            dhcpSuggestion.dhcp_server ||
+                                                                '',
+                                                        );
+
+                                                        setLeaseTime(
+                                                            dhcpSuggestion.lease_time ||
+                                                                '30m',
+                                                        );
+                                                    }
+                                                }}
+                                            />
+
+                                            <span className="font-bold">
+                                                Configure New DHCP & Pool
+                                            </span>
+                                        </div>
+
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            Safe values are generated from the selected gateway subnet.
+                                        </p>
+                                    </label>
+                                </div>
+
+                                <div className="mt-6 grid gap-5 md:grid-cols-2">
+                                    <FieldBox
+                                        label="IP Pool Name"
+                                    >
+                                        <input
+                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 font-mono"
+                                            value={
+                                                poolName
+                                            }
+                                            readOnly={
+                                                dhcpMode ===
+                                                'existing'
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                setPoolName(
+                                                    event
+                                                        .target
+                                                        .value,
+                                                )
+                                            }
+                                        />
+                                    </FieldBox>
+
+                                    <FieldBox
+                                        label="DHCP Server Name"
+                                    >
+                                        <input
+                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 font-mono"
+                                            value={
+                                                dhcpServerName
+                                            }
+                                            readOnly={
+                                                dhcpMode ===
+                                                'existing'
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                setDhcpServerName(
+                                                    event
+                                                        .target
+                                                        .value,
+                                                )
+                                            }
+                                        />
+                                    </FieldBox>
+
+                                    <FieldBox
+                                        label="Client IP Range"
+                                    >
+                                        <input
+                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 font-mono"
+                                            value={
+                                                poolRanges
+                                            }
+                                            readOnly={
+                                                dhcpMode ===
+                                                'existing'
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                setPoolRanges(
+                                                    event
+                                                        .target
+                                                        .value,
+                                                )
+                                            }
+                                        />
+
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            Gateway, network and broadcast addresses are blocked by the backend.
+                                        </p>
+                                    </FieldBox>
+
+                                    <FieldBox
+                                        label="DHCP Lease Time"
+                                    >
+                                        <input
+                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 font-mono"
+                                            value={
+                                                leaseTime
+                                            }
+                                            readOnly={
+                                                dhcpMode ===
+                                                'existing'
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                setLeaseTime(
+                                                    event
+                                                        .target
+                                                        .value,
+                                                )
+                                            }
+                                            placeholder="30m"
+                                        />
+                                    </FieldBox>
+                                </div>
+
+                                <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
+                                    <p className="text-xs text-slate-500">
+                                        Existing unrelated DHCP servers and pools are never deleted or renamed.
+                                    </p>
+
+                                    <button
+                                        type="button"
+                                        onClick={
+                                            applyDhcp
+                                        }
+                                        disabled={
+                                            applyingDhcp ||
+                                            !activeBridge ||
+                                            !activeGateway ||
+                                            !poolName.trim() ||
+                                            !poolRanges.trim() ||
+                                            !dhcpServerName.trim() ||
+                                            !leaseTime.trim()
+                                        }
+                                        className="rounded-xl bg-cyan-600 px-5 py-3 font-bold text-white hover:bg-cyan-700 disabled:opacity-50"
+                                    >
+                                        {applyingDhcp
+                                            ? 'Checking DHCP...'
+                                            : dhcpMode ===
+                                                'existing'
+                                              ? 'Use Existing & Continue'
+                                              : 'Apply DHCP & Continue'}
+                                    </button>
+                                </div>
+                            </section>
                         ) : (
                             <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
                                 <div className="text-lg font-black text-emerald-800">
-                                    ✓ Gateway & Subnet Ready
+                                    ✓ DHCP & Client Pool Ready
                                 </div>
 
                                 <p className="mt-2 text-slate-700">
-                                    Bridge:{' '}
+                                    Pool:{' '}
                                     <span className="font-mono font-bold">
-                                        {activeBridge}
+                                        {activePool ||
+                                            poolName ||
+                                            '-'}
                                     </span>
                                 </p>
 
                                 <p className="mt-1 text-slate-700">
-                                    Gateway:{' '}
+                                    DHCP:{' '}
                                     <span className="font-mono font-bold">
-                                        {activeGateway ||
-                                            gatewayCidr ||
+                                        {activeDhcpServer ||
+                                            dhcpServerName ||
                                             '-'}
                                     </span>
                                 </p>
 
                                 <p className="mt-3 text-sm text-slate-600">
-                                    Next: DHCP server and client address pool.
+                                    Next: MikroTik Hotspot Server & Profile.
                                 </p>
 
                                 <button
@@ -1073,7 +1542,7 @@ export default function HotspotSetup({
                                     disabled
                                     className="mt-5 rounded-xl bg-slate-300 px-5 py-3 font-bold text-white"
                                 >
-                                    Step 4 — DHCP & Client Pool
+                                    Step 5 — Hotspot Server & Profile
                                 </button>
                             </section>
                         )}
@@ -1081,6 +1550,21 @@ export default function HotspotSetup({
                 )}
             </div>
         </AppLayout>
+    );
+}
+
+function FieldBox({
+    label,
+    children,
+}) {
+    return (
+        <div>
+            <label className="mb-2 block text-sm font-bold text-slate-700">
+                {label}
+            </label>
+
+            {children}
+        </div>
     );
 }
 

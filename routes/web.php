@@ -193,6 +193,19 @@ Route::post(
 );
 
 /*
+ * HOTSPOT_DHCP_STEP4_V1
+ */
+Route::post(
+    'routers/{router}/hotspot-setup/dhcp',
+    [
+        RouterController::class,
+        'hotspotSetupDhcp',
+    ]
+)->name(
+    'routers.hotspot-setup.dhcp'
+);
+
+/*
  * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
  */
 Route::get(

@@ -406,6 +406,32 @@ class RouterController extends Controller
                         now()->toISOString(),
                 ];
 
+        $activeGateway =
+            trim(
+                (string)
+                $request->query(
+                    'gateway',
+                    ''
+                )
+            ) ?: null;
+
+        $dhcpSuggestion = null;
+
+        if ($activeGateway) {
+            try {
+                $dhcpSuggestion =
+                    $mikrotik
+                        ->hotspotDhcpSuggestion(
+                            $activeGateway,
+                            (int)
+                            $router->id
+                        );
+
+            } catch (Throwable) {
+                $dhcpSuggestion = null;
+            }
+        }
+
         return Inertia::render(
             'Routers/HotspotSetup',
             [
@@ -482,13 +508,28 @@ class RouterController extends Controller
                     ) ?: null,
 
                 'activeGateway' =>
+                    $activeGateway,
+
+                'activePool' =>
                     trim(
                         (string)
                         $request->query(
-                            'gateway',
+                            'pool',
                             ''
                         )
                     ) ?: null,
+
+                'activeDhcpServer' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'dhcp',
+                            ''
+                        )
+                    ) ?: null,
+
+                'dhcpSuggestion' =>
+                    $dhcpSuggestion,
             ]
         );
     }
@@ -783,6 +824,189 @@ class RouterController extends Controller
             ->with(
                 'success',
                 'Gateway and subnet are ready. Continue with DHCP & Client Pool.'
+            );
+    }
+
+    /*
+     * HOTSPOT_DHCP_STEP4_V1
+     */
+    public function hotspotSetupDhcp(
+        Request $request,
+        Router $router,
+        MikroTikService $mikrotik
+    ): RedirectResponse {
+        $router->loadMissing([
+            'zone:id,reseller_id,name,code,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : (
+                    $router->reseller_id
+                        ? (int)
+                            $router
+                                ->reseller_id
+                        : null
+                );
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                abort_unless(
+                    $user->zone_id
+                    && (int)
+                        $user->zone_id
+                        === (int)
+                            $router
+                                ->zone_id,
+                    403
+                );
+            }
+        }
+
+        $data =
+            $request->validate([
+                'mode' => [
+                    'required',
+                    'string',
+                    'in:existing,new',
+                ],
+
+                'bridge_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'gateway_cidr' => [
+                    'required',
+                    'string',
+                    'max:50',
+                ],
+
+                'pool_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'pool_ranges' => [
+                    'required',
+                    'string',
+                    'max:500',
+                ],
+
+                'dhcp_server' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'lease_time' => [
+                    'required',
+                    'string',
+                    'max:50',
+                ],
+            ]);
+
+        try {
+            $result =
+                $mikrotik
+                    ->applyHotspotDhcp(
+                        $router,
+                        $data['mode'],
+                        $data['bridge_name'],
+                        $data['gateway_cidr'],
+                        $data['pool_name'],
+                        $data['pool_ranges'],
+                        $data['dhcp_server'],
+                        $data['lease_time']
+                    );
+
+        } catch (Throwable $exception) {
+            return back()
+                ->withInput()
+                ->with(
+                    'error',
+                    $exception
+                        ->getMessage()
+                );
+        }
+
+        return redirect()
+            ->route(
+                'routers.hotspot-setup',
+                [
+                    'router' =>
+                        $router,
+
+                    'step' =>
+                        5,
+
+                    'bridge' =>
+                        $result[
+                            'bridge'
+                        ],
+
+                    'gateway' =>
+                        $result[
+                            'gateway_cidr'
+                        ],
+
+                    'pool' =>
+                        $result[
+                            'pool_name'
+                        ],
+
+                    'dhcp' =>
+                        $result[
+                            'dhcp_server'
+                        ],
+                ]
+            )
+            ->with(
+                'success',
+                'DHCP server and client IP pool are ready. Continue with Hotspot Server & Profile.'
             );
     }
 
