@@ -34,8 +34,7 @@ class HotspotRouterHealthService
      */
 
     public function __construct(
-        protected MikroTikService $mikrotik,
-        protected HotspotWizardFinalizerService $finalizer
+        protected MikroTikService $mikrotik
     ) {
     }
 
@@ -1775,6 +1774,13 @@ class HotspotRouterHealthService
         return $server;
     }
 
+    /*
+     * HOTSPOT_ROUTER_SAFE_REPAIR_V3
+     *
+     * Exact managed topology only.
+     * Captive portal remains read-only.
+     * Every write made here registers a rollback.
+     */
     public function repair(
         Router $router
     ): array {
@@ -1789,8 +1795,9 @@ class HotspotRouterHealthService
 
         if (
             !(
-                $before['online']
-                ?? false
+                $before[
+                    'online'
+                ] ?? false
             )
         ) {
             throw new \RuntimeException(
@@ -1813,13 +1820,6 @@ class HotspotRouterHealthService
                 'Complete Hotspot topology is required before automatic repair.'
             );
         }
-
-        $api =
-            $this->client(
-                $router
-            );
-
-        $actions = [];
 
         $bridge =
             $topology[
@@ -1862,373 +1862,741 @@ class HotspotRouterHealthService
             ];
 
         /*
-         * DHCP SERVER:
-         * enable only. Never silently rebind it.
+         * Exact MikroPanel ownership guard.
          */
-        $dhcpRows =
-            $this->read(
-                $api,
-                '/ip/dhcp-server/print',
-                '.id,name,interface,address-pool,disabled'
-            );
-
-        $dhcp =
-            $this->find(
-                $dhcpRows,
-                'name',
-                $dhcpName
-            );
-
-        if (
-            $dhcp
-            && $this->truthy(
-                $dhcp[
-                    'disabled'
-                ] ?? false
-            )
-        ) {
-            $this->write(
-                $api,
-                (new Query(
-                    '/ip/dhcp-server/set'
-                ))
-                    ->equal(
-                        '.id',
-                        $dhcp['.id']
-                    )
-                    ->equal(
-                        'disabled',
-                        'false'
-                    )
-            );
-
-            $actions[] =
-                'DHCP server enabled';
-        }
-
-        /*
-         * DHCP NETWORK:
-         * missing row is safe to recreate from the
-         * existing bridge gateway.
-         */
-        $networks =
-            $this->read(
-                $api,
-                '/ip/dhcp-server/network/print',
-                '.id,address,gateway,dns-server,comment'
-            );
-
-        $network =
-            $this->find(
-                $networks,
-                'address',
-                $gateway[
-                    'network_cidr'
-                ]
-            );
-
-        if (!$network) {
-            $this->write(
-                $api,
-                (new Query(
-                    '/ip/dhcp-server/network/add'
-                ))
-                    ->equal(
-                        'address',
-                        $gateway[
-                            'network_cidr'
-                        ]
-                    )
-                    ->equal(
-                        'gateway',
-                        $gateway['ip']
-                    )
-                    ->equal(
-                        'dns-server',
-                        $gateway['ip']
-                    )
-                    ->equal(
-                        'comment',
-                        'MIKROPANEL:HEALTH:DHCP:ROUTER-'
-                        . $router->id
-                    )
-            );
-
-            $actions[] =
-                'DHCP network restored';
-        }
-
-        /*
-         * HOTSPOT SERVER:
-         * enable only.
-         */
-        $hotspots =
-            $this->read(
-                $api,
-                '/ip/hotspot/print',
-                '.id,name,interface,address-pool,profile,disabled'
-            );
-
-        $hotspot =
-            $this->find(
-                $hotspots,
-                'name',
-                $hotspotName
-            );
-
-        if (
-            $hotspot
-            && $this->truthy(
-                $hotspot[
-                    'disabled'
-                ] ?? false
-            )
-        ) {
-            $this->write(
-                $api,
-                (new Query(
-                    '/ip/hotspot/set'
-                ))
-                    ->equal(
-                        '.id',
-                        $hotspot['.id']
-                    )
-                    ->equal(
-                        'disabled',
-                        'false'
-                    )
-            );
-
-            $actions[] =
-                'Hotspot server enabled';
-        }
-
-        /*
-         * LOGIN METHODS:
-         * add missing required methods only.
-         */
-        $profiles =
-            $this->read(
-                $api,
-                '/ip/hotspot/profile/print',
-                '.id,name,hotspot-address,dns-name,html-directory,login-by'
-            );
-
-        $profile =
-            $this->find(
-                $profiles,
-                'name',
-                $profileName
-            );
-
-        if (!$profile) {
-            throw new \RuntimeException(
-                'Hotspot profile is missing. Repair will not recreate an unknown profile.'
-            );
-        }
-
-        $login =
-            array_values(
-                array_unique(
-                    array_filter(
-                        array_map(
-                            'trim',
-                            explode(
-                                ',',
-                                strtolower(
-                                    (string) (
-                                        $profile[
-                                            'login-by'
-                                        ] ?? ''
-                                    )
-                                )
-                            )
-                        )
-                    )
+        $managed =
+            \App\Models\HotspotServer::withoutGlobalScopes()
+                ->where(
+                    'router_id',
+                    $router->id
                 )
-            );
+                ->where(
+                    'zone_id',
+                    $router->zone_id
+                )
+                ->where(
+                    'mikrotik_name',
+                    $hotspotName
+                )
+                ->first();
 
-        $loginChanged = false;
+        if (!$managed) {
+            throw new \RuntimeException(
+                'Automatic repair is blocked because this Hotspot topology is not managed by MikroPanel.'
+            );
+        }
+
+        $managedChecks = [
+            'interface' =>
+                $bridge,
+
+            'address_pool' =>
+                $pool,
+
+            'hotspot_profile' =>
+                $profileName,
+
+            'dns_name' =>
+                $dnsName,
+        ];
 
         foreach (
-            [
-                'cookie',
-                'mac-cookie',
-            ]
-            as $required
+            $managedChecks
+            as $field => $expected
         ) {
-            if (
-                !in_array(
-                    $required,
-                    $login,
-                    true
-                )
-            ) {
-                $login[] =
-                    $required;
+            $stored =
+                trim(
+                    (string) (
+                        $managed
+                            ->getAttribute(
+                                $field
+                            )
+                        ?? ''
+                    )
+                );
 
-                $loginChanged =
-                    true;
+            if (
+                $stored !== ''
+                && $stored
+                    !== trim(
+                        (string)
+                        $expected
+                    )
+            ) {
+                throw new \RuntimeException(
+                    'Automatic repair blocked: managed '
+                    . $field
+                    . ' does not match the discovered Hotspot topology.'
+                );
             }
         }
 
-        if (
-            !in_array(
-                'http-chap',
-                $login,
-                true
-            )
-            && !in_array(
-                'http-pap',
-                $login,
-                true
-            )
-        ) {
-            $login[] =
-                'http-chap';
+        $audit =
+            \App\Models\HotspotRouterRepairAudit::query()
+                ->create([
+                    'reseller_id' =>
+                        $router
+                            ->zone
+                            ?->reseller_id,
 
-            $loginChanged =
-                true;
-        }
+                    'zone_id' =>
+                        $router
+                            ->zone_id,
 
-        if ($loginChanged) {
-            $this->write(
-                $api,
-                (new Query(
-                    '/ip/hotspot/profile/set'
-                ))
-                    ->equal(
-                        '.id',
-                        $profile['.id']
-                    )
-                    ->equal(
-                        'login-by',
-                        implode(
-                            ',',
-                            $login
-                        )
-                    )
-            );
+                    'router_id' =>
+                        $router
+                            ->id,
 
-            $actions[] =
-                'Cookie / MAC-cookie login repaired';
-        }
+                    'requested_by' =>
+                        auth()->id(),
 
-        /*
-         * DNS
-         */
-        $dns =
-            $this->read(
-                $api,
-                '/ip/dns/print',
-                'allow-remote-requests'
-            );
+                    'status' =>
+                        'processing',
 
-        if (
-            !$this->truthy(
-                $dns[0][
-                    'allow-remote-requests'
-                ] ?? false
-            )
-        ) {
-            $this->write(
-                $api,
-                (new Query(
-                    '/ip/dns/set'
-                ))
-                    ->equal(
-                        'allow-remote-requests',
-                        'true'
-                    )
-            );
+                    'before_overall' =>
+                        $before[
+                            'overall'
+                        ] ?? null,
 
-            $actions[] =
-                'DNS repaired';
-        }
+                    'actions' =>
+                        [],
 
-        /*
-         * NAT
-         */
-        $routes =
-            $this->read(
-                $api,
-                '/ip/route/print',
-                '.id,dst-address,gateway,immediate-gw,routing-table,active,disabled'
-            );
+                    'skipped' =>
+                        [],
 
-        $wan =
-            $this->detectWan(
-                $api,
-                $routes
-            );
+                    'rollback_actions' =>
+                        [],
 
-        $nat =
-            $this->read(
-                $api,
-                '/ip/firewall/nat/print',
-                '.id,chain,action,src-address,out-interface,out-interface-list,disabled,comment'
-            );
+                    'started_at' =>
+                        now(),
+                ]);
 
-        if (
-            !$this->hasNat(
-                $nat,
-                $wan,
-                $gateway[
-                    'network_cidr'
-                ]
-            )
-        ) {
+        $actions = [];
+        $skipped = [];
+        $rollbacks = [];
+        $rollbackActions = [];
+
+        try {
+            $api =
+                $this->client(
+                    $router
+                );
+
+            /*
+             * Preflight all managed objects before
+             * the first RouterOS write.
+             */
+            $dhcpRows =
+                $this->read(
+                    $api,
+                    '/ip/dhcp-server/print',
+                    '.id,name,interface,address-pool,disabled'
+                );
+
+            $dhcp =
+                $this->find(
+                    $dhcpRows,
+                    'name',
+                    $dhcpName
+                );
+
+            if (!$dhcp) {
+                $skipped[] =
+                    'DHCP server missing — generic repair will not recreate an unknown DHCP server.';
+
+            } elseif (
+                (string) (
+                    $dhcp[
+                        'interface'
+                    ] ?? ''
+                ) !== (string)
+                    $bridge
+                || (string) (
+                    $dhcp[
+                        'address-pool'
+                    ] ?? ''
+                ) !== (string)
+                    $pool
+            ) {
+                throw new \RuntimeException(
+                    'Automatic repair blocked: DHCP server interface/pool does not match managed topology.'
+                );
+            }
+
+            $networks =
+                $this->read(
+                    $api,
+                    '/ip/dhcp-server/network/print',
+                    '.id,address,gateway,dns-server,comment'
+                );
+
+            $network =
+                $this->find(
+                    $networks,
+                    'address',
+                    $gateway[
+                        'network_cidr'
+                    ]
+                );
+
+            $hotspots =
+                $this->read(
+                    $api,
+                    '/ip/hotspot/print',
+                    '.id,name,interface,address-pool,profile,disabled'
+                );
+
+            $hotspot =
+                $this->find(
+                    $hotspots,
+                    'name',
+                    $hotspotName
+                );
+
+            if (!$hotspot) {
+                throw new \RuntimeException(
+                    'Hotspot server is missing. Generic repair will not recreate an unknown Hotspot server.'
+                );
+            }
+
             if (
-                $wan[
-                    'list_name'
-                ]
+                (string) (
+                    $hotspot[
+                        'interface'
+                    ] ?? ''
+                ) !== (string)
+                    $bridge
+                || (string) (
+                    $hotspot[
+                        'address-pool'
+                    ] ?? ''
+                ) !== (string)
+                    $pool
+                || (string) (
+                    $hotspot[
+                        'profile'
+                    ] ?? ''
+                ) !== (string)
+                    $profileName
+            ) {
+                throw new \RuntimeException(
+                    'Automatic repair blocked: Hotspot server does not match managed bridge/pool/profile.'
+                );
+            }
+
+            $profiles =
+                $this->read(
+                    $api,
+                    '/ip/hotspot/profile/print',
+                    '.id,name,hotspot-address,dns-name,html-directory,login-by'
+                );
+
+            $profile =
+                $this->find(
+                    $profiles,
+                    'name',
+                    $profileName
+                );
+
+            if (!$profile) {
+                throw new \RuntimeException(
+                    'Hotspot profile is missing. Generic repair will not recreate an unknown profile.'
+                );
+            }
+
+            $profileGateway =
+                trim(
+                    (string) (
+                        $profile[
+                            'hotspot-address'
+                        ] ?? ''
+                    )
+                );
+
+            if (
+                $profileGateway !== ''
+                && $profileGateway
+                    !== $gateway['ip']
+            ) {
+                throw new \RuntimeException(
+                    'Automatic repair blocked: Hotspot profile gateway does not match managed topology.'
+                );
+            }
+
+            $profileDns =
+                trim(
+                    (string) (
+                        $profile[
+                            'dns-name'
+                        ] ?? ''
+                    )
+                );
+
+            if (
+                $profileDns !== ''
+                && $dnsName !== ''
+                && $profileDns
+                    !== $dnsName
+            ) {
+                throw new \RuntimeException(
+                    'Automatic repair blocked: Hotspot profile DNS name does not match managed topology.'
+                );
+            }
+
+            $dns =
+                $this->read(
+                    $api,
+                    '/ip/dns/print',
+                    'allow-remote-requests'
+                );
+
+            $routes =
+                $this->read(
+                    $api,
+                    '/ip/route/print',
+                    '.id,dst-address,gateway,immediate-gw,routing-table,active,disabled'
+                );
+
+            $wan =
+                $this->detectWan(
+                    $api,
+                    $routes
+                );
+
+            $nat =
+                $this->read(
+                    $api,
+                    '/ip/firewall/nat/print',
+                    '.id,chain,action,src-address,out-interface,out-interface-list,disabled,comment'
+                );
+
+            $files =
+                $this->read(
+                    $api,
+                    '/file/print',
+                    '.id,name,type,size'
+                );
+
+            $portal =
+                $this->portalState(
+                    $files,
+                    $profile
+                );
+
+            if (!$portal['ok']) {
+                $skipped[] =
+                    'Portal problem detected — generic repair does not modify portal files or html-directory.';
+            }
+
+            /*
+             * DHCP enable only.
+             */
+            if (
+                $dhcp
+                && $this->truthy(
+                    $dhcp[
+                        'disabled'
+                    ] ?? false
+                )
             ) {
                 $this->write(
                     $api,
                     (new Query(
-                        '/ip/firewall/nat/add'
+                        '/ip/dhcp-server/set'
                     ))
                         ->equal(
-                            'chain',
-                            'srcnat'
+                            '.id',
+                            $dhcp[
+                                '.id'
+                            ]
                         )
                         ->equal(
-                            'action',
-                            'masquerade'
+                            'disabled',
+                            'false'
                         )
+                );
+
+                $actions[] =
+                    'DHCP server enabled';
+
+                $rollbacks[] = [
+                    'label' =>
+                        'DHCP server disabled again',
+
+                    'run' =>
+                        function () use (
+                            $api,
+                            $dhcp
+                        ): void {
+                            $this->write(
+                                $api,
+                                (new Query(
+                                    '/ip/dhcp-server/set'
+                                ))
+                                    ->equal(
+                                        '.id',
+                                        $dhcp[
+                                            '.id'
+                                        ]
+                                    )
+                                    ->equal(
+                                        'disabled',
+                                        'true'
+                                    )
+                            );
+                        },
+                ];
+            }
+
+            /*
+             * Missing exact DHCP network.
+             */
+            if (!$network) {
+                $comment =
+                    'MIKROPANEL:HEALTH:DHCP:ROUTER-'
+                    . $router->id;
+
+                $this->write(
+                    $api,
+                    (new Query(
+                        '/ip/dhcp-server/network/add'
+                    ))
                         ->equal(
-                            'src-address',
+                            'address',
                             $gateway[
                                 'network_cidr'
                             ]
                         )
                         ->equal(
-                            'out-interface-list',
-                            $wan[
-                                'list_name'
-                            ]
+                            'gateway',
+                            $gateway['ip']
+                        )
+                        ->equal(
+                            'dns-server',
+                            $gateway['ip']
                         )
                         ->equal(
                             'comment',
-                            'MIKROPANEL:HEALTH:NAT:ROUTER-'
-                            . $router->id
+                            $comment
+                        )
+                );
+
+                $rows =
+                    $this->read(
+                        $api,
+                        '/ip/dhcp-server/network/print',
+                        '.id,address,comment'
+                    );
+
+                $created =
+                    $this->find(
+                        $rows,
+                        'comment',
+                        $comment
+                    );
+
+                if (
+                    !$created
+                    || empty(
+                        $created[
+                            '.id'
+                        ]
+                    )
+                ) {
+                    throw new \RuntimeException(
+                        'DHCP network was created but cannot be identified for rollback.'
+                    );
+                }
+
+                $id =
+                    $created[
+                        '.id'
+                    ];
+
+                $actions[] =
+                    'DHCP network restored';
+
+                $rollbacks[] = [
+                    'label' =>
+                        'Repair-created DHCP network removed',
+
+                    'run' =>
+                        function () use (
+                            $api,
+                            $id
+                        ): void {
+                            $this->write(
+                                $api,
+                                (new Query(
+                                    '/ip/dhcp-server/network/remove'
+                                ))
+                                    ->equal(
+                                        '.id',
+                                        $id
+                                    )
+                            );
+                        },
+                ];
+            }
+
+            /*
+             * Hotspot enable only.
+             */
+            if (
+                $this->truthy(
+                    $hotspot[
+                        'disabled'
+                    ] ?? false
+                )
+            ) {
+                $this->write(
+                    $api,
+                    (new Query(
+                        '/ip/hotspot/set'
+                    ))
+                        ->equal(
+                            '.id',
+                            $hotspot[
+                                '.id'
+                            ]
+                        )
+                        ->equal(
+                            'disabled',
+                            'false'
                         )
                 );
 
                 $actions[] =
-                    'NAT restored';
+                    'Hotspot server enabled';
 
-            } elseif (
-                $wan[
-                    'interfaces'
-                ] !== []
+                $rollbacks[] = [
+                    'label' =>
+                        'Hotspot server disabled again',
+
+                    'run' =>
+                        function () use (
+                            $api,
+                            $hotspot
+                        ): void {
+                            $this->write(
+                                $api,
+                                (new Query(
+                                    '/ip/hotspot/set'
+                                ))
+                                    ->equal(
+                                        '.id',
+                                        $hotspot[
+                                            '.id'
+                                        ]
+                                    )
+                                    ->equal(
+                                        'disabled',
+                                        'true'
+                                    )
+                            );
+                        },
+                ];
+            }
+
+            /*
+             * Required login methods while preserving
+             * the complete original value for rollback.
+             */
+            $originalLogin =
+                trim(
+                    (string) (
+                        $profile[
+                            'login-by'
+                        ] ?? ''
+                    )
+                );
+
+            $login =
+                array_values(
+                    array_unique(
+                        array_filter(
+                            array_map(
+                                'trim',
+                                explode(
+                                    ',',
+                                    strtolower(
+                                        $originalLogin
+                                    )
+                                )
+                            )
+                        )
+                    )
+                );
+
+            $loginChanged =
+                false;
+
+            foreach (
+                [
+                    'cookie',
+                    'mac-cookie',
+                ]
+                as $required
             ) {
-                foreach (
-                    $wan[
-                        'interfaces'
-                    ]
-                    as $index => $interface
+                if (
+                    !in_array(
+                        $required,
+                        $login,
+                        true
+                    )
                 ) {
+                    $login[] =
+                        $required;
+
+                    $loginChanged =
+                        true;
+                }
+            }
+
+            if (
+                !in_array(
+                    'http-chap',
+                    $login,
+                    true
+                )
+                && !in_array(
+                    'http-pap',
+                    $login,
+                    true
+                )
+            ) {
+                $login[] =
+                    'http-chap';
+
+                $loginChanged =
+                    true;
+            }
+
+            if ($loginChanged) {
+                $this->write(
+                    $api,
+                    (new Query(
+                        '/ip/hotspot/profile/set'
+                    ))
+                        ->equal(
+                            '.id',
+                            $profile[
+                                '.id'
+                            ]
+                        )
+                        ->equal(
+                            'login-by',
+                            implode(
+                                ',',
+                                $login
+                            )
+                        )
+                );
+
+                $actions[] =
+                    'Cookie / MAC-cookie login repaired';
+
+                $rollbacks[] = [
+                    'label' =>
+                        'Original Hotspot login methods restored',
+
+                    'run' =>
+                        function () use (
+                            $api,
+                            $profile,
+                            $originalLogin
+                        ): void {
+                            $this->write(
+                                $api,
+                                (new Query(
+                                    '/ip/hotspot/profile/set'
+                                ))
+                                    ->equal(
+                                        '.id',
+                                        $profile[
+                                            '.id'
+                                        ]
+                                    )
+                                    ->equal(
+                                        'login-by',
+                                        $originalLogin
+                                    )
+                            );
+                        },
+                ];
+            }
+
+            /*
+             * DNS.
+             */
+            $dnsEnabled =
+                $this->truthy(
+                    $dns[0][
+                        'allow-remote-requests'
+                    ] ?? false
+                );
+
+            if (!$dnsEnabled) {
+                $this->write(
+                    $api,
+                    (new Query(
+                        '/ip/dns/set'
+                    ))
+                        ->equal(
+                            'allow-remote-requests',
+                            'true'
+                        )
+                );
+
+                $actions[] =
+                    'DNS repaired';
+
+                $rollbacks[] = [
+                    'label' =>
+                        'DNS remote requests restored to disabled',
+
+                    'run' =>
+                        function () use (
+                            $api
+                        ): void {
+                            $this->write(
+                                $api,
+                                (new Query(
+                                    '/ip/dns/set'
+                                ))
+                                    ->equal(
+                                        'allow-remote-requests',
+                                        'false'
+                                    )
+                            );
+                        },
+                ];
+            }
+
+            /*
+             * NAT. Only rules created by this repair
+             * can later be removed by rollback.
+             */
+            if (
+                !$this->hasNat(
+                    $nat,
+                    $wan,
+                    $gateway[
+                        'network_cidr'
+                    ]
+                )
+            ) {
+                $createdIds = [];
+
+                if (
+                    $wan[
+                        'list_name'
+                    ]
+                ) {
+                    $comment =
+                        'MIKROPANEL:HEALTH:NAT:ROUTER-'
+                        . $router->id;
+
                     $this->write(
                         $api,
                         (new Query(
@@ -2249,103 +2617,308 @@ class HotspotRouterHealthService
                                 ]
                             )
                             ->equal(
-                                'out-interface',
-                                $interface
+                                'out-interface-list',
+                                $wan[
+                                    'list_name'
+                                ]
                             )
                             ->equal(
                                 'comment',
-                                'MIKROPANEL:HEALTH:NAT:ROUTER-'
-                                . $router->id
-                                . ':'
-                                . ($index + 1)
+                                $comment
                             )
                     );
+
+                    $rows =
+                        $this->read(
+                            $api,
+                            '/ip/firewall/nat/print',
+                            '.id,comment'
+                        );
+
+                    $created =
+                        $this->find(
+                            $rows,
+                            'comment',
+                            $comment
+                        );
+
+                    if (
+                        !$created
+                        || empty(
+                            $created[
+                                '.id'
+                            ]
+                        )
+                    ) {
+                        throw new \RuntimeException(
+                            'NAT rule was created but cannot be identified for rollback.'
+                        );
+                    }
+
+                    $createdIds[] =
+                        $created[
+                            '.id'
+                        ];
+
+                } elseif (
+                    $wan[
+                        'interfaces'
+                    ] !== []
+                ) {
+                    foreach (
+                        $wan[
+                            'interfaces'
+                        ]
+                        as $index => $interface
+                    ) {
+                        $comment =
+                            'MIKROPANEL:HEALTH:NAT:ROUTER-'
+                            . $router->id
+                            . ':'
+                            . ($index + 1);
+
+                        $this->write(
+                            $api,
+                            (new Query(
+                                '/ip/firewall/nat/add'
+                            ))
+                                ->equal(
+                                    'chain',
+                                    'srcnat'
+                                )
+                                ->equal(
+                                    'action',
+                                    'masquerade'
+                                )
+                                ->equal(
+                                    'src-address',
+                                    $gateway[
+                                        'network_cidr'
+                                    ]
+                                )
+                                ->equal(
+                                    'out-interface',
+                                    $interface
+                                )
+                                ->equal(
+                                    'comment',
+                                    $comment
+                                )
+                        );
+
+                        $rows =
+                            $this->read(
+                                $api,
+                                '/ip/firewall/nat/print',
+                                '.id,comment'
+                            );
+
+                        $created =
+                            $this->find(
+                                $rows,
+                                'comment',
+                                $comment
+                            );
+
+                        if (
+                            !$created
+                            || empty(
+                                $created[
+                                    '.id'
+                                ]
+                            )
+                        ) {
+                            throw new \RuntimeException(
+                                'NAT rule was created but cannot be identified for rollback.'
+                            );
+                        }
+
+                        $createdIds[] =
+                            $created[
+                                '.id'
+                            ];
+                    }
+
+                } else {
+                    $skipped[] =
+                        'NAT missing but WAN cannot be detected safely. NAT was not modified.';
                 }
 
-                $actions[] =
-                    'NAT restored';
+                if (
+                    $createdIds !== []
+                ) {
+                    $actions[] =
+                        'NAT restored';
 
-            } else {
-                throw new \RuntimeException(
-                    'NAT missing but WAN cannot be detected.'
-                );
+                    $rollbacks[] = [
+                        'label' =>
+                            'Repair-created NAT rule(s) removed',
+
+                        'run' =>
+                            function () use (
+                                $api,
+                                $createdIds
+                            ): void {
+                                foreach (
+                                    array_reverse(
+                                        $createdIds
+                                    )
+                                    as $id
+                                ) {
+                                    $this->write(
+                                        $api,
+                                        (new Query(
+                                            '/ip/firewall/nat/remove'
+                                        ))
+                                            ->equal(
+                                                '.id',
+                                                $id
+                                            )
+                                    );
+                                }
+                            },
+                    ];
+                }
             }
-        }
 
-        /*
-         * PORTAL
-         */
-        $files =
-            $this->read(
-                $api,
-                '/file/print',
-                '.id,name,type,size'
+            /*
+             * PORTAL WRITE INTENTIONALLY ABSENT.
+             */
+
+            Cache::forget(
+                'hotspot-live-map-v2:'
+                . $router->id
             );
 
-        $portal =
-            $this->portalState(
-                $files,
-                $profile
-            );
-
-        if (!$portal['ok']) {
-            $this->finalizer
-                ->finalize(
-                    $router,
-                    [
-                        'mode' =>
-                            'existing',
-
-                        'bridge_name' =>
-                            $bridge,
-
-                        'gateway_cidr' =>
-                            $gatewayCidr,
-
-                        'pool_name' =>
-                            $pool,
-
-                        'dhcp_server' =>
-                            $dhcpName,
-
-                        'hotspot_server' =>
-                            $hotspotName,
-
-                        'hotspot_profile' =>
-                            $profileName,
-
-                        'dns_name' =>
-                            $dnsName,
-
-                        'cookie_lifetime' =>
-                            '3d',
-
-                        'brand_name' =>
-                            $router
-                                ->zone
-                                ->name
-                            ?: $router->name,
-                    ]
-                );
-
-            $actions[] =
-                'Captive portal reinstalled';
-        }
-
-        Cache::forget(
-            'hotspot-live-map-v2:'
-            . $router->id
-        );
-
-        return [
-            'actions' =>
-                $actions,
-
-            'health' =>
+            $after =
                 $this->snapshot(
                     $router
-                ),
-        ];
+                );
+
+            $audit->forceFill([
+                'status' =>
+                    $actions === []
+                        ? 'noop'
+                        : 'success',
+
+                'after_overall' =>
+                    $after[
+                        'overall'
+                    ] ?? null,
+
+                'actions' =>
+                    $actions,
+
+                'skipped' =>
+                    $skipped,
+
+                'rollback_actions' =>
+                    [],
+
+                'completed_at' =>
+                    now(),
+            ])->save();
+
+            return [
+                'actions' =>
+                    $actions,
+
+                'skipped' =>
+                    $skipped,
+
+                'audit_id' =>
+                    $audit->id,
+
+                'health' =>
+                    $after,
+            ];
+
+        } catch (\Throwable $exception) {
+            $rollbackFailed =
+                false;
+
+            foreach (
+                array_reverse(
+                    $rollbacks
+                )
+                as $rollback
+            ) {
+                try {
+                    $rollback[
+                        'run'
+                    ]();
+
+                    $rollbackActions[] =
+                        $rollback[
+                            'label'
+                        ];
+
+                } catch (\Throwable $rollbackException) {
+                    $rollbackFailed =
+                        true;
+
+                    $rollbackActions[] =
+                        'ROLLBACK FAILED: '
+                        . $rollback[
+                            'label'
+                        ]
+                        . ' — '
+                        . $rollbackException
+                            ->getMessage();
+                }
+            }
+
+            Cache::forget(
+                'hotspot-live-map-v2:'
+                . $router->id
+            );
+
+            $audit->forceFill([
+                'status' =>
+                    $rollbackFailed
+                        ? 'rollback_failed'
+                        : (
+                            $rollbackActions !== []
+                                ? 'rolled_back'
+                                : 'failed'
+                        ),
+
+                'actions' =>
+                    $actions,
+
+                'skipped' =>
+                    $skipped,
+
+                'rollback_actions' =>
+                    $rollbackActions,
+
+                'error_message' =>
+                    $exception
+                        ->getMessage(),
+
+                'completed_at' =>
+                    now(),
+            ])->save();
+
+            $message =
+                $exception
+                    ->getMessage();
+
+            if (
+                $rollbackActions !== []
+            ) {
+                $message .=
+                    $rollbackFailed
+                        ? ' Automatic rollback was attempted but one or more rollback steps failed.'
+                        : ' Changes made by this repair attempt were rolled back.';
+            }
+
+            throw new \RuntimeException(
+                $message,
+                0,
+                $exception
+            );
+        }
     }
 
     protected function selectTopology(
@@ -3363,6 +3936,16 @@ class HotspotRouterHealthService
         string $detail,
         bool $repairable
     ): array {
+        /*
+         * HOTSPOT_PORTAL_GENERIC_REPAIR_DISABLED_V3
+         *
+         * Portal recovery requires a dedicated
+         * backup-aware recovery workflow.
+         */
+        if ($key === 'portal') {
+            $repairable = false;
+        }
+
         return [
             'key' =>
                 $key,

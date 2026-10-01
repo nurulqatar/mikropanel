@@ -634,13 +634,42 @@ class HotspotRouterHealthController extends Controller
                             'actions'
                         ] ?? []
                     ) === []
-                        ? 'No automatic repair was required.'
-                        : 'Repair complete: '
+                        ? (
+                            (
+                                $result[
+                                    'skipped'
+                                ] ?? []
+                            ) === []
+                                ? 'No automatic repair was required.'
+                                : 'No unsafe repair was performed: '
+                                    . implode(
+                                        ' | ',
+                                        $result[
+                                            'skipped'
+                                        ]
+                                    )
+                        )
+                        : 'Safe repair complete: '
                             . implode(
                                 ', ',
                                 $result[
                                     'actions'
                                 ]
+                            )
+                            . (
+                                (
+                                    $result[
+                                        'skipped'
+                                    ] ?? []
+                                ) === []
+                                    ? ''
+                                    : ' | Skipped: '
+                                        . implode(
+                                            ' | ',
+                                            $result[
+                                                'skipped'
+                                            ]
+                                        )
                             ),
 
                 'health' =>
