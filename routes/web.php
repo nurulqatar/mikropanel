@@ -58,6 +58,36 @@ Route::post(
         'hotspot.portal.mac-reset'
     );
 
+
+/*
+ * MAIN_HOTSPOT_PUBLIC_BRANDING_V1
+ */
+Route::get(
+    'hotspot-portal/branding/{router}/{token}',
+    [
+        HotspotPortalActionController::class,
+        'branding',
+    ]
+)
+    ->whereNumber(
+        'router'
+    )
+    ->where(
+        'token',
+        '[a-f0-9]{64}'
+    )
+    ->withoutMiddleware([
+        \App\Http\Middleware\SuperAdminPanelOnly::class,
+        \App\Http\Middleware\ShareUnifiedFinance::class,
+        \App\Http\Middleware\EnforceResellerAccess::class,
+    ])
+    ->middleware(
+        'throttle:120,1'
+    )
+    ->name(
+        'hotspot.portal.branding'
+    );
+
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware([
         'auth',

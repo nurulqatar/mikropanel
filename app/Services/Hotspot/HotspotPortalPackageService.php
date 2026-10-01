@@ -12,7 +12,7 @@ use ZipArchive;
 class HotspotPortalPackageService
 {
     private const TEMPLATE_SHA256 =
-        '9e54cadc51bf328280c0079eb89f2463bf41c2b8547fe04ddd1896ece2395f71';
+        'e0001af47c04c571f62bc1e304df7be27a167b06cc0e4adea54a7dd6124e91d4';
 
     public function __construct(
         private readonly CompanyBrandingService $branding
@@ -47,6 +47,22 @@ class HotspotPortalPackageService
         ] =
             route(
                 'hotspot.portal.mac-reset',
+                [
+                    'router' =>
+                        $router->id,
+
+                    'token' =>
+                        $this->resetToken(
+                            $router
+                        ),
+                ]
+            );
+
+        $branding[
+            '_hotspot_branding_url'
+        ] =
+            route(
+                'hotspot.portal.branding',
                 [
                     'router' =>
                         $router->id,
@@ -174,17 +190,40 @@ class HotspotPortalPackageService
                 $companyName;
         }
 
+        $companySlogan =
+            trim(
+                (string) (
+                    $branding[
+                        'company_slogan'
+                    ]
+                    ?? ''
+                )
+            );
+
         $branding['company_name'] =
             $companyName;
 
         $branding['panel_name'] =
             $panelName;
 
+        $branding['company_slogan'] =
+            $companySlogan;
+
         $macResetUrl =
             trim(
                 (string) (
                     $branding[
                         '_hotspot_mac_reset_url'
+                    ]
+                    ?? ''
+                )
+            );
+
+        $brandingUrl =
+            trim(
+                (string) (
+                    $branding[
+                        '_hotspot_branding_url'
                     ]
                     ?? ''
                 )
@@ -352,6 +391,24 @@ class HotspotPortalPackageService
                             $companyName,
                             $macResetUrl
                         );
+
+                    if (
+                        strtolower(
+                            pathinfo(
+                                $name,
+                                PATHINFO_EXTENSION
+                            )
+                        ) === 'html'
+                    ) {
+                        $contents =
+                            $this
+                                ->applyCompanyHeaderBranding(
+                                    $contents,
+                                    $companyName,
+                                    $companySlogan,
+                                    $brandingUrl
+                                );
+                    }
                 }
 
                 if (
@@ -1305,6 +1362,159 @@ HTML;
         return str_replace(
             '</body>',
             $ui
+            . "\n</body>",
+            $contents
+        );
+    }
+
+    /*
+     * COMPANY_HOTSPOT_HEADER_BRANDING_V1
+     */
+    private function applyCompanyHeaderBranding(
+        string $contents,
+        string $companyName,
+        string $companySlogan,
+        string $brandingUrl
+    ): string {
+        $company =
+            htmlspecialchars(
+                $companyName,
+                ENT_QUOTES
+                | ENT_SUBSTITUTE,
+                'UTF-8'
+            );
+
+        $slogan =
+            htmlspecialchars(
+                $companySlogan,
+                ENT_QUOTES
+                | ENT_SUBSTITUTE,
+                'UTF-8'
+            );
+
+        $contents =
+            preg_replace(
+                '~<div class="company"><strong>.*?</strong><span>.*?</span></div>~s',
+                '<div class="company"><strong>'
+                . $company
+                . '</strong><span>'
+                . $slogan
+                . '</span></div>',
+                $contents,
+                1
+            )
+            ?? $contents;
+
+        if (
+            $brandingUrl === ''
+            || str_contains(
+                $contents,
+                'mikropanel-live-branding'
+            )
+            || !str_contains(
+                $contents,
+                '</body>'
+            )
+        ) {
+            return $contents;
+        }
+
+        $safeUrl =
+            json_encode(
+                $brandingUrl,
+                JSON_UNESCAPED_UNICODE
+                | JSON_UNESCAPED_SLASHES
+                | JSON_HEX_TAG
+                | JSON_HEX_AMP
+                | JSON_HEX_APOS
+                | JSON_HEX_QUOT
+            );
+
+        if (!is_string($safeUrl)) {
+            return $contents;
+        }
+
+        $script = <<<HTML
+<script id="mikropanel-live-branding">
+(function () {
+  var url = {$safeUrl};
+
+  if (!url || !window.fetch) {
+    return;
+  }
+
+  fetch(url, {
+    method: 'GET',
+    mode: 'cors',
+    credentials: 'omit',
+    cache: 'no-store',
+    headers: {
+      'Accept': 'application/json'
+    }
+  })
+    .then(function (response) {
+      if (!response.ok) {
+        throw new Error(
+          'Branding request failed'
+        );
+      }
+
+      return response.json();
+    })
+    .then(function (data) {
+      var box =
+        document.querySelector(
+          '.company'
+        );
+
+      if (!box) {
+        return;
+      }
+
+      var name =
+        box.querySelector(
+          'strong'
+        );
+
+      var slogan =
+        box.querySelector(
+          'span'
+        );
+
+      if (
+        name
+        && data
+        && data.company_name
+      ) {
+        name.textContent =
+          String(
+            data.company_name
+          );
+      }
+
+      if (slogan) {
+        slogan.textContent =
+          data
+          && data.company_slogan
+            ? String(
+                data.company_slogan
+              )
+            : '';
+      }
+    })
+    .catch(function () {
+      /*
+       * Keep packaged branding if the
+       * backend cannot be reached.
+       */
+    });
+})();
+</script>
+HTML;
+
+        return str_replace(
+            '</body>',
+            $script
             . "\n</body>",
             $contents
         );

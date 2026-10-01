@@ -6,6 +6,7 @@ use App\Jobs\ProvisionHotspotVoucher;
 use App\Models\HotspotServer;
 use App\Models\HotspotVoucher;
 use App\Models\Router;
+use App\Services\CompanyBrandingService;
 use App\Services\Hotspot\HotspotPortalPackageService;
 use App\Services\Hotspot\HotspotRouterService;
 use Illuminate\Http\JsonResponse;
@@ -44,6 +45,117 @@ class HotspotPortalActionController extends Controller
      * - audit history
      * - normal provisioning queue convergence
      */
+    /*
+     * MAIN_HOTSPOT_PUBLIC_BRANDING_V1
+     *
+     * Only non-sensitive Company display
+     * branding is returned.
+     */
+    public function branding(
+        int $router,
+        string $token,
+        HotspotPortalPackageService $packages,
+        CompanyBrandingService $branding
+    ): JsonResponse {
+        $routerModel =
+            Router::withoutGlobalScopes()
+                ->with([
+                    'zone:id,reseller_id,service_type',
+                ])
+                ->find(
+                    $router
+                );
+
+        if (
+            !$routerModel
+            || !$routerModel->zone
+            || $routerModel
+                ->zone
+                ->service_type !== 'hotspot'
+        ) {
+            return response()
+                ->json(
+                    [
+                        'message' =>
+                            'Portal branding is unavailable.',
+                    ],
+                    404
+                )
+                ->header(
+                    'Access-Control-Allow-Origin',
+                    '*'
+                );
+        }
+
+        $expected =
+            $packages->resetToken(
+                $routerModel
+            );
+
+        if (
+            !hash_equals(
+                $expected,
+                strtolower($token)
+            )
+        ) {
+            return response()
+                ->json(
+                    [
+                        'message' =>
+                            'Portal branding is unavailable.',
+                    ],
+                    404
+                )
+                ->header(
+                    'Access-Control-Allow-Origin',
+                    '*'
+                );
+        }
+
+        $company =
+            $branding->forResellerId(
+                $routerModel
+                    ->zone
+                    ->reseller_id
+                    ? (int)
+                        $routerModel
+                            ->zone
+                            ->reseller_id
+                    : null
+            );
+
+        return response()
+            ->json([
+                'company_name' =>
+                    trim(
+                        (string) (
+                            $company[
+                                'company_name'
+                            ]
+                            ?? ''
+                        )
+                    ),
+
+                'company_slogan' =>
+                    trim(
+                        (string) (
+                            $company[
+                                'company_slogan'
+                            ]
+                            ?? ''
+                        )
+                    ),
+            ])
+            ->header(
+                'Access-Control-Allow-Origin',
+                '*'
+            )
+            ->header(
+                'Cache-Control',
+                'no-store, max-age=0'
+            );
+    }
+
     public function resetMac(
         Request $request,
         int $router,

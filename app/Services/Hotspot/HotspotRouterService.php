@@ -470,6 +470,43 @@ class HotspotRouterService
             );
         }
 
+        /*
+         * AUTO_HOTSPOT_PORTAL_ACCESS_V1
+         *
+         * Every normal Hotspot sync refreshes the
+         * portal hostname and server IPv4 fallback.
+         */
+        $portalHost =
+            parse_url(
+                (string)
+                config(
+                    'app.url'
+                ),
+                PHP_URL_HOST
+            );
+
+        if (
+            is_string(
+                $portalHost
+            )
+            && trim(
+                $portalHost
+            ) !== ''
+        ) {
+            try {
+                $this
+                    ->ensurePortalHostAccess(
+                        $server->router,
+                        $portalHost
+                    );
+
+            } catch (\Throwable $exception) {
+                report(
+                    $exception
+                );
+            }
+        }
+
         $api = $this->api(
             $server->router
         );
@@ -1074,14 +1111,29 @@ class HotspotRouterService
      * RouterOS creates dynamic destination entries
      * for dst-host in walled-garden ip.
      */
+    /*
+     * MAIN_HOTSPOT_PUBLIC_MAC_RESET_V2
+     *
+     * Primary:
+     *   APP_URL hostname.
+     *
+     * Fallback:
+     *   Current resolved IPv4 A record(s).
+     *
+     * Only MikroPanel-owned fallback IP rules
+     * are removed when DNS changes.
+     */
     public function ensurePortalHostAccess(
         Router $router,
         string $host
-    ): void {
+    ): array {
         $host =
             strtolower(
-                trim(
-                    $host
+                rtrim(
+                    trim(
+                        $host
+                    ),
+                    '.'
                 )
             );
 
@@ -1093,7 +1145,7 @@ class HotspotRouterService
             )
         ) {
             throw new \RuntimeException(
-                'Invalid portal reset host.'
+                'Invalid portal host.'
             );
         }
 
@@ -1102,42 +1154,418 @@ class HotspotRouterService
                 $router
             );
 
-        $existing =
+        $rows =
             $api->query(
                 (new Query(
                     '/ip/hotspot/walled-garden/ip/print'
                 ))
-                    ->where(
+                    ->equal(
+                        '.proplist',
+                        implode(',', [
+                            '.id',
+                            'dst-host',
+                            'dst-address',
+                            'action',
+                            'disabled',
+                            'comment',
+                        ])
+                    )
+            )->read();
+
+        $hostComment =
+            'MikroPanel Portal MAC Reset';
+
+        $ipComment =
+            'MikroPanel Portal MAC Reset IP';
+
+        $hostReady = false;
+        $hostAdded = false;
+
+        foreach ($rows as $row) {
+            $rowHost =
+                strtolower(
+                    rtrim(
+                        trim(
+                            (string) (
+                                $row[
+                                    'dst-host'
+                                ]
+                                ?? ''
+                            )
+                        ),
+                        '.'
+                    )
+                );
+
+            if ($rowHost !== $host) {
+                continue;
+            }
+
+            $disabled =
+                in_array(
+                    strtolower(
+                        (string) (
+                            $row[
+                                'disabled'
+                            ]
+                            ?? 'false'
+                        )
+                    ),
+                    [
+                        'true',
+                        'yes',
+                        '1',
+                    ],
+                    true
+                );
+
+            $action =
+                strtolower(
+                    (string) (
+                        $row[
+                            'action'
+                        ]
+                        ?? 'accept'
+                    )
+                );
+
+            if (
+                !$disabled
+                && $action === 'accept'
+            ) {
+                $hostReady = true;
+                break;
+            }
+
+            if (
+                (string) (
+                    $row[
+                        'comment'
+                    ]
+                    ?? ''
+                ) === $hostComment
+                && isset(
+                    $row['.id']
+                )
+            ) {
+                $api->query(
+                    (new Query(
+                        '/ip/hotspot/walled-garden/ip/set'
+                    ))
+                        ->equal(
+                            '.id',
+                            $row['.id']
+                        )
+                        ->equal(
+                            'action',
+                            'accept'
+                        )
+                        ->equal(
+                            'disabled',
+                            'false'
+                        )
+                )->read();
+
+                $hostReady = true;
+                break;
+            }
+        }
+
+        if (!$hostReady) {
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/walled-garden/ip/add'
+                ))
+                    ->equal(
                         'dst-host',
                         $host
                     )
                     ->equal(
-                        '.proplist',
-                        '.id,dst-host,comment'
+                        'action',
+                        'accept'
+                    )
+                    ->equal(
+                        'comment',
+                        $hostComment
                     )
             )->read();
 
-        if ($existing !== []) {
-            return;
+            $hostAdded = true;
         }
 
-        $api->query(
-            (new Query(
-                '/ip/hotspot/walled-garden/ip/add'
-            ))
-                ->equal(
-                    'dst-host',
-                    $host
+        $resolved = [];
+
+        if (
+            filter_var(
+                $host,
+                FILTER_VALIDATE_IP,
+                FILTER_FLAG_IPV4
+            )
+        ) {
+            $resolved[] =
+                $host;
+
+        } else {
+            $dnsRows =
+                @dns_get_record(
+                    $host,
+                    DNS_A
+                );
+
+            if (is_array($dnsRows)) {
+                foreach ($dnsRows as $dnsRow) {
+                    $ip =
+                        trim(
+                            (string) (
+                                $dnsRow['ip']
+                                ?? ''
+                            )
+                        );
+
+                    if (
+                        filter_var(
+                            $ip,
+                            FILTER_VALIDATE_IP,
+                            FILTER_FLAG_IPV4
+                        )
+                    ) {
+                        $resolved[] =
+                            $ip;
+                    }
+                }
+            }
+
+            if ($resolved === []) {
+                $fallback =
+                    @gethostbynamel(
+                        $host
+                    );
+
+                if (is_array($fallback)) {
+                    foreach ($fallback as $ip) {
+                        if (
+                            filter_var(
+                                $ip,
+                                FILTER_VALIDATE_IP,
+                                FILTER_FLAG_IPV4
+                            )
+                        ) {
+                            $resolved[] =
+                                $ip;
+                        }
+                    }
+                }
+            }
+        }
+
+        $resolved =
+            array_values(
+                array_unique(
+                    $resolved
                 )
-                ->equal(
-                    'action',
-                    'accept'
+            );
+
+        sort(
+            $resolved
+        );
+
+        /*
+         * Protection against an unexpectedly huge
+         * DNS pool.
+         */
+        $resolved =
+            array_slice(
+                $resolved,
+                0,
+                8
+            );
+
+        $managed = [];
+
+        foreach ($rows as $row) {
+            if (
+                (string) (
+                    $row[
+                        'comment'
+                    ]
+                    ?? ''
+                ) !== $ipComment
+            ) {
+                continue;
+            }
+
+            $address =
+                trim(
+                    (string) (
+                        $row[
+                            'dst-address'
+                        ]
+                        ?? ''
+                    )
+                );
+
+            if ($address === '') {
+                continue;
+            }
+
+            $ip =
+                explode(
+                    '/',
+                    $address,
+                    2
+                )[0];
+
+            if (
+                filter_var(
+                    $ip,
+                    FILTER_VALIDATE_IP,
+                    FILTER_FLAG_IPV4
                 )
-                ->equal(
-                    'comment',
-                    'MikroPanel Portal MAC Reset'
+            ) {
+                $managed[
+                    $ip
+                ] = $row;
+            }
+        }
+
+        $ipAdded = [];
+        $ipRemoved = [];
+
+        foreach ($resolved as $ip) {
+            if (
+                isset(
+                    $managed[$ip]
                 )
-        )->read();
+            ) {
+                $row =
+                    $managed[$ip];
+
+                $disabled =
+                    in_array(
+                        strtolower(
+                            (string) (
+                                $row[
+                                    'disabled'
+                                ]
+                                ?? 'false'
+                            )
+                        ),
+                        [
+                            'true',
+                            'yes',
+                            '1',
+                        ],
+                        true
+                    );
+
+                if (
+                    $disabled
+                    && isset(
+                        $row['.id']
+                    )
+                ) {
+                    $api->query(
+                        (new Query(
+                            '/ip/hotspot/walled-garden/ip/set'
+                        ))
+                            ->equal(
+                                '.id',
+                                $row['.id']
+                            )
+                            ->equal(
+                                'action',
+                                'accept'
+                            )
+                            ->equal(
+                                'disabled',
+                                'false'
+                            )
+                    )->read();
+                }
+
+                continue;
+            }
+
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/walled-garden/ip/add'
+                ))
+                    ->equal(
+                        'dst-address',
+                        $ip . '/32'
+                    )
+                    ->equal(
+                        'action',
+                        'accept'
+                    )
+                    ->equal(
+                        'comment',
+                        $ipComment
+                    )
+            )->read();
+
+            $ipAdded[] =
+                $ip;
+        }
+
+        /*
+         * If DNS fails completely, keep existing
+         * fallback rules rather than deleting them.
+         */
+        if ($resolved !== []) {
+            foreach (
+                $managed
+                as $ip => $row
+            ) {
+                if (
+                    in_array(
+                        $ip,
+                        $resolved,
+                        true
+                    )
+                ) {
+                    continue;
+                }
+
+                if (
+                    !isset(
+                        $row['.id']
+                    )
+                ) {
+                    continue;
+                }
+
+                $api->query(
+                    (new Query(
+                        '/ip/hotspot/walled-garden/ip/remove'
+                    ))
+                        ->equal(
+                            '.id',
+                            $row['.id']
+                        )
+                )->read();
+
+                $ipRemoved[] =
+                    $ip;
+            }
+        }
+
+        return [
+            'host' =>
+                $host,
+
+            'host_added' =>
+                $hostAdded,
+
+            'resolved_ipv4' =>
+                $resolved,
+
+            'ip_added' =>
+                $ipAdded,
+
+            'ip_removed' =>
+                $ipRemoved,
+        ];
     }
 
     /*

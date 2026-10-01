@@ -72,6 +72,10 @@ class CompanyBrandingService
             'company_name' =>
                 $companyName,
 
+            'company_slogan' =>
+                $saved['company_slogan']
+                ?? null,
+
             'company_phone' =>
                 $reseller->phone,
 
@@ -162,6 +166,12 @@ class CompanyBrandingService
 
             'company_name' =>
                 $companyName,
+
+            'company_slogan' =>
+                Setting::getValue(
+                    'company_slogan',
+                    ''
+                ),
 
             'company_phone' =>
                 Setting::getValue(

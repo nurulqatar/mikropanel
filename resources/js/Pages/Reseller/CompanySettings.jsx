@@ -21,6 +21,9 @@ export default function CompanySettings({
             ?? company.company_name
             ?? '',
 
+        company_slogan:
+            company.company_slogan ?? '',
+
         owner_name:
             company.owner_name ?? '',
 
@@ -123,6 +126,24 @@ export default function CompanySettings({
                                 onChange={(value) =>
                                     form.setData(
                                         'company_name',
+                                        value,
+                                    )
+                                }
+                            />
+
+                            <Input
+                                label="Company Slogan"
+                                value={
+                                    form.data
+                                        .company_slogan
+                                }
+                                error={
+                                    form.errors
+                                        .company_slogan
+                                }
+                                onChange={(value) =>
+                                    form.setData(
+                                        'company_slogan',
                                         value,
                                     )
                                 }

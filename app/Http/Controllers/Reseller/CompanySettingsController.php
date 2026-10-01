@@ -76,6 +76,12 @@ class CompanySettingsController extends Controller
                     'max:255',
                 ],
 
+                'company_slogan' => [
+                    'nullable',
+                    'string',
+                    'max:255',
+                ],
+
                 'owner_name' => [
                     'required',
                     'string',
@@ -219,6 +225,21 @@ class CompanySettingsController extends Controller
             'panel_name' => [
                 $data['panel_name']
                 ?? null,
+                'company',
+                'string',
+            ],
+
+            'company_slogan' => [
+                filled(
+                    $data['company_slogan']
+                    ?? null
+                )
+                    ? trim(
+                        $data[
+                            'company_slogan'
+                        ]
+                    )
+                    : null,
                 'company',
                 'string',
             ],
