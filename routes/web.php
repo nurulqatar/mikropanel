@@ -167,6 +167,19 @@ Route::get(
 );
 
 /*
+ * HOTSPOT_BRIDGE_SETUP_PHASE2_V2
+ */
+Route::post(
+    'routers/{router}/hotspot-setup/bridge',
+    [
+        RouterController::class,
+        'hotspotSetupBridge',
+    ]
+)->name(
+    'routers.hotspot-setup.bridge'
+);
+
+/*
  * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
  */
 Route::get(

@@ -26,9 +26,46 @@ import {
 export default function HotspotSetup({
     router,
     discovery = {},
+    wizardStep = 1,
+    activeBridge = null,
+    flash = {},
 }) {
     const [selectedPorts, setSelectedPorts] =
         useState([]);
+
+    /*
+     * HOTSPOT_BRIDGE_SETUP_PHASE2_V2
+     */
+    const existingBridges =
+        discovery?.bridges
+        ?? [];
+
+    const [bridgeMode, setBridgeMode] =
+        useState(
+            existingBridges.length
+                ? 'existing'
+                : 'new',
+        );
+
+    const [
+        existingBridgeName,
+        setExistingBridgeName,
+    ] = useState(
+        existingBridges[0]?.name
+        ?? '',
+    );
+
+    const [
+        newBridgeName,
+        setNewBridgeName,
+    ] = useState(
+        `mp-hotspot-${router.id}`,
+    );
+
+    const [
+        applyingBridge,
+        setApplyingBridge,
+    ] = useState(false);
 
     const ethernetInterfaces =
         useMemo(
@@ -65,6 +102,54 @@ export default function HotspotSetup({
                 )
                 && item.caution,
         );
+
+    const applyBridge = () => {
+        if (
+            selectedPorts.length === 0
+        ) {
+            return;
+        }
+
+        const bridgeName =
+            bridgeMode === 'existing'
+                ? existingBridgeName
+                : newBridgeName.trim();
+
+        if (!bridgeName) {
+            return;
+        }
+
+        inertiaRouter.post(
+            route(
+                'routers.hotspot-setup.bridge',
+                router.id,
+            ),
+            {
+                mode:
+                    bridgeMode,
+
+                bridge_name:
+                    bridgeName,
+
+                ports:
+                    selectedPorts,
+            },
+            {
+                preserveScroll:
+                    true,
+
+                onStart: () =>
+                    setApplyingBridge(
+                        true,
+                    ),
+
+                onFinish: () =>
+                    setApplyingBridge(
+                        false,
+                    ),
+            },
+        );
+    };
 
     const steps = [
         'Ports',
@@ -129,9 +214,13 @@ export default function HotspotSetup({
                             <div
                                 key={step}
                                 className={`rounded-xl border px-3 py-3 text-center text-xs font-bold ${
-                                    index === 0
+                                    index + 1 ===
+                                    Number(wizardStep)
                                         ? 'border-cyan-300 bg-cyan-50 text-cyan-800'
-                                        : 'border-slate-200 bg-white text-slate-400'
+                                        : index + 1 <
+                                            Number(wizardStep)
+                                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                          : 'border-slate-200 bg-white text-slate-400'
                                 }`}
                             >
                                 <div>
@@ -146,6 +235,18 @@ export default function HotspotSetup({
                         ),
                     )}
                 </div>
+
+                {flash?.success && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-semibold text-emerald-800">
+                        {flash.success}
+                    </div>
+                )}
+
+                {flash?.error && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-semibold text-red-800">
+                        {flash.error}
+                    </div>
+                )}
 
                 <section
                     className={`rounded-2xl border p-5 ${
@@ -403,14 +504,12 @@ export default function HotspotSetup({
                             )}
                         </section>
 
-                        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                            <div className="flex flex-wrap items-center justify-between gap-4">
+                        {Number(wizardStep) < 3 ? (
+                            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                                 <div>
                                     <h3 className="font-black text-slate-900">
                                         Selected Ports:{' '}
-                                        {
-                                            selectedPorts.length
-                                        }
+                                        {selectedPorts.length}
                                     </h3>
 
                                     <p className="mt-1 font-mono text-sm text-slate-600">
@@ -422,34 +521,227 @@ export default function HotspotSetup({
                                     </p>
                                 </div>
 
+                                {selectedPorts.length >
+                                    0 && (
+                                    <div className="mt-6 border-t border-slate-200 pt-6">
+                                        <h3 className="text-lg font-black text-slate-900">
+                                            Step 2 — Bridge
+                                        </h3>
+
+                                        <p className="mt-1 text-sm text-slate-500">
+                                            Use an existing RouterOS bridge or create a new dedicated Hotspot bridge.
+                                        </p>
+
+                                        <div className="mt-5 grid gap-4 md:grid-cols-2">
+                                            <label
+                                                className={`rounded-xl border p-4 ${
+                                                    bridgeMode ===
+                                                    'existing'
+                                                        ? 'border-cyan-400 bg-cyan-50'
+                                                        : 'border-slate-200'
+                                                } ${
+                                                    existingBridges.length ===
+                                                    0
+                                                        ? 'opacity-50'
+                                                        : ''
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="radio"
+                                                        name="bridge-mode"
+                                                        checked={
+                                                            bridgeMode ===
+                                                            'existing'
+                                                        }
+                                                        disabled={
+                                                            existingBridges.length ===
+                                                            0
+                                                        }
+                                                        onChange={() =>
+                                                            setBridgeMode(
+                                                                'existing',
+                                                            )
+                                                        }
+                                                    />
+
+                                                    <span className="font-bold text-slate-800">
+                                                        Use Existing Bridge
+                                                    </span>
+                                                </div>
+
+                                                <select
+                                                    className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono"
+                                                    value={
+                                                        existingBridgeName
+                                                    }
+                                                    disabled={
+                                                        bridgeMode !==
+                                                            'existing' ||
+                                                        existingBridges.length ===
+                                                            0
+                                                    }
+                                                    onChange={(
+                                                        event,
+                                                    ) =>
+                                                        setExistingBridgeName(
+                                                            event
+                                                                .target
+                                                                .value,
+                                                        )
+                                                    }
+                                                >
+                                                    {existingBridges.map(
+                                                        (
+                                                            bridge,
+                                                        ) => (
+                                                            <option
+                                                                key={
+                                                                    bridge.name
+                                                                }
+                                                                value={
+                                                                    bridge.name
+                                                                }
+                                                            >
+                                                                {
+                                                                    bridge.name
+                                                                }
+                                                            </option>
+                                                        ),
+                                                    )}
+                                                </select>
+                                            </label>
+
+                                            <label
+                                                className={`rounded-xl border p-4 ${
+                                                    bridgeMode ===
+                                                    'new'
+                                                        ? 'border-cyan-400 bg-cyan-50'
+                                                        : 'border-slate-200'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="radio"
+                                                        name="bridge-mode"
+                                                        checked={
+                                                            bridgeMode ===
+                                                            'new'
+                                                        }
+                                                        onChange={() =>
+                                                            setBridgeMode(
+                                                                'new',
+                                                            )
+                                                        }
+                                                    />
+
+                                                    <span className="font-bold text-slate-800">
+                                                        Create New Bridge
+                                                    </span>
+                                                </div>
+
+                                                <input
+                                                    className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 font-mono"
+                                                    value={
+                                                        newBridgeName
+                                                    }
+                                                    disabled={
+                                                        bridgeMode !==
+                                                        'new'
+                                                    }
+                                                    onChange={(
+                                                        event,
+                                                    ) =>
+                                                        setNewBridgeName(
+                                                            event
+                                                                .target
+                                                                .value,
+                                                        )
+                                                    }
+                                                />
+                                            </label>
+                                        </div>
+
+                                        {riskySelected.length >
+                                            0 && (
+                                            <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+                                                Existing RouterOS configuration detected on:{' '}
+                                                {riskySelected
+                                                    .map(
+                                                        (
+                                                            item,
+                                                        ) =>
+                                                            item.name,
+                                                    )
+                                                    .join(
+                                                        ', ',
+                                                    )}
+                                                . MikroPanel will not silently move a port from another bridge.
+                                            </div>
+                                        )}
+
+                                        <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
+                                            <p className="text-xs text-slate-500">
+                                                WAN detection is refreshed again on the server before any RouterOS bridge write.
+                                            </p>
+
+                                            <button
+                                                type="button"
+                                                onClick={
+                                                    applyBridge
+                                                }
+                                                disabled={
+                                                    applyingBridge ||
+                                                    selectedPorts.length ===
+                                                        0 ||
+                                                    (bridgeMode ===
+                                                        'existing' &&
+                                                        !existingBridgeName) ||
+                                                    (bridgeMode ===
+                                                        'new' &&
+                                                        !newBridgeName.trim())
+                                                }
+                                                className="rounded-xl bg-cyan-600 px-5 py-3 font-bold text-white hover:bg-cyan-700 disabled:opacity-50"
+                                            >
+                                                {applyingBridge
+                                                    ? 'Applying Bridge...'
+                                                    : 'Apply Bridge & Continue'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <p className="mt-4 text-xs text-slate-400">
+                                    Existing unrelated RouterOS configuration is never removed automatically.
+                                </p>
+                            </section>
+                        ) : (
+                            <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm">
+                                <div className="text-lg font-black text-emerald-800">
+                                    ✓ Hotspot Bridge Ready
+                                </div>
+
+                                <p className="mt-2 text-slate-700">
+                                    Bridge:{' '}
+                                    <span className="font-mono font-bold">
+                                        {activeBridge ||
+                                            'Configured'}
+                                    </span>
+                                </p>
+
+                                <p className="mt-3 text-sm text-slate-600">
+                                    Next: Gateway IP, subnet and Hotspot address pool.
+                                </p>
+
                                 <button
                                     type="button"
                                     disabled
-                                    className="rounded-xl bg-slate-300 px-5 py-3 font-bold text-white"
+                                    className="mt-5 rounded-xl bg-slate-300 px-5 py-3 font-bold text-white"
                                 >
-                                    Next: Create Bridge
+                                    Step 3 — Gateway & Subnet
                                 </button>
-                            </div>
-
-                            {riskySelected.length >
-                                0 && (
-                                <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
-                                    Caution:{' '}
-                                    {riskySelected
-                                        .map(
-                                            (item) =>
-                                                item.name,
-                                        )
-                                        .join(', ')}{' '}
-                                    already has RouterOS configuration.
-                                    Phase 2 will require an explicit safety check before any change.
-                                </div>
-                            )}
-
-                            <p className="mt-4 text-xs text-slate-400">
-                                Phase 1 intentionally does not save or modify bridge configuration.
-                            </p>
-                        </section>
+                            </section>
+                        )}
                     </>
                 )}
             </div>

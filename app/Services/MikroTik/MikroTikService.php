@@ -584,6 +584,22 @@ class MikroTikService
                 );
             }
 
+            /*
+             * HOTSPOT_BRIDGE_SETUP_PHASE2_V2
+             */
+            $bridgesRead =
+                $this->readRowsSafe(
+                    '/interface/bridge/print',
+                    implode(',', [
+                        '.id',
+                        'name',
+                        'disabled',
+                        'comment',
+                        'protocol-mode',
+                        'mac-address',
+                    ])
+                );
+
             $bridgePortsRead =
                 $this->readRowsSafe(
                     '/interface/bridge/port/print',
@@ -766,6 +782,59 @@ class MikroTikService
                         === 'true',
                 ];
             }
+
+            $bridges = [];
+
+            foreach (
+                $bridgesRead['rows'] ?? []
+                as $row
+            ) {
+                $name =
+                    trim(
+                        (string) (
+                            $row['name']
+                            ?? ''
+                        )
+                    );
+
+                if ($name === '') {
+                    continue;
+                }
+
+                $bridges[] = [
+                    'id' =>
+                        $row['.id']
+                        ?? null,
+
+                    'name' =>
+                        $name,
+
+                    'disabled' =>
+                        ($row['disabled'] ?? 'false')
+                        === 'true',
+
+                    'comment' =>
+                        $row['comment']
+                        ?? null,
+
+                    'protocol_mode' =>
+                        $row['protocol-mode']
+                        ?? null,
+
+                    'mac_address' =>
+                        $row['mac-address']
+                        ?? null,
+                ];
+            }
+
+            usort(
+                $bridges,
+                fn (array $a, array $b): int =>
+                    strnatcasecmp(
+                        $a['name'],
+                        $b['name']
+                    )
+            );
 
             /*
              * Build a set of physical/logical interfaces
@@ -1227,6 +1296,9 @@ class MikroTikService
                 'ethernet_interfaces' =>
                     $ethernet,
 
+                'bridges' =>
+                    $bridges,
+
                 /*
                  * Only the count is exposed to the UI.
                  * WAN port names are intentionally not
@@ -1302,6 +1374,492 @@ class MikroTikService
                 'checked_at' =>
                     now()->toISOString(),
             ];
+        }
+    }
+
+    /*
+     * HOTSPOT_BRIDGE_SETUP_PHASE2_V2
+     *
+     * Safe Hotspot bridge setup.
+     *
+     * Important:
+     * - WAN is discovered again before write.
+     * - WAN ports are rejected backend-side.
+     * - Ports are never silently moved from another bridge.
+     * - Existing selected bridge members are no-op.
+     */
+    public function applyHotspotBridge(
+        Router $router,
+        string $mode,
+        string $bridgeName,
+        array $ports
+    ): array {
+        $mode =
+            strtolower(
+                trim($mode)
+            );
+
+        if (
+            !in_array(
+                $mode,
+                [
+                    'existing',
+                    'new',
+                ],
+                true
+            )
+        ) {
+            throw new \RuntimeException(
+                'Invalid bridge setup mode.'
+            );
+        }
+
+        $bridgeName =
+            trim($bridgeName);
+
+        if ($bridgeName === '') {
+            throw new \RuntimeException(
+                'Bridge name is required.'
+            );
+        }
+
+        if (
+            strlen($bridgeName) > 100
+            || preg_match(
+                '/[\x00-\x1F\x7F]/',
+                $bridgeName
+            )
+        ) {
+            throw new \RuntimeException(
+                'Bridge name contains invalid characters.'
+            );
+        }
+
+        $ports =
+            array_values(
+                array_unique(
+                    array_filter(
+                        array_map(
+                            fn ($value) =>
+                                trim(
+                                    (string)
+                                    $value
+                                ),
+                            $ports
+                        ),
+                        fn ($value) =>
+                            $value !== ''
+                    )
+                )
+            );
+
+        if ($ports === []) {
+            throw new \RuntimeException(
+                'Select at least one Hotspot LAN port.'
+            );
+        }
+
+        /*
+         * Fresh RouterOS state immediately before
+         * any configuration write.
+         */
+        $before =
+            $this->hotspotSetupDiscovery(
+                $router
+            );
+
+        if (
+            !(
+                $before['success']
+                ?? false
+            )
+        ) {
+            throw new \RuntimeException(
+                $before['message']
+                ?? 'Unable to inspect MikroTik before bridge setup.'
+            );
+        }
+
+        $selectable = [];
+
+        foreach (
+            $before[
+                'ethernet_interfaces'
+            ] ?? []
+            as $interface
+        ) {
+            $name =
+                $interface['name']
+                ?? null;
+
+            if ($name) {
+                $selectable[
+                    $name
+                ] = $interface;
+            }
+        }
+
+        /*
+         * Detected WAN ports are already excluded
+         * from ethernet_interfaces. Therefore a
+         * submitted WAN interface cannot pass here.
+         */
+        foreach ($ports as $port) {
+            if (
+                !isset(
+                    $selectable[
+                        $port
+                    ]
+                )
+            ) {
+                throw new \RuntimeException(
+                    "Port {$port} is not available for Hotspot bridge use."
+                );
+            }
+
+            if (
+                $selectable[
+                    $port
+                ]['is_wan']
+                ?? false
+            ) {
+                throw new \RuntimeException(
+                    "Port {$port} is an Internet/WAN interface and cannot be used."
+                );
+            }
+        }
+
+        $bridges = [];
+
+        foreach (
+            $before['bridges']
+            ?? []
+            as $bridge
+        ) {
+            $name =
+                $bridge['name']
+                ?? null;
+
+            if ($name) {
+                $bridges[
+                    $name
+                ] = $bridge;
+            }
+        }
+
+        $bridgeExists =
+            isset(
+                $bridges[
+                    $bridgeName
+                ]
+            );
+
+        if (
+            $mode === 'existing'
+            && !$bridgeExists
+        ) {
+            throw new \RuntimeException(
+                "Existing bridge {$bridgeName} was not found."
+            );
+        }
+
+        if (
+            $mode === 'new'
+            && $bridgeExists
+        ) {
+            throw new \RuntimeException(
+                "Bridge {$bridgeName} already exists. Choose Use Existing Bridge."
+            );
+        }
+
+        /*
+         * Never silently steal/move a port.
+         */
+        foreach ($ports as $port) {
+            $currentBridge =
+                $selectable[
+                    $port
+                ]['existing_bridge']
+                ?? null;
+
+            if (
+                $mode === 'existing'
+                && $currentBridge
+                && $currentBridge
+                    !== $bridgeName
+            ) {
+                throw new \RuntimeException(
+                    "Port {$port} already belongs to bridge {$currentBridge}. It was not moved."
+                );
+            }
+
+            if (
+                $mode === 'new'
+                && $currentBridge
+            ) {
+                throw new \RuntimeException(
+                    "Port {$port} already belongs to bridge {$currentBridge}. It was not moved."
+                );
+            }
+        }
+
+        if (!$this->connect($router)) {
+            throw new \RuntimeException(
+                $this->lastError
+                ?? 'Unable to connect to MikroTik API.'
+            );
+        }
+
+        $createdBridge = false;
+        $addedPorts = [];
+
+        try {
+            if ($mode === 'new') {
+                $this->readQuery(
+                    (new Query(
+                        '/interface/bridge/add'
+                    ))
+                        ->equal(
+                            'name',
+                            $bridgeName
+                        )
+                        ->equal(
+                            'comment',
+                            'MikroPanel Hotspot Wizard'
+                        )
+                );
+
+                $createdBridge = true;
+            }
+
+            foreach ($ports as $port) {
+                $currentBridge =
+                    $selectable[
+                        $port
+                    ]['existing_bridge']
+                    ?? null;
+
+                /*
+                 * Already belongs to requested bridge:
+                 * no RouterOS write needed.
+                 */
+                if (
+                    $currentBridge
+                    === $bridgeName
+                ) {
+                    continue;
+                }
+
+                $this->readQuery(
+                    (new Query(
+                        '/interface/bridge/port/add'
+                    ))
+                        ->equal(
+                            'interface',
+                            $port
+                        )
+                        ->equal(
+                            'bridge',
+                            $bridgeName
+                        )
+                        ->equal(
+                            'comment',
+                            'MikroPanel Hotspot Wizard'
+                        )
+                );
+
+                $addedPorts[] =
+                    $port;
+            }
+
+            /*
+             * Verify resulting RouterOS state.
+             */
+            $after =
+                $this->hotspotSetupDiscovery(
+                    $router
+                );
+
+            if (
+                !(
+                    $after['success']
+                    ?? false
+                )
+            ) {
+                throw new \RuntimeException(
+                    'Bridge was applied but RouterOS verification failed.'
+                );
+            }
+
+            $verified = [];
+
+            foreach (
+                $after[
+                    'interfaces'
+                ] ?? []
+                as $interface
+            ) {
+                $name =
+                    $interface['name']
+                    ?? null;
+
+                if (
+                    $name
+                    && in_array(
+                        $name,
+                        $ports,
+                        true
+                    )
+                    && (
+                        $interface[
+                            'existing_bridge'
+                        ] ?? null
+                    ) === $bridgeName
+                ) {
+                    $verified[] =
+                        $name;
+                }
+            }
+
+            sort($verified);
+
+            $expected = $ports;
+            sort($expected);
+
+            if ($verified !== $expected) {
+                throw new \RuntimeException(
+                    'RouterOS bridge verification did not match the selected ports.'
+                );
+            }
+
+            return [
+                'success' => true,
+
+                'bridge' =>
+                    $bridgeName,
+
+                'mode' =>
+                    $mode,
+
+                'ports' =>
+                    $ports,
+
+                'added_ports' =>
+                    $addedPorts,
+
+                'reused_ports' =>
+                    array_values(
+                        array_diff(
+                            $ports,
+                            $addedPorts
+                        )
+                    ),
+            ];
+
+        } catch (Throwable $exception) {
+            /*
+             * Best effort rollback of only changes
+             * introduced by this operation.
+             */
+            foreach (
+                array_reverse(
+                    $addedPorts
+                )
+                as $port
+            ) {
+                try {
+                    $rows =
+                        $this->readRowsSafe(
+                            '/interface/bridge/port/print',
+                            '.id,interface,bridge,comment',
+                            [
+                                'interface',
+                                $port,
+                            ]
+                        );
+
+                    foreach (
+                        $rows['rows']
+                            ?? []
+                        as $row
+                    ) {
+                        if (
+                            ($row['bridge']
+                                ?? null)
+                                !== $bridgeName
+                            || !isset(
+                                $row['.id']
+                            )
+                        ) {
+                            continue;
+                        }
+
+                        $this->readQuery(
+                            (new Query(
+                                '/interface/bridge/port/remove'
+                            ))
+                                ->equal(
+                                    '.id',
+                                    $row['.id']
+                                )
+                        );
+                    }
+
+                } catch (Throwable) {
+                    // Best effort only.
+                }
+            }
+
+            if ($createdBridge) {
+                try {
+                    $rows =
+                        $this->readRowsSafe(
+                            '/interface/bridge/print',
+                            '.id,name',
+                            [
+                                'name',
+                                $bridgeName,
+                            ]
+                        );
+
+                    foreach (
+                        $rows['rows']
+                            ?? []
+                        as $row
+                    ) {
+                        if (
+                            ($row['name']
+                                ?? null)
+                                !== $bridgeName
+                            || !isset(
+                                $row['.id']
+                            )
+                        ) {
+                            continue;
+                        }
+
+                        $this->readQuery(
+                            (new Query(
+                                '/interface/bridge/remove'
+                            ))
+                                ->equal(
+                                    '.id',
+                                    $row['.id']
+                                )
+                        );
+                    }
+
+                } catch (Throwable) {
+                    // Best effort only.
+                }
+            }
+
+            throw new \RuntimeException(
+                'Hotspot bridge setup failed. MikroPanel attempted to roll back only its new changes: '
+                . $exception->getMessage(),
+                0,
+                $exception
+            );
         }
     }
 

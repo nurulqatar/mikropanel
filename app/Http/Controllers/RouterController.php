@@ -458,8 +458,178 @@ class RouterController extends Controller
 
                 'discovery' =>
                     $discovery,
+
+                'wizardStep' =>
+                    max(
+                        1,
+                        min(
+                            9,
+                            (int)
+                            $request->query(
+                                'step',
+                                1
+                            )
+                        )
+                    ),
+
+                'activeBridge' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'bridge',
+                            ''
+                        )
+                    ) ?: null,
             ]
         );
+    }
+
+    /*
+     * HOTSPOT_BRIDGE_SETUP_PHASE2_V2
+     */
+    public function hotspotSetupBridge(
+        Request $request,
+        Router $router,
+        MikroTikService $mikrotik
+    ): RedirectResponse {
+        $router->loadMissing([
+            'zone:id,reseller_id,name,code,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : (
+                    $router->reseller_id
+                        ? (int)
+                            $router
+                                ->reseller_id
+                        : null
+                );
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                abort_unless(
+                    $user->zone_id
+                    && (int)
+                        $user->zone_id
+                        === (int)
+                            $router
+                                ->zone_id,
+                    403
+                );
+            }
+        }
+
+        $data =
+            $request->validate([
+                'mode' => [
+                    'required',
+                    'string',
+                    'in:existing,new',
+                ],
+
+                'bridge_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'ports' => [
+                    'required',
+                    'array',
+                    'min:1',
+                    'max:64',
+                ],
+
+                'ports.*' => [
+                    'required',
+                    'string',
+                    'max:100',
+                    'distinct',
+                ],
+            ]);
+
+        try {
+            $result =
+                $mikrotik
+                    ->applyHotspotBridge(
+                        $router,
+                        $data['mode'],
+                        $data['bridge_name'],
+                        $data['ports']
+                    );
+
+        } catch (Throwable $exception) {
+            return back()
+                ->withInput()
+                ->with(
+                    'error',
+                    $exception
+                        ->getMessage()
+                );
+        }
+
+        return redirect()
+            ->route(
+                'routers.hotspot-setup',
+                [
+                    'router' =>
+                        $router,
+
+                    'step' =>
+                        3,
+
+                    'bridge' =>
+                        $result[
+                            'bridge'
+                        ],
+                ]
+            )
+            ->with(
+                'success',
+                'Hotspot bridge is ready. Continue with Gateway & Subnet.'
+            );
     }
 
     /*
