@@ -432,6 +432,20 @@ function ResellerSidebar({
                     />
                 )}
 
+                {/* HOTSPOT_ROUTER_HEALTH_MENU_V2 */}
+                {hasModule('hotspot')
+                    && can('hotspot.view')
+                    && routeExists(
+                        'hotspot.router-health.index',
+                    ) && (
+                    <ResellerTopLink
+                        label="Router Health"
+                        icon="📡"
+                        routeName="hotspot.router-health.index"
+                        active="hotspot.router-health.*"
+                    />
+                )}
+
                 {macItems.length > 0 && (
                     <ResellerGroup
                         label="MAC Client"

@@ -315,7 +315,7 @@ class RouterController extends Controller
         Request $request,
         Router $router,
         MikroTikService $mikrotik
-    ): Response {
+    ): Response|RedirectResponse {
         $router->loadMissing([
             'zone:id,reseller_id,name,code,service_type',
         ]);
@@ -405,6 +405,75 @@ class RouterController extends Controller
                     'checked_at' =>
                         now()->toISOString(),
                 ];
+
+        /*
+         * HOTSPOT_SMART_IMPORT_REDIRECT_V2
+         *
+         * Existing complete Hotspot:
+         * Setup Hotspot opens Router Health instead
+         * of forcing the setup wizard.
+         *
+         * force_wizard=1 always opens Advanced Setup.
+         */
+        if (
+            !$request->has(
+                'step'
+            )
+            && !$request->boolean(
+                'force_wizard'
+            )
+            && (
+                $discovery[
+                    'success'
+                ] ?? false
+            )
+        ) {
+            $complete =
+                collect(
+                    $discovery[
+                        'hotspot_topologies'
+                    ] ?? []
+                )->first(
+                    function ($row) {
+                        foreach (
+                            [
+                                'interface',
+                                'gateway_cidr',
+                                'pool_name',
+                                'dhcp_server',
+                                'hotspot_server',
+                                'hotspot_profile',
+                                'dns_name',
+                            ]
+                            as $field
+                        ) {
+                            if (
+                                trim(
+                                    (string) (
+                                        $row[$field]
+                                        ?? ''
+                                    )
+                                ) === ''
+                            ) {
+                                return false;
+                            }
+                        }
+
+                        return true;
+                    }
+                );
+
+            if ($complete) {
+                return redirect()
+                    ->route(
+                        'hotspot.router-health.show',
+                        [
+                            'router' =>
+                                $router,
+                        ]
+                    );
+            }
+        }
 
         $activeGateway =
             trim(

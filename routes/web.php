@@ -222,6 +222,69 @@ Route::post(
 );
 
 /*
+ * HOTSPOT_ROUTER_HEALTH_V2
+ */
+Route::get(
+    'router-health',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'index',
+    ]
+)->name(
+    'hotspot.router-health.index'
+);
+
+Route::get(
+    'router-health/{router}',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'show',
+    ]
+)->name(
+    'hotspot.router-health.show'
+);
+
+Route::get(
+    'router-health/{router}/snapshot',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'snapshot',
+    ]
+)->name(
+    'hotspot.router-health.snapshot'
+);
+
+Route::get(
+    'router-health/{router}/live',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'live',
+    ]
+)->name(
+    'hotspot.router-health.live'
+);
+
+Route::post(
+    'router-health/{router}/import',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'import',
+    ]
+)->name(
+    'hotspot.router-health.import'
+);
+
+Route::post(
+    'router-health/{router}/repair',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'repair',
+    ]
+)->name(
+    'hotspot.router-health.repair'
+);
+
+/*
  * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
  */
 Route::get(
