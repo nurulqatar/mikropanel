@@ -18,6 +18,7 @@ use App\Models\Reseller;
 use App\Models\ResellerPlan;
 use App\Models\ResellerNotification;
 use App\Models\Router;
+use App\Services\Reseller\ResellerModuleService;
 use App\Services\Reseller\ResellerUsageService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -28,7 +29,8 @@ class DashboardController extends Controller
 {
     public function __invoke(
         Request $request,
-        ResellerUsageService $usage
+        ResellerUsageService $usage,
+        ResellerModuleService $modules
     ): Response {
         $user =
             $request->user();
@@ -47,6 +49,29 @@ class DashboardController extends Controller
                 ->findOrFail(
                     $user->reseller_id
                 );
+
+        /*
+         * COMPANY_DASHBOARD_MODULE_AWARE_V2
+         */
+        $enabledModules =
+            $modules
+                ->enabledKeysForResellerId(
+                    (int) $reseller->id
+                );
+
+        $hasMacClientModule =
+            in_array(
+                ResellerModuleService::MAC_CLIENT,
+                $enabledModules,
+                true
+            );
+
+        $hasHotspotModule =
+            in_array(
+                ResellerModuleService::HOTSPOT,
+                $enabledModules,
+                true
+            );
 
         /*
          * RESELLER_SELF_UPGRADE_DATA_V1
@@ -432,24 +457,30 @@ class DashboardController extends Controller
 
                 'stats' => [
                     'clients' =>
-                        Client::query()
-                            ->count(),
+                        $hasMacClientModule
+                            ? Client::query()
+                                ->count()
+                            : 0,
 
                     'active_clients' =>
-                        Client::query()
-                            ->where(
-                                'enabled',
-                                true
-                            )
-                            ->count(),
+                        $hasMacClientModule
+                            ? Client::query()
+                                ->where(
+                                    'enabled',
+                                    true
+                                )
+                                ->count()
+                            : 0,
 
                     'online_clients' =>
-                        Client::query()
-                            ->where(
-                                'connected',
-                                true
-                            )
-                            ->count(),
+                        $hasMacClientModule
+                            ? Client::query()
+                                ->where(
+                                    'connected',
+                                    true
+                                )
+                                ->count()
+                            : 0,
 
                     'routers' =>
                         Router::query()
@@ -511,16 +542,20 @@ class DashboardController extends Controller
                         $todayExpense,
 
                     'hotspot_vouchers' =>
-                        HotspotVoucher::query()
-                            ->count(),
+                        $hasHotspotModule
+                            ? HotspotVoucher::query()
+                                ->count()
+                            : 0,
 
                     'online_hotspot' =>
-                        HotspotSession::query()
-                            ->where(
-                                'active',
-                                true
-                            )
-                            ->count(),
+                        $hasHotspotModule
+                            ? HotspotSession::query()
+                                ->where(
+                                    'active',
+                                    true
+                                )
+                                ->count()
+                            : 0,
 
                     'unread_notifications' =>
                         ResellerNotification::query()
@@ -530,7 +565,9 @@ class DashboardController extends Controller
                             ->count(),
                 ],
 
-                'pos' => [
+                'pos' =>
+                    $hasMacClientModule
+                        ? [
                     'can_renew' =>
                         $user->hasPermission(
                             'clients.renew'
@@ -682,10 +719,24 @@ class DashboardController extends Controller
                                 }
                             )
                             ->values(),
-                ],
+                ]
+                        : [
+                            'can_renew' =>
+                                false,
+
+                            'can_receive_payment' =>
+                                false,
+
+                            'clients' =>
+                                collect(),
+
+                            'packages' =>
+                                collect(),
+                        ],
 
                 'recentClients' =>
-                    Client::query()
+                    $hasMacClientModule
+                        ? Client::query()
                         ->with([
                             'package:id,name',
                             'router:id,name',
@@ -701,7 +752,8 @@ class DashboardController extends Controller
                             'expiry_date',
                             'package_id',
                             'router_id',
-                        ]),
+                        ])
+                        : collect(),
 
                 'isOwner' =>
                     $user

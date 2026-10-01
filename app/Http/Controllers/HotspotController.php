@@ -675,8 +675,56 @@ class HotspotController extends Controller
                 $prefix,
                 $quantity,
                 $request,
+                $resellerId,
                 $zone
             ): void {
+                /*
+                 * SHARED_CLIENT_LIMIT_HOTSPOT_GENERATION_V2
+                 *
+                 * The voucher consumes its Company client
+                 * slot at creation time, not first login.
+                 *
+                 * Lock the Company row before checking
+                 * remaining quota so two voucher batches
+                 * cannot reserve the same remaining slots.
+                 */
+                $quotaReseller =
+                    \App\Models\Reseller::query()
+                        ->lockForUpdate()
+                        ->findOrFail(
+                            $resellerId
+                        );
+
+                $quota =
+                    app(
+                        \App\Services\Reseller\ResellerUsageService::class
+                    );
+
+                $remaining =
+                    $quota
+                        ->remainingClientSlots(
+                            $quotaReseller
+                        );
+
+                if (
+                    !$quota->canConsumeClientSlots(
+                        $quotaReseller,
+                        $quantity
+                    )
+                ) {
+                    throw
+                        \Illuminate\Validation\ValidationException::withMessages([
+                            'quantity' =>
+                                $quota->clientUnlimited(
+                                    $quotaReseller
+                                )
+                                    ? 'Company subscription is unavailable.'
+                                    : 'Only '
+                                        . $remaining
+                                        . ' client slot(s) remaining. Reduce voucher quantity or upgrade the package.',
+                        ]);
+                }
+
                 $zoneCode = Str::upper(
                     Str::slug(
                         $zone->code ?: $zone->name,

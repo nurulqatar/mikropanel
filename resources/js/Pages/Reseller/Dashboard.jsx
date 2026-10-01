@@ -71,17 +71,19 @@ export default function Dashboard({
     };
 
     /*
-     * DASHBOARD_MAC_MODULE_QUICK_POS_V1
-     *
-     * Quick Recharge POS is a MAC Client feature.
-     * Hotspot-only companies must never see it.
+     * COMPANY_DASHBOARD_MODULE_AWARE_V2
      */
+    const enabledModules =
+        companyModules.enabled ?? [];
+
     const hasMacClientModule =
-        (
-            companyModules.enabled
-            ?? []
-        ).includes(
+        enabledModules.includes(
             'mac_client',
+        );
+
+    const hasHotspotModule =
+        enabledModules.includes(
+            'hotspot',
         );
 
     return (
@@ -311,22 +313,20 @@ export default function Dashboard({
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         <Stat
                             label="Client Limit"
-                            value={
-                                usage.client_limit
-                            }
+                            value={usage.client_limit}
                         />
 
                         <Stat
                             label="Used Clients"
-                            value={
-                                usage.used_clients
-                            }
+                            value={usage.used_clients}
                         />
 
                         <Stat
                             label="Remaining"
                             value={
-                                usage.remaining_clients
+                                usage.is_unlimited
+                                    ? 'Unlimited'
+                                    : usage.remaining_clients
                             }
                         />
 
@@ -337,18 +337,18 @@ export default function Dashboard({
                             )}`}
                         />
 
-                        <Stat
-                            label="Active Clients"
-                            value={
-                                stats.active_clients
-                            }
-                        />
+                        {hasMacClientModule && (
+                            <Stat
+                                label="Active MAC Clients"
+                                value={
+                                    stats.active_clients
+                                }
+                            />
+                        )}
 
                         <Stat
                             label="Routers"
-                            value={
-                                stats.routers
-                            }
+                            value={stats.routers}
                         />
 
                         <Stat
@@ -369,22 +369,26 @@ export default function Dashboard({
                             label="Total Receivable"
                             value={`QAR ${money(
                                 Number(
-                                    stats.normal_due ??
-                                        0,
-                                ) +
-                                    Number(
-                                        stats.hotspot_due ??
-                                            0,
-                                    ),
+                                    stats.normal_due ?? 0,
+                                )
+                                + Number(
+                                    stats.hotspot_due ?? 0,
+                                ),
                             )}`}
                         />
 
-                        <Stat
-                            label="Seller Receivable"
-                            value={`QAR ${money(
-                                stats.seller_receivable,
-                            )}`}
-                        />
+                        {(hasHotspotModule
+                            || Number(
+                                stats.seller_receivable
+                                ?? 0,
+                            ) > 0) && (
+                            <Stat
+                                label="Seller Receivable"
+                                value={`QAR ${money(
+                                    stats.seller_receivable,
+                                )}`}
+                            />
+                        )}
 
                         <Stat
                             label="Main Credit"
@@ -407,56 +411,116 @@ export default function Dashboard({
                             )}`}
                         />
 
-                        <Stat
-                            label="Hotspot Vouchers"
-                            value={
-                                stats.hotspot_vouchers
-                            }
-                        />
+                        {hasHotspotModule && (
+                            <>
+                                <Stat
+                                    label="Hotspot Vouchers"
+                                    value={
+                                        stats.hotspot_vouchers
+                                    }
+                                />
 
-                        <Stat
-                            label="Hotspot Online"
-                            value={
-                                stats.online_hotspot
-                            }
-                        />
+                                <Stat
+                                    label="Hotspot Online"
+                                    value={
+                                        stats.online_hotspot
+                                    }
+                                />
+                            </>
+                        )}
 
                         <Stat
                             label="Operators"
-                            value={
-                                usage.operators
-                            }
+                            value={usage.operators}
                         />
 
                         <Stat
                             label="Expires"
                             value={
-                                usage.subscription_expires_at ||
-                                '-'
+                                usage.subscription_expires_at
+                                || '-'
                             }
                         />
                     </div>
                 ) : (
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         <Stat
-                            label="Total Clients"
-                            value={stats.clients ?? 0}
+                            label="Used Clients"
+                            value={usage.used_clients}
                         />
 
-                        <Stat
-                            label="Online Clients"
-                            value={stats.online_clients ?? 0}
-                        />
+                        {hasMacClientModule && (
+                            <>
+                                <Stat
+                                    label="MAC Clients"
+                                    value={
+                                        stats.clients ?? 0
+                                    }
+                                />
+
+                                <Stat
+                                    label="Online MAC"
+                                    value={
+                                        stats.online_clients
+                                        ?? 0
+                                    }
+                                />
+                            </>
+                        )}
+
+                        {hasHotspotModule && (
+                            <>
+                                <Stat
+                                    label="Hotspot Vouchers"
+                                    value={
+                                        stats.hotspot_vouchers
+                                        ?? 0
+                                    }
+                                />
+
+                                <Stat
+                                    label="Hotspot Online"
+                                    value={
+                                        stats.online_hotspot
+                                        ?? 0
+                                    }
+                                />
+                            </>
+                        )}
                     </div>
                 )}
 
                 {isOwner && (
                     <section className="rounded-2xl border bg-white p-5 shadow-sm">
                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                            <Quick
-                                routeName="clients.index"
-                                label="Clients"
-                            />
+                            {hasMacClientModule && (
+                                <>
+                                    <Quick
+                                        routeName="clients.index"
+                                        label="Clients"
+                                    />
+
+                                    <Quick
+                                        routeName="packages.index"
+                                        label="Packages"
+                                    />
+
+                                    <Quick
+                                        routeName="ip-ranges.index"
+                                        label="IP Pools"
+                                    />
+
+                                    <Quick
+                                        routeName="invoices.index"
+                                        label="Invoices"
+                                    />
+
+                                    <Quick
+                                        routeName="payments.index"
+                                        label="Payments"
+                                    />
+                                </>
+                            )}
 
                             <Quick
                                 routeName="routers.index"
@@ -464,123 +528,107 @@ export default function Dashboard({
                             />
 
                             <Quick
-                                routeName="packages.index"
-                                label="Packages"
-                            />
-
-                            <Quick
-                                routeName="ip-ranges.index"
-                                label="IP Pools"
-                            />
-
-                            <Quick
-                                routeName="invoices.index"
-                                label="Invoices"
-                            />
-
-                            <Quick
-                                routeName="payments.index"
-                                label="Payments"
-                            />
-
-                            <Quick
                                 routeName="accounting.index"
                                 label="Accounting"
                             />
 
-                            <Quick
-                                routeName="hotspot.index"
-                                label="Hotspot"
-                            />
+                            {hasHotspotModule && (
+                                <Quick
+                                    routeName="hotspot.index"
+                                    label="Hotspot"
+                                />
+                            )}
                         </div>
                     </section>
                 )}
 
-                <section className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
-                    <div className="border-b px-5 py-4 text-lg font-bold">
-                        Recent Clients
-                    </div>
+                {hasMacClientModule && (
+                    <section className="overflow-x-auto rounded-2xl border bg-white shadow-sm">
+                        <div className="border-b px-5 py-4 text-lg font-bold">
+                            Recent Clients
+                        </div>
 
-                    <table className="min-w-full">
-                        <thead className="bg-slate-50">
-                            <tr>
-                                <Th>Client</Th>
-                                <Th>IP</Th>
-                                <Th>Package</Th>
-                                <Th>Router</Th>
-                                <Th>Status</Th>
-                                <Th>Expiry</Th>
-                            </tr>
-                        </thead>
-
-                        <tbody className="divide-y">
-                            {recentClients.map(
-                                (client) => (
-                                    <tr
-                                        key={
-                                            client.id
-                                        }
-                                    >
-                                        <Td>
-                                            <Link
-                                                href={route(
-                                                    'clients.show',
-                                                    client.id,
-                                                )}
-                                                className="font-bold text-cyan-700"
-                                            >
-                                                {
-                                                    client.name
-                                                }
-                                            </Link>
-                                        </Td>
-
-                                        <Td>
-                                            {
-                                                client.ip_address
-                                            }
-                                        </Td>
-
-                                        <Td>
-                                            {client.package
-                                                ?.name ||
-                                                '-'}
-                                        </Td>
-
-                                        <Td>
-                                            {client.router
-                                                ?.name ||
-                                                '-'}
-                                        </Td>
-
-                                        <Td>
-                                            {client.enabled
-                                                ? 'Active'
-                                                : 'Suspended'}
-                                        </Td>
-
-                                        <Td>
-                                            {client.expiry_date ||
-                                                '-'}
-                                        </Td>
-                                    </tr>
-                                ),
-                            )}
-
-                            {recentClients.length ===
-                                0 && (
+                        <table className="min-w-full">
+                            <thead className="bg-slate-50">
                                 <tr>
-                                    <td
-                                        colSpan="6"
-                                        className="p-8 text-center text-slate-400"
-                                    >
-                                        No client yet.
-                                    </td>
+                                    <Th>Client</Th>
+                                    <Th>IP</Th>
+                                    <Th>Package</Th>
+                                    <Th>Router</Th>
+                                    <Th>Status</Th>
+                                    <Th>Expiry</Th>
                                 </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </section>
+                            </thead>
+
+                            <tbody className="divide-y">
+                                {recentClients.map(
+                                    (client) => (
+                                        <tr
+                                            key={
+                                                client.id
+                                            }
+                                        >
+                                            <Td>
+                                                <Link
+                                                    href={route(
+                                                        'clients.show',
+                                                        client.id,
+                                                    )}
+                                                    className="font-bold text-cyan-700"
+                                                >
+                                                    {
+                                                        client.name
+                                                    }
+                                                </Link>
+                                            </Td>
+
+                                            <Td>
+                                                {
+                                                    client.ip_address
+                                                }
+                                            </Td>
+
+                                            <Td>
+                                                {client.package
+                                                    ?.name ||
+                                                    '-'}
+                                            </Td>
+
+                                            <Td>
+                                                {client.router
+                                                    ?.name ||
+                                                    '-'}
+                                            </Td>
+
+                                            <Td>
+                                                {client.enabled
+                                                    ? 'Active'
+                                                    : 'Suspended'}
+                                            </Td>
+
+                                            <Td>
+                                                {client.expiry_date ||
+                                                    '-'}
+                                            </Td>
+                                        </tr>
+                                    ),
+                                )}
+
+                                {recentClients.length ===
+                                    0 && (
+                                    <tr>
+                                        <td
+                                            colSpan="6"
+                                            className="p-8 text-center text-slate-400"
+                                        >
+                                            No client yet.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </section>
+                )}
             </div>
         </AppLayout>
     );

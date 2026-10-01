@@ -12,6 +12,24 @@ use Carbon\Carbon;
 
 class ResellerUsageService
 {
+    /*
+     * SHARED_MAC_HOTSPOT_VOUCHER_LIMIT_V2
+     *
+     * One Company subscription Client Limit is
+     * shared between enabled service modules.
+     *
+     * Used Clients =
+     *   MAC Client records
+     *   + existing Hotspot Voucher records.
+     *
+     * A Hotspot voucher consumes one slot from
+     * the moment the voucher is generated.
+     */
+    public function __construct(
+        private ResellerModuleService $modules
+    ) {
+    }
+
     public function subscription(
         Reseller $reseller
     ): ?ResellerSubscription {
@@ -129,15 +147,107 @@ class ResellerUsageService
             : 0;
     }
 
-    public function usedClientSlots(
+    public function usedMacClientSlots(
         Reseller $reseller
     ): int {
+        if (
+            !$this->modules->enabled(
+                (int) $reseller->id,
+                ResellerModuleService::MAC_CLIENT
+            )
+        ) {
+            return 0;
+        }
+
+        /*
+         * Company subscription quota is all-zone,
+         * even when the current user is an operator
+         * assigned to one Network Zone.
+         */
         return Client::query()
+            ->withoutGlobalScope(
+                \App\Models\Scopes\ZoneScope::class
+            )
             ->where(
                 'reseller_id',
                 $reseller->id
             )
             ->count();
+    }
+
+    public function usedHotspotClientSlots(
+        Reseller $reseller
+    ): int {
+        if (
+            !$this->modules->enabled(
+                (int) $reseller->id,
+                ResellerModuleService::HOTSPOT
+            )
+        ) {
+            return 0;
+        }
+
+        /*
+         * Normal Eloquent query keeps SoftDeletes
+         * active, therefore archived/deleted vouchers
+         * free their Company client slot.
+         *
+         * Remove only operator-zone filtering so the
+         * subscription quota remains Company-wide.
+         */
+        return HotspotVoucher::query()
+            ->withoutGlobalScope(
+                \App\Models\Scopes\HotspotChildZoneScope::class
+            )
+            ->where(
+                'reseller_id',
+                $reseller->id
+            )
+            ->count();
+    }
+
+    public function usedClientSlots(
+        Reseller $reseller
+    ): int {
+        return
+            $this->usedMacClientSlots(
+                $reseller
+            )
+            +
+            $this->usedHotspotClientSlots(
+                $reseller
+            );
+    }
+
+    public function canConsumeClientSlots(
+        Reseller $reseller,
+        int $slots = 1
+    ): bool {
+        $slots = max(
+            1,
+            $slots
+        );
+
+        if (
+            $reseller->status !== 'active'
+            || !$this->subscriptionIsUsable(
+                $reseller
+            )
+        ) {
+            return false;
+        }
+
+        if (
+            $this->clientUnlimited(
+                $reseller
+            )
+        ) {
+            return true;
+        }
+
+        return $this->remainingClientSlots(
+            $reseller
+        ) >= $slots;
     }
 
     public function remainingClientSlots(
@@ -176,13 +286,10 @@ class ResellerUsageService
             return false;
         }
 
-        return $this->clientUnlimited(
-            $reseller
-        )
-            || $this
-                ->remainingClientSlots(
-                    $reseller
-                ) > 0;
+        return $this->canConsumeClientSlots(
+            $reseller,
+            1
+        );
     }
 
     public function snapshot(
@@ -203,10 +310,19 @@ class ResellerUsageService
                 $reseller
             );
 
-        $used =
-            $this->usedClientSlots(
+        $usedMac =
+            $this->usedMacClientSlots(
                 $reseller
             );
+
+        $usedHotspot =
+            $this->usedHotspotClientSlots(
+                $reseller
+            );
+
+        $used =
+            $usedMac
+            + $usedHotspot;
 
         return [
             'client_limit' =>
@@ -217,6 +333,12 @@ class ResellerUsageService
 
             'used_clients' =>
                 $used,
+
+            'used_mac_clients' =>
+                $usedMac,
+
+            'used_hotspot_clients' =>
+                $usedHotspot,
 
             'remaining_clients' =>
                 $unlimited
