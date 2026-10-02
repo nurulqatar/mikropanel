@@ -12,6 +12,9 @@ export default function AppLayout({
     const panelSettings =
         page.props.panelSettings ?? {};
 
+    const companyBranding =
+        page.props.companyBranding ?? {};
+
     const panelNotifications =
         page.props.panelNotifications ?? {
             unread_count: 0,
@@ -19,6 +22,7 @@ export default function AppLayout({
         };
 
     const panelName =
+        companyBranding.panel_name ??
         panelSettings.panel_name ??
         'MikroPanel';
 
@@ -234,8 +238,18 @@ export default function AppLayout({
                                 </Link>
                             )}
 
-                            <div className="hidden max-w-64 truncate font-semibold text-slate-600 sm:block">
-                                {panelName}
+                            <div className="hidden items-center gap-2 sm:flex">
+                                {companyBranding.company_logo_url && (
+                                    <img
+                                        src={companyBranding.company_logo_url}
+                                        alt={panelName}
+                                        className="h-8 max-w-28 object-contain"
+                                    />
+                                )}
+
+                                <div className="max-w-64 truncate font-semibold text-slate-600">
+                                    {panelName}
+                                </div>
                             </div>
                         </div>
                         </div>

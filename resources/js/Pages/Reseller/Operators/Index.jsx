@@ -8,17 +8,80 @@ import {
 
 export default function Index({
     operators = [],
-    permissionOptions = {},
-    limit = 0,
-    remaining = 0,
+    zones = [],
+    permissionOptionsByZone = {},
 }) {
     const form = useForm({
         name: '',
         email: '',
+        zone_id:
+            zones.length === 1
+                ? String(
+                      zones[0].id,
+                  )
+                : '',
         password: '',
         password_confirmation: '',
         permissions: [],
     });
+
+    /*
+     * OPERATOR_MODULE_ZONE_UI_V2
+     */
+    const optionsForZone = (
+        zoneId,
+    ) => {
+        const zone =
+            zones.find(
+                (item) =>
+                    String(item.id)
+                    === String(zoneId),
+            );
+
+        if (!zone) {
+            return {};
+        }
+
+        return (
+            permissionOptionsByZone[
+                zone.service_type
+            ]
+            ?? {}
+        );
+    };
+
+    const permissionOptions =
+        optionsForZone(
+            form.data.zone_id,
+        );
+
+    const changeZone = (
+        zoneId,
+    ) => {
+        const allowed =
+            new Set(
+                Object.keys(
+                    optionsForZone(
+                        zoneId,
+                    ),
+                ),
+            );
+
+        form.setData({
+            ...form.data,
+
+            zone_id:
+                zoneId,
+
+            permissions:
+                form.data.permissions.filter(
+                    (permission) =>
+                        allowed.has(
+                            permission,
+                        ),
+                ),
+        });
+    };
 
     const togglePermission = (
         permission,
@@ -60,12 +123,11 @@ export default function Index({
                     </h1>
 
                     <p className="text-slate-500">
-                        Limit {limit} · Remaining{' '}
-                        {remaining}
+                        No operator limit
                     </p>
                 </div>
 
-                {remaining > 0 && (
+                {(
                     <form
                         onSubmit={(event) => {
                             event.preventDefault();
@@ -113,6 +175,48 @@ export default function Index({
                                     )
                                 }
                             />
+
+                              <label>
+                                  <div className="mb-1 text-sm font-semibold">
+                                      Network Zone
+                                  </div>
+
+                                  <select
+                                      required
+                                      className="w-full rounded-lg border-slate-300"
+                                      value={
+                                          form.data.zone_id
+                                      }
+                                      onChange={(e) =>
+                                          changeZone(
+                                              e.target.value,
+                                          )
+                                      }
+                                  >
+                                      <option value="">
+                                          Select Network Zone
+                                      </option>
+
+                                      {zones.map(
+                                          (zone) => (
+                                              <option
+                                                  key={zone.id}
+                                                  value={zone.id}
+                                              >
+                                                  {zone.name}{' '}
+                                                  —{' '}
+                                                  {zone.service_type.toUpperCase()}
+                                              </option>
+                                          ),
+                                      )}
+                                  </select>
+
+                                  {form.errors.zone_id && (
+                                      <div className="mt-1 text-sm font-semibold text-red-600">
+                                          {form.errors.zone_id}
+                                      </div>
+                                  )}
+                              </label>
 
                             <Input
                                 label="Password"
@@ -191,6 +295,7 @@ export default function Index({
                             <tr>
                                 <Th>Name</Th>
                                 <Th>Email</Th>
+                                <Th>Zone</Th>
                                 <Th>Permissions</Th>
                                 <Th>Status</Th>
                                 <Th>Actions</Th>
@@ -216,6 +321,23 @@ export default function Index({
                                                 operator.email
                                             }
                                         </Td>
+
+                                          <Td>
+                                              <div className="font-semibold">
+                                                  {operator.zone?.name ||
+                                                      '-'}
+                                              </div>
+
+                                              {operator.zone?.service_type && (
+                                                  <div className="text-xs uppercase text-slate-500">
+                                                      {
+                                                          operator
+                                                              .zone
+                                                              .service_type
+                                                      }
+                                                  </div>
+                                              )}
+                                          </Td>
 
                                         <Td>
                                             {
@@ -297,7 +419,7 @@ export default function Index({
                                 0 && (
                                 <tr>
                                     <td
-                                        colSpan="5"
+                                        colSpan="6"
                                         className="p-8 text-center text-slate-400"
                                     >
                                         No operator yet.

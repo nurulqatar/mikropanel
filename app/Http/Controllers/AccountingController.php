@@ -3,9 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Client;
+use App\Models\ClientRefund;
 use App\Models\Expense;
+use App\Models\HotspotInvoice;
+use App\Models\HotspotPayment;
+use App\Models\HotspotSellerCollection;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\NetworkZone;
 use App\Models\Setting;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
@@ -23,6 +28,7 @@ class AccountingController extends Controller
         'full',
         'profit-loss',
         'collections',
+        'refunds',
         'expenses',
         'receivables',
         'transactions',
@@ -32,6 +38,13 @@ class AccountingController extends Controller
     public function index(
         Request $request
     ): Response {
+        /*
+         * ACCOUNTING_ZONE_CONTEXT_V1
+         */
+        $this->prepareAccountingContext(
+            $request
+        );
+
         $range = $this->resolveRange($request);
 
         return Inertia::render(
@@ -43,6 +56,13 @@ class AccountingController extends Controller
     public function print(
         Request $request
     ): View {
+        /*
+         * ACCOUNTING_ZONE_CONTEXT_V1
+         */
+        $this->prepareAccountingContext(
+            $request
+        );
+
         $range = $this->resolveRange($request);
         $report = $this->resolveReport($request);
         $this->authorizeClientReport($report);
@@ -61,6 +81,13 @@ class AccountingController extends Controller
     public function download(
         Request $request
     ) {
+        /*
+         * ACCOUNTING_ZONE_CONTEXT_V1
+         */
+        $this->prepareAccountingContext(
+            $request
+        );
+
         $range = $this->resolveRange($request);
         $report = $this->resolveReport($request);
         $this->authorizeClientReport($report);
@@ -122,25 +149,111 @@ class AccountingController extends Controller
                 $endDate,
             ]);
 
+        $refundQuery =
+            ClientRefund::query()
+                ->whereBetween(
+                    'refund_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                );
+
         $expenseQuery = Expense::query()
+            /*
+             * ACCOUNTING_REJECTED_EXPENSE_EXCLUSION_V5
+             *
+             * Rejected expense requests remain audit
+             * history but are not business cash expense.
+             */
+
+            ->where(
+                'approval_status',
+                '!=',
+                'rejected'
+            )
             ->whereBetween('expense_date', [
                 $startDate,
                 $endDate,
             ]);
 
-        $grossBilled = round(
-            (float) (
-                clone $invoiceQuery
-            )->sum('amount'),
-            2
-        );
+        $normalGrossBilled =
+            round(
+                (float) (
+                    clone $invoiceQuery
+                )->sum(
+                    'amount'
+                ),
+                2
+            );
 
-        $discount = round(
-            (float) (
-                clone $invoiceQuery
-            )->sum('discount'),
-            2
-        );
+        $hotspotGrossBilled =
+            round(
+                (float)
+                HotspotInvoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->whereBetween(
+                        'issue_date',
+                        [
+                            $startDate,
+                            $endDate,
+                        ]
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $grossBilled =
+            round(
+                $normalGrossBilled
+                + $hotspotGrossBilled,
+                2
+            );
+
+        $normalDiscount =
+            round(
+                (float) (
+                    clone $invoiceQuery
+                )->sum(
+                    'discount'
+                ),
+                2
+            );
+
+        $hotspotDiscount =
+            round(
+                (float)
+                HotspotInvoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->whereBetween(
+                        'issue_date',
+                        [
+                            $startDate,
+                            $endDate,
+                        ]
+                    )
+                    ->sum(
+                        'discount'
+                    ),
+                2
+            );
+
+        $discount =
+            round(
+                $normalDiscount
+                + $hotspotDiscount,
+                2
+            );
 
         $netBilled = max(
             0,
@@ -150,12 +263,129 @@ class AccountingController extends Controller
             )
         );
 
-        $collection = round(
-            (float) (
-                clone $paymentQuery
-            )->sum('amount'),
-            2
-        );
+        $normalCollection =
+            round(
+                (float) (
+                    clone $paymentQuery
+                )->sum(
+                    'amount'
+                ),
+                2
+            );
+
+        $directHotspotCollection =
+            round(
+                (float)
+                HotspotPayment::query()
+                    ->whereBetween(
+                        'payment_date',
+                        [
+                            $startDate,
+                            $endDate,
+                        ]
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $sellerCollection =
+            round(
+                (float)
+                HotspotSellerCollection::query()
+                    ->whereDate(
+                        'collected_at',
+                        '>=',
+                        $startDate
+                    )
+                    ->whereDate(
+                        'collected_at',
+                        '<=',
+                        $endDate
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $collection =
+            round(
+                $normalCollection
+                + $directHotspotCollection
+                + $sellerCollection,
+                2
+            );
+
+        /*
+         * Customer has already paid seller vouchers.
+         * Until seller cash is handed to company this
+         * is a seller receivable, not customer due.
+         */
+        $sellerSalesAllTime =
+            (float)
+            HotspotInvoice::query()
+                ->whereNotNull(
+                    'hotspot_seller_id'
+                )
+                ->where(
+                    'invoice_type',
+                    'sale'
+                )
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->selectRaw(
+                    '
+                        COALESCE(
+                            SUM(
+                                amount
+                                - discount
+                            ),
+                            0
+                        ) AS total
+                    '
+                )
+                ->value(
+                    'total'
+                );
+
+        $sellerCollectedAllTime =
+            (float)
+            HotspotSellerCollection::query()
+                ->sum(
+                    'amount'
+                );
+
+        $sellerOutstanding =
+            max(
+                0,
+                round(
+                    $sellerSalesAllTime
+                    - $sellerCollectedAllTime,
+                    2
+                )
+            );
+
+        $refundsTotal =
+            round(
+                (float) (
+                    clone $refundQuery
+                )->sum(
+                    'amount'
+                ),
+                2
+            );
+
+        $netCollection =
+            round(
+                $collection
+                - $refundsTotal,
+                2
+            );
 
         $expensesTotal = round(
             (float) (
@@ -169,34 +399,273 @@ class AccountingController extends Controller
          * Collected money - paid expenses.
          */
         $netProfit = round(
-            $collection - $expensesTotal,
+            $netCollection
+            - $expensesTotal,
             2
         );
 
-        $periodDue = round(
-            (float) (
-                clone $invoiceQuery
-            )->sum('due_amount'),
-            2
-        );
 
-        $currentReceivable = round(
-            (float) Invoice::query()
+        /*
+         * MAIN_ACCOUNT_OPENING_CLOSING_V1
+         *
+         * Opening + Credit - Debit = Closing
+         *
+         * Hotspot seller collections are Main
+         * Account Credit only. They never touch
+         * MAC Manager Cash.
+         */
+        $mainCredit =
+            $collection;
+
+        $mainDebit =
+            round(
+                $refundsTotal
+                + $expensesTotal,
+                2
+            );
+
+        $openingNormalCredit =
+            (float)
+            Payment::query()
+                ->whereDate(
+                    'payment_date',
+                    '<',
+                    $startDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $openingHotspotCredit =
+            (float)
+            HotspotPayment::query()
+                ->whereDate(
+                    'payment_date',
+                    '<',
+                    $startDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $openingSellerCredit =
+            (float)
+            HotspotSellerCollection::query()
+                ->whereDate(
+                    'collected_at',
+                    '<',
+                    $startDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $openingRefund =
+            (float)
+            ClientRefund::query()
+                ->whereDate(
+                    'refund_date',
+                    '<',
+                    $startDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $openingExpense =
+            (float)
+            Expense::query()
+                ->where(
+                    'approval_status',
+                    '!=',
+                    'rejected'
+                )
+                ->whereDate(
+                    'expense_date',
+                    '<',
+                    $startDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $openingBalance =
+            round(
+                $openingNormalCredit
+                + $openingHotspotCredit
+                + $openingSellerCredit
+                - $openingRefund
+                - $openingExpense,
+                2
+            );
+
+        $closingBalance =
+            round(
+                $openingBalance
+                + $mainCredit
+                - $mainDebit,
+                2
+            );
+
+        $normalPeriodDue =
+            round(
+                (float) (
+                    clone $invoiceQuery
+                )->sum(
+                    'due_amount'
+                ),
+                2
+            );
+
+        $hotspotPeriodDue =
+            round(
+                (float)
+                HotspotInvoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->whereBetween(
+                        'issue_date',
+                        [
+                            $startDate,
+                            $endDate,
+                        ]
+                    )
+                    ->sum(
+                        'due_amount'
+                    ),
+                2
+            );
+
+        $sellerPeriodSales =
+            (float)
+            HotspotInvoice::query()
+                ->whereNotNull(
+                    'hotspot_seller_id'
+                )
+                ->where(
+                    'invoice_type',
+                    'sale'
+                )
                 ->where(
                     'status',
                     '!=',
                     'cancelled'
                 )
-                ->where(
-                    'due_amount',
-                    '>',
-                    0
+                ->whereBetween(
+                    'issue_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
                 )
-                ->sum('due_amount'),
-            2
-        );
+                ->selectRaw(
+                    '
+                        COALESCE(
+                            SUM(
+                                amount
+                                - discount
+                            ),
+                            0
+                        ) AS total
+                    '
+                )
+                ->value(
+                    'total'
+                );
 
-        $overdueAmount = round(
+        $sellerPeriodCollected =
+            (float)
+            HotspotSellerCollection::query()
+                ->whereDate(
+                    'collected_at',
+                    '>=',
+                    $startDate
+                )
+                ->whereDate(
+                    'collected_at',
+                    '<=',
+                    $endDate
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $sellerPeriodOutstanding =
+            max(
+                0,
+                round(
+                    $sellerPeriodSales
+                    - $sellerPeriodCollected,
+                    2
+                )
+            );
+
+        $periodDue =
+            round(
+                $normalPeriodDue
+                + $hotspotPeriodDue
+                + $sellerPeriodOutstanding,
+                2
+            );
+
+        $normalCurrentReceivable =
+            round(
+                (float)
+                Invoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->where(
+                        'due_amount',
+                        '>',
+                        0
+                    )
+                    ->sum(
+                        'due_amount'
+                    ),
+                2
+            );
+
+        $hotspotCurrentReceivable =
+            round(
+                (float)
+                HotspotInvoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->where(
+                        'due_amount',
+                        '>',
+                        0
+                    )
+                    ->sum(
+                        'due_amount'
+                    ),
+                2
+            );
+
+        $currentCustomerDue =
+            round(
+                $normalCurrentReceivable
+                + $hotspotCurrentReceivable,
+                2
+            );
+
+        $currentReceivable =
+            round(
+                $currentCustomerDue
+                + $sellerOutstanding,
+                2
+            );
+
+        $normalOverdueAmount =
             (float) Invoice::query()
                 ->where(
                     'status',
@@ -215,19 +684,46 @@ class AccountingController extends Controller
                         'Asia/Qatar'
                     )->toDateString()
                 )
-                ->sum('due_amount'),
-            2
-        );
+                ->sum('due_amount');
 
-        $profitMargin = $collection > 0
-            ? round(
-                (
-                    $netProfit
-                    / $collection
-                ) * 100,
+        $hotspotOverdueAmount =
+            (float) HotspotInvoice::query()
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->where(
+                    'due_amount',
+                    '>',
+                    0
+                )
+                ->whereDate(
+                    'due_date',
+                    '<',
+                    Carbon::today(
+                        'Asia/Qatar'
+                    )->toDateString()
+                )
+                ->sum('due_amount');
+
+        $overdueAmount =
+            round(
+                $normalOverdueAmount
+                + $hotspotOverdueAmount,
                 2
-            )
-            : 0;
+            );
+
+        $profitMargin =
+            $netCollection > 0
+                ? round(
+                    (
+                        $netProfit
+                        / $netCollection
+                    ) * 100,
+                    2
+                )
+                : 0;
 
         $collections =
             $this->collectionRows(
@@ -241,10 +737,18 @@ class AccountingController extends Controller
                 $endDate
             );
 
+        $refunds =
+            $this->refundRows(
+                $startDate,
+                $endDate
+            );
+
         $receivables =
             $this->receivableRows();
 
         return [
+            ...$this->accountingContextProps(),
+
             'company' => [
                 'name' =>
                     Setting::getValue(
@@ -291,8 +795,44 @@ class AccountingController extends Controller
                 'net_billed' =>
                     $netBilled,
 
-                'collection' =>
+                'gross_collection' =>
                     $collection,
+
+                'refunds' =>
+                    $refundsTotal,
+
+                'collection' =>
+                    $netCollection,
+
+                'main_opening' =>
+                    $openingBalance,
+
+                'main_credit' =>
+                    $mainCredit,
+
+                'main_debit' =>
+                    $mainDebit,
+
+                'main_closing' =>
+                    $closingBalance,
+
+
+                'hotspot_billed' =>
+                    round(
+                        $hotspotGrossBilled
+                        - $hotspotDiscount,
+                        2
+                    ),
+
+                'hotspot_collection' =>
+                    round(
+                        $directHotspotCollection
+                        + $sellerCollection,
+                        2
+                    ),
+
+                'seller_outstanding' =>
+                    $sellerOutstanding,
 
                 'expenses' =>
                     $expensesTotal,
@@ -306,6 +846,12 @@ class AccountingController extends Controller
                 'period_due' =>
                     $periodDue,
 
+                'customer_due' =>
+                    $currentCustomerDue,
+
+                'seller_receivable' =>
+                    $sellerOutstanding,
+
                 'current_receivable' =>
                     $currentReceivable,
 
@@ -315,11 +861,54 @@ class AccountingController extends Controller
                 'invoice_count' =>
                     (
                         clone $invoiceQuery
-                    )->count(),
+                    )->count()
+                    +
+                    HotspotInvoice::query()
+                        ->where(
+                            'status',
+                            '!=',
+                            'cancelled'
+                        )
+                        ->whereBetween(
+                            'issue_date',
+                            [
+                                $startDate,
+                                $endDate,
+                            ]
+                        )
+                        ->count(),
 
                 'payment_count' =>
                     (
                         clone $paymentQuery
+                    )->count()
+                    +
+                    HotspotPayment::query()
+                        ->whereBetween(
+                            'payment_date',
+                            [
+                                $startDate,
+                                $endDate,
+                            ]
+                        )
+                        ->count()
+                    +
+                    HotspotSellerCollection::query()
+                        ->whereDate(
+                            'collected_at',
+                            '>=',
+                            $startDate
+                        )
+                        ->whereDate(
+                            'collected_at',
+                            '<=',
+                            $endDate
+                        )
+                        ->count(),
+
+                'refund_count' =>
+                    (
+                        clone $refundQuery
                     )->count(),
 
                 'expense_count' =>
@@ -349,17 +938,14 @@ class AccountingController extends Controller
                     $endDate
                 ),
 
-            'invoiceStatuses' =>
-                $this->invoiceStatusSummary(
-                    $startDate,
-                    $endDate
-                ),
-
             'collections' =>
                 $collections,
 
             'expenses' =>
                 $expenses,
+
+            'refunds' =>
+                $refunds,
 
             'receivables' =>
                 $receivables,
@@ -367,11 +953,17 @@ class AccountingController extends Controller
             'transactions' =>
                 $this->transactionRows(
                     $collections,
-                    $expenses
+                    $expenses,
+                    $refunds,
+                    $openingBalance
                 ),
 
             'clients' =>
-                $this->canViewClientReport()
+                (
+                    request()->query('report')
+                    === 'clients'
+                    && $this->canViewClientReport()
+                )
                     ? $this->clientRows()
                     : [],
 
@@ -387,58 +979,331 @@ class AccountingController extends Controller
         string $startDate,
         string $endDate
     ): Collection {
-        return Payment::query()
+        $normal =
+            Payment::query()
+                ->with([
+                    'client:id,name,client_code,phone',
+                    'invoice:id,invoice_no',
+                ])
+                ->whereBetween(
+                    'payment_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->get()
+                ->map(
+                    function (
+                        Payment $payment
+                    ): array {
+                        return [
+                            'id' =>
+                                'client-'
+                                . $payment->id,
+
+                            'date' =>
+                                $payment
+                                    ->payment_date
+                                    ?->format(
+                                        'Y-m-d'
+                                    ),
+
+                            'client_id' =>
+                                $payment
+                                    ->client_id,
+
+                            'client_name' =>
+                                $payment
+                                    ->client
+                                    ?->name,
+
+                            'client_code' =>
+                                $payment
+                                    ->client
+                                    ?->client_code,
+
+                            'phone' =>
+                                $payment
+                                    ->client
+                                    ?->phone,
+
+                            'invoice_no' =>
+                                $payment
+                                    ->invoice
+                                    ?->invoice_no,
+
+                            'amount' =>
+                                (float)
+                                $payment->amount,
+
+                            'method' =>
+                                $payment
+                                    ->payment_method,
+
+                            'transaction_id' =>
+                                $payment
+                                    ->transaction_id,
+
+                            'notes' =>
+                                $payment->notes,
+                        ];
+                    }
+                );
+
+        $hotspot =
+            HotspotPayment::query()
+                ->with([
+                    'voucher:id,username',
+                    'invoice:id,invoice_no',
+                ])
+                ->whereBetween(
+                    'payment_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->get()
+                ->map(
+                    function (
+                        HotspotPayment $payment
+                    ): array {
+                        return [
+                            'id' =>
+                                'hotspot-'
+                                . $payment->id,
+
+                            'date' =>
+                                $payment
+                                    ->payment_date
+                                    ?->format(
+                                        'Y-m-d'
+                                    ),
+
+                            'client_id' =>
+                                null,
+
+                            'client_name' =>
+                                'Hotspot Voucher',
+
+                            'client_code' =>
+                                $payment
+                                    ->voucher
+                                    ?->username,
+
+                            'phone' =>
+                                null,
+
+                            'invoice_no' =>
+                                $payment
+                                    ->invoice
+                                    ?->invoice_no,
+
+                            'amount' =>
+                                (float)
+                                $payment->amount,
+
+                            'method' =>
+                                $payment
+                                    ->payment_method,
+
+                            'transaction_id' =>
+                                $payment
+                                    ->transaction_id,
+
+                            'notes' =>
+                                $payment->notes,
+                        ];
+                    }
+                );
+
+        $seller =
+            HotspotSellerCollection::query()
+                ->leftJoin(
+                    'hotspot_sellers as seller',
+                    'seller.id',
+                    '=',
+                    'hotspot_seller_collections.hotspot_seller_id'
+                )
+                ->whereDate(
+                    'hotspot_seller_collections.collected_at',
+                    '>=',
+                    $startDate
+                )
+                ->whereDate(
+                    'hotspot_seller_collections.collected_at',
+                    '<=',
+                    $endDate
+                )
+                ->get([
+                    'hotspot_seller_collections.id',
+                    'hotspot_seller_collections.collected_at',
+                    'hotspot_seller_collections.amount',
+                    'hotspot_seller_collections.payment_method',
+                    'hotspot_seller_collections.reference',
+                    'hotspot_seller_collections.notes',
+                    'seller.code as seller_code',
+                    'seller.name as seller_name',
+                ])
+                ->map(
+                    function ($row): array {
+                        return [
+                            'id' =>
+                                'seller-'
+                                . $row->id,
+
+                            'date' =>
+                                Carbon::parse(
+                                    $row
+                                        ->collected_at
+                                )->format(
+                                    'Y-m-d'
+                                ),
+
+                            'client_id' =>
+                                null,
+
+                            'client_name' =>
+                                'Hotspot Seller: '
+                                . (
+                                    $row
+                                        ->seller_name
+                                    ?: 'Seller'
+                                ),
+
+                            'client_code' =>
+                                $row
+                                    ->seller_code,
+
+                            'phone' =>
+                                null,
+
+                            'invoice_no' =>
+                                'Seller Collection',
+
+                            'amount' =>
+                                (float)
+                                $row->amount,
+
+                            'method' =>
+                                $row
+                                    ->payment_method
+                                ?: 'Cash',
+
+                            'transaction_id' =>
+                                $row
+                                    ->reference,
+
+                            'notes' =>
+                                $row->notes,
+                        ];
+                    }
+                );
+
+        return $normal
+            ->concat(
+                $hotspot
+            )
+            ->concat(
+                $seller
+            )
+            ->sortByDesc(
+                fn (array $row): string =>
+                    (
+                        $row['date']
+                        ?? ''
+                    )
+                    . '|'
+                    . (
+                        $row['id']
+                        ?? ''
+                    )
+            )
+            ->values();
+    }
+
+    private function refundRows(
+        string $startDate,
+        string $endDate
+    ): Collection {
+        return ClientRefund::query()
             ->with([
                 'client:id,name,client_code,phone',
                 'invoice:id,invoice_no',
+                'refunder:id,name',
             ])
-            ->whereBetween('payment_date', [
-                $startDate,
-                $endDate,
-            ])
-            ->orderByDesc('payment_date')
+            ->whereBetween(
+                'refund_date',
+                [
+                    $startDate,
+                    $endDate,
+                ]
+            )
+            ->orderByDesc(
+                'refund_date'
+            )
             ->orderByDesc('id')
             ->get()
-            ->map(function (
-                Payment $payment
-            ): array {
-                return [
-                    'id' => $payment->id,
+            ->groupBy(
+                'batch_uuid'
+            )
+            ->map(
+                function ($rows): array {
+                    $first =
+                        $rows->first();
 
-                    'date' =>
-                        $payment->payment_date
-                            ?->format('Y-m-d'),
+                    return [
+                        'id' =>
+                            $first->id,
 
-                    'client_id' =>
-                        $payment->client_id,
+                        'batch_uuid' =>
+                            $first
+                                ->batch_uuid,
 
-                    'client_name' =>
-                        $payment->client?->name,
+                        'date' =>
+                            $first
+                                ->refund_date
+                                ?->format(
+                                    'Y-m-d'
+                                ),
 
-                    'client_code' =>
-                        $payment->client
-                            ?->client_code,
+                        'client_name' =>
+                            $first
+                                ->client
+                                ?->name,
 
-                    'phone' =>
-                        $payment->client?->phone,
+                        'client_code' =>
+                            $first
+                                ->client
+                                ?->client_code,
 
-                    'invoice_no' =>
-                        $payment->invoice
-                            ?->invoice_no,
+                        'invoice_no' =>
+                            $first
+                                ->invoice
+                                ?->invoice_no,
 
-                    'amount' =>
-                        (float) $payment->amount,
+                        'amount' =>
+                            round(
+                                (float)
+                                $rows->sum(
+                                    'amount'
+                                ),
+                                2
+                            ),
 
-                    'method' =>
-                        $payment->payment_method,
+                        'reason' =>
+                            $first
+                                ->reason,
 
-                    'transaction_id' =>
-                        $payment->transaction_id,
-
-                    'notes' =>
-                        $payment->notes,
-                ];
-            });
+                        'refunded_by' =>
+                            $first
+                                ->refunder
+                                ?->name,
+                    ];
+                }
+            )
+            ->values();
     }
 
     private function expenseRows(
@@ -446,6 +1311,11 @@ class AccountingController extends Controller
         string $endDate
     ): Collection {
         return Expense::query()
+            ->where(
+                'approval_status',
+                '!=',
+                'rejected'
+            )
             ->whereBetween('expense_date', [
                 $startDate,
                 $endDate,
@@ -577,33 +1447,51 @@ class AccountingController extends Controller
         string $startDate,
         string $endDate
     ): array {
-        return Payment::query()
-            ->selectRaw(
-                '
-                    payment_method,
-                    COUNT(*) AS transaction_count,
-                    SUM(amount) AS total
-                '
-            )
-            ->whereBetween('payment_date', [
+        return $this
+            ->collectionRows(
                 $startDate,
-                $endDate,
-            ])
-            ->groupBy('payment_method')
-            ->orderByDesc('total')
-            ->get()
-            ->map(fn ($row): array => [
-                'name' =>
-                    $row->payment_method
-                    ?: 'Unknown',
+                $endDate
+            )
+            ->groupBy(
+                fn (array $row): string =>
+                    trim(
+                        (string) (
+                            $row['method']
+                            ?? ''
+                        )
+                    ) !== ''
+                        ? trim(
+                            (string)
+                            $row['method']
+                        )
+                        : 'Unknown'
+            )
+            ->map(
+                function (
+                    Collection $rows,
+                    string $method
+                ): array {
+                    return [
+                        'name' =>
+                            $method,
 
-                'transaction_count' =>
-                    (int) $row
-                        ->transaction_count,
+                        'transaction_count' =>
+                            $rows->count(),
 
-                'total' =>
-                    (float) $row->total,
-            ])
+                        'total' =>
+                            round(
+                                (float)
+                                $rows->sum(
+                                    'amount'
+                                ),
+                                2
+                            ),
+                    ];
+                }
+            )
+            ->sortByDesc(
+                'total'
+            )
             ->values()
             ->all();
     }
@@ -613,6 +1501,11 @@ class AccountingController extends Controller
         string $endDate
     ): array {
         return Expense::query()
+            ->where(
+                'approval_status',
+                '!=',
+                'rejected'
+            )
             ->selectRaw(
                 '
                     category,
@@ -702,115 +1595,324 @@ class AccountingController extends Controller
         Carbon $start,
         Carbon $end
     ): array {
-        $startDate = $start->toDateString();
-        $endDate = $end->toDateString();
+        $startDate =
+            $start->toDateString();
 
-        $collections = Payment::query()
-            ->selectRaw(
-                "
-                    DATE_FORMAT(
-                        payment_date,
-                        '%Y-%m'
-                    ) AS month,
-                    SUM(amount) AS total
-                "
-            )
-            ->whereBetween('payment_date', [
-                $startDate,
-                $endDate,
-            ])
-            ->groupBy('month')
-            ->pluck('total', 'month');
+        $endDate =
+            $end->toDateString();
 
-        $expenses = Expense::query()
-            ->selectRaw(
-                "
-                    DATE_FORMAT(
-                        expense_date,
-                        '%Y-%m'
-                    ) AS month,
-                    SUM(amount) AS total
-                "
-            )
-            ->whereBetween('expense_date', [
-                $startDate,
-                $endDate,
-            ])
-            ->groupBy('month')
-            ->pluck('total', 'month');
+        $normalCollections =
+            Payment::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            payment_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(amount) AS total
+                    "
+                )
+                ->whereBetween(
+                    'payment_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
 
-        $billing = Invoice::query()
-            ->selectRaw(
-                "
-                    DATE_FORMAT(
-                        issue_date,
-                        '%Y-%m'
-                    ) AS month,
-                    SUM(amount - discount) AS total
-                "
-            )
-            ->where(
-                'status',
-                '!=',
-                'cancelled'
-            )
-            ->whereBetween('issue_date', [
-                $startDate,
-                $endDate,
-            ])
-            ->groupBy('month')
-            ->pluck('total', 'month');
+        $hotspotCollections =
+            HotspotPayment::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            payment_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(amount) AS total
+                    "
+                )
+                ->whereBetween(
+                    'payment_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
+
+        $sellerCollections =
+            HotspotSellerCollection::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            collected_at,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(amount) AS total
+                    "
+                )
+                ->whereDate(
+                    'collected_at',
+                    '>=',
+                    $startDate
+                )
+                ->whereDate(
+                    'collected_at',
+                    '<=',
+                    $endDate
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
+
+        $refunds =
+            ClientRefund::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            refund_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(amount) AS total
+                    "
+                )
+                ->whereBetween(
+                    'refund_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
+
+        $expenses =
+            Expense::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            expense_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(amount) AS total
+                    "
+                )
+                ->where(
+                    'approval_status',
+                    '!=',
+                    'rejected'
+                )
+                ->whereBetween(
+                    'expense_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
+
+        $normalBilling =
+            Invoice::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            issue_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(
+                            amount
+                            - discount
+                        ) AS total
+                    "
+                )
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->whereBetween(
+                    'issue_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
+
+        $hotspotBilling =
+            HotspotInvoice::query()
+                ->selectRaw(
+                    "
+                        DATE_FORMAT(
+                            issue_date,
+                            '%Y-%m'
+                        ) AS month,
+                        SUM(
+                            amount
+                            - discount
+                        ) AS total
+                    "
+                )
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->whereBetween(
+                    'issue_date',
+                    [
+                        $startDate,
+                        $endDate,
+                    ]
+                )
+                ->groupBy(
+                    'month'
+                )
+                ->pluck(
+                    'total',
+                    'month'
+                );
 
         $rows = [];
 
-        $cursor = $start
-            ->copy()
-            ->startOfMonth();
+        $cursor =
+            $start
+                ->copy()
+                ->startOfMonth();
 
-        $lastMonth = $end
-            ->copy()
-            ->startOfMonth();
+        $lastMonth =
+            $end
+                ->copy()
+                ->startOfMonth();
 
         while (
-            $cursor->lessThanOrEqualTo(
-                $lastMonth
-            )
+            $cursor
+                ->lessThanOrEqualTo(
+                    $lastMonth
+                )
         ) {
-            $month = $cursor->format(
-                'Y-m'
-            );
+            $month =
+                $cursor->format(
+                    'Y-m'
+                );
 
-            $collected = round(
-                (float) (
-                    $collections[$month]
-                    ?? 0
-                ),
-                2
-            );
+            $grossCollected =
+                round(
+                    (float) (
+                        $normalCollections[
+                            $month
+                        ]
+                        ?? 0
+                    )
+                    +
+                    (float) (
+                        $hotspotCollections[
+                            $month
+                        ]
+                        ?? 0
+                    )
+                    +
+                    (float) (
+                        $sellerCollections[
+                            $month
+                        ]
+                        ?? 0
+                    ),
+                    2
+                );
 
-            $spent = round(
-                (float) (
-                    $expenses[$month]
-                    ?? 0
-                ),
-                2
-            );
+            $refunded =
+                round(
+                    (float) (
+                        $refunds[
+                            $month
+                        ]
+                        ?? 0
+                    ),
+                    2
+                );
+
+            $collected =
+                round(
+                    $grossCollected
+                    - $refunded,
+                    2
+                );
+
+            $spent =
+                round(
+                    (float) (
+                        $expenses[
+                            $month
+                        ]
+                        ?? 0
+                    ),
+                    2
+                );
+
+            $billed =
+                round(
+                    (float) (
+                        $normalBilling[
+                            $month
+                        ]
+                        ?? 0
+                    )
+                    +
+                    (float) (
+                        $hotspotBilling[
+                            $month
+                        ]
+                        ?? 0
+                    ),
+                    2
+                );
 
             $rows[] = [
-                'month' => $month,
+                'month' =>
+                    $month,
 
                 'label' =>
                     $cursor->format(
                         'M Y'
                     ),
 
-                'billed' => round(
-                    (float) (
-                        $billing[$month]
-                        ?? 0
-                    ),
-                    2
-                ),
+                'billed' =>
+                    $billed,
 
                 'collection' =>
                     $collected,
@@ -818,10 +1920,12 @@ class AccountingController extends Controller
                 'expenses' =>
                     $spent,
 
-                'profit' => round(
-                    $collected - $spent,
-                    2
-                ),
+                'profit' =>
+                    round(
+                        $collected
+                        - $spent,
+                        2
+                    ),
             ];
 
             $cursor->addMonth();
@@ -832,61 +1936,84 @@ class AccountingController extends Controller
 
     private function transactionRows(
         Collection $collections,
-        Collection $expenses
+        Collection $expenses,
+        Collection $refunds,
+        float $openingBalance = 0
     ): array {
         $collectionRows =
             $collections->map(
-                function (array $row): array {
+                function (
+                    array $row
+                ): array {
                     return [
                         'sort_key' =>
                             $row['date']
-                            . '-2-'
+                            . '-3-'
                             . str_pad(
-                                (string) $row['id'],
+                                (string)
+                                $row['id'],
                                 10,
                                 '0',
                                 STR_PAD_LEFT
                             ),
 
-                        'id' => $row['id'],
-                        'date' => $row['date'],
-                        'type' => 'collection',
+                        'id' =>
+                            $row['id'],
+
+                        'date' =>
+                            $row['date'],
+
+                        'type' =>
+                            'collection',
 
                         'description' =>
-                            $row['client_name']
+                            $row[
+                                'client_name'
+                            ]
                             ?: 'Client Payment',
 
                         'category' =>
                             $row['method'],
 
                         'reference' =>
-                            $row['invoice_no'],
+                            $row[
+                                'invoice_no'
+                            ],
 
                         'money_in' =>
                             $row['amount'],
 
-                        'money_out' => 0,
+                        'money_out' =>
+                            0,
                     ];
                 }
             );
 
         $expenseRows =
             $expenses->map(
-                function (array $row): array {
+                function (
+                    array $row
+                ): array {
                     return [
                         'sort_key' =>
                             $row['date']
                             . '-1-'
                             . str_pad(
-                                (string) $row['id'],
+                                (string)
+                                $row['id'],
                                 10,
                                 '0',
                                 STR_PAD_LEFT
                             ),
 
-                        'id' => $row['id'],
-                        'date' => $row['date'],
-                        'type' => 'expense',
+                        'id' =>
+                            $row['id'],
+
+                        'date' =>
+                            $row['date'],
+
+                        'type' =>
+                            'expense',
 
                         'description' =>
                             $row['title'],
@@ -897,7 +2024,8 @@ class AccountingController extends Controller
                         'reference' =>
                             $row['method'],
 
-                        'money_in' => 0,
+                        'money_in' =>
+                            0,
 
                         'money_out' =>
                             $row['amount'],
@@ -905,31 +2033,106 @@ class AccountingController extends Controller
                 }
             );
 
-        $runningBalance = 0;
+        $refundRows =
+            $refunds->map(
+                function (
+                    array $row
+                ): array {
+                    return [
+                        'sort_key' =>
+                            $row['date']
+                            . '-2-'
+                            . str_pad(
+                                (string)
+                                $row['id'],
+                                10,
+                                '0',
+                                STR_PAD_LEFT
+                            ),
+
+                        'id' =>
+                            $row['id'],
+
+                        'date' =>
+                            $row['date'],
+
+                        'type' =>
+                            'refund',
+
+                        'description' =>
+                            'Client Refund - '
+                            . (
+                                $row[
+                                    'client_name'
+                                ]
+                                ?: 'MAC Client'
+                            ),
+
+                        'category' =>
+                            'Refund',
+
+                        'reference' =>
+                            $row[
+                                'invoice_no'
+                            ],
+
+                        'money_in' =>
+                            0,
+
+                        'money_out' =>
+                            $row['amount'],
+                    ];
+                }
+            );
+
+        $runningBalance =
+            round(
+                $openingBalance,
+                2
+            );
 
         return $collectionRows
-            ->concat($expenseRows)
-            ->sortBy('sort_key')
+            ->concat(
+                $expenseRows
+            )
+            ->concat(
+                $refundRows
+            )
+            ->sortBy(
+                'sort_key'
+            )
             ->values()
-            ->map(function (
-                array $row
-            ) use (
-                &$runningBalance
-            ): array {
-                $runningBalance +=
-                    (float) $row['money_in']
-                    - (float) $row['money_out'];
+            ->map(
+                function (
+                    array $row
+                ) use (
+                    &$runningBalance
+                ): array {
+                    $runningBalance +=
+                        (float)
+                        $row[
+                            'money_in'
+                        ]
+                        - (float)
+                        $row[
+                            'money_out'
+                        ];
 
-                unset($row['sort_key']);
-
-                $row['balance'] =
-                    round(
-                        $runningBalance,
-                        2
+                    unset(
+                        $row[
+                            'sort_key'
+                        ]
                     );
 
-                return $row;
-            })
+                    $row['balance'] =
+                        round(
+                            $runningBalance,
+                            2
+                        );
+
+                    return $row;
+                }
+            )
             ->reverse()
             ->values()
             ->all();
@@ -946,9 +2149,14 @@ class AccountingController extends Controller
             ->withCount([
                 'invoices',
                 'payments',
+                'refunds',
             ])
             ->withSum(
-                'payments as total_paid',
+                'payments as gross_paid',
+                'amount'
+            )
+            ->withSum(
+                'refunds as total_refunded',
                 'amount'
             )
             ->withSum(
@@ -1067,13 +2275,65 @@ class AccountingController extends Controller
                             ?? 0
                         ),
 
-                    'total_paid' =>
+                    'refund_count' =>
+                        (int) (
+                            $client->refunds_count
+                            ?? 0
+                        ),
+
+                    'gross_paid' =>
                         round(
                             (float) (
-                                $client->total_paid
+                                $client->gross_paid
                                 ?? 0
                             ),
                             2
+                        ),
+
+                    'total_refunded' =>
+                        round(
+                            (float) (
+                                $client->total_refunded
+                                ?? 0
+                            ),
+                            2
+                        ),
+
+                    /*
+                     * Keep total_paid compatible with
+                     * old reports, but make it the
+                     * real cash retained after refund.
+                     */
+                    'total_paid' =>
+                        max(
+                            0,
+                            round(
+                                (float) (
+                                    $client->gross_paid
+                                    ?? 0
+                                )
+                                - (float) (
+                                    $client->total_refunded
+                                    ?? 0
+                                ),
+                                2
+                            )
+                        ),
+
+                    'net_paid' =>
+                        max(
+                            0,
+                            round(
+                                (float) (
+                                    $client->gross_paid
+                                    ?? 0
+                                )
+                                - (float) (
+                                    $client->total_refunded
+                                    ?? 0
+                                ),
+                                2
+                            )
                         ),
 
                     'total_due' =>
@@ -1146,9 +2406,265 @@ class AccountingController extends Controller
         }
     }
 
+    private function prepareAccountingContext(
+        Request $request
+    ): void {
+        $request
+            ->attributes
+            ->remove(
+                'accounting_zone_id'
+            );
+
+        $user =
+            $request->user();
+
+        if (
+            !$user
+            || !$user->reseller_id
+        ) {
+            return;
+        }
+
+        /*
+         * Normal operator uses the assigned zone
+         * through the existing ZoneScope.
+         */
+        /*
+         * ACCOUNTING_MANAGER_ROLE_FIX_V4
+         *
+         * Manager uses operator as the base role,
+         * but must not inherit normal Operator
+         * single-zone Accounting restrictions.
+         */
+        if (
+            $user->isOperator()
+            && !$user->isManager()
+        ) {
+            return;
+        }
+
+        if (
+            !$user->isResellerOwner()
+            && !$user->isManager()
+        ) {
+            return;
+        }
+
+        $raw =
+            $request->input(
+                'zone_id'
+            );
+
+        /*
+         * Empty zone means all reseller zones.
+         */
+        if (
+            $raw === null
+            || $raw === ''
+            || $raw === 'all'
+        ) {
+            return;
+        }
+
+        $validated =
+            $request->validate([
+                'zone_id' => [
+                    'required',
+                    'integer',
+                ],
+            ]);
+
+        $zone =
+            NetworkZone::query()
+                ->where(
+                    'id',
+                    $validated['zone_id']
+                )
+                ->where(
+                    'reseller_id',
+                    $user->reseller_id
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->first();
+
+        if (!$zone) {
+            throw ValidationException::withMessages([
+                'zone_id' =>
+                    'Selected Network Zone is invalid.',
+            ]);
+        }
+
+        $request
+            ->attributes
+            ->set(
+                'accounting_zone_id',
+                (int)
+                $zone->id
+            );
+    }
+
+    private function accountingContextProps(): array
+    {
+        $user =
+            request()->user();
+
+        $locked =
+            (bool) (
+                $user
+                && $user->reseller_id
+                && $user->isOperator()
+                && !$user->isManager()
+            );
+
+        $canChoose =
+            (bool) (
+                $user
+                && $user->reseller_id
+                && (
+                    $user->isResellerOwner()
+                    || $user->isManager()
+                )
+            );
+
+        $selected =
+            request()
+                ->attributes
+                ->get(
+                    'accounting_zone_id'
+                );
+
+        $zones = [];
+
+        if ($canChoose) {
+            $zones =
+                NetworkZone::query()
+                    ->where(
+                        'reseller_id',
+                        $user->reseller_id
+                    )
+                    ->where(
+                        'enabled',
+                        true
+                    )
+                    ->orderBy(
+                        'service_type'
+                    )
+                    ->orderBy(
+                        'name'
+                    )
+                    ->get([
+                        'id',
+                        'name',
+                        'service_type',
+                    ])
+                    ->map(
+                        function (
+                            NetworkZone $zone
+                        ): array {
+                            return [
+                                'id' =>
+                                    $zone->id,
+
+                                'name' =>
+                                    $zone->name,
+
+                                'service_type' =>
+                                    $zone->service_type,
+                            ];
+                        }
+                    )
+                    ->values()
+                    ->all();
+        }
+
+        $scopeLabel =
+            'All Zones';
+
+        if ($locked) {
+            $scopeLabel =
+                'Assigned Zone';
+        } elseif ($selected) {
+            foreach ($zones as $zone) {
+                if (
+                    (int)
+                    $zone['id']
+                    === (int)
+                    $selected
+                ) {
+                    $scopeLabel =
+                        $zone['name'];
+
+                    break;
+                }
+            }
+        }
+
+        return [
+            'accountingZones' =>
+                $zones,
+
+            'selectedZoneId' =>
+                $selected,
+
+            'accountingLockedToToday' =>
+                $locked,
+
+            'accountingScopeLabel' =>
+                $scopeLabel,
+        ];
+    }
+
     private function resolveRange(
         Request $request
     ): array {
+        /*
+         * OPERATOR_ACCOUNTING_TODAY_V1
+         *
+         * Normal reseller operators can only
+         * see today's accounting for the zone
+         * assigned to their account.
+         */
+        $user =
+            $request->user();
+
+        if (
+            $user
+            && $user->reseller_id
+            && $user->isOperator()
+            && !$user->isManager()
+        ) {
+            $today =
+                Carbon::today(
+                    'Asia/Qatar'
+                );
+
+            return [
+                'preset' =>
+                    'today',
+
+                'start' =>
+                    $today
+                        ->copy()
+                        ->startOfDay(),
+
+                'end' =>
+                    $today
+                        ->copy()
+                        ->endOfDay(),
+
+                'label' =>
+                    'Today · '
+                    . $today
+                        ->format(
+                            'd M Y'
+                        ),
+            ];
+        }
+
+
         $data = $request->validate([
             'preset' => [
                 'nullable',
@@ -1283,6 +2799,7 @@ class AccountingController extends Controller
 
             'collections' =>
                 'Collection Report',
+            'refunds' => 'Cash Refund Report',
 
             'expenses' =>
                 'Expense Report',

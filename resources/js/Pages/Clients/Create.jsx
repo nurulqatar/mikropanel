@@ -1,6 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
 import ClientCustomFieldsForm from '@/Components/Clients/ClientCustomFieldsForm';
+import ClientIdentityFields from '@/Components/Clients/ClientIdentityFields';
 
 export default function Create({
     routers,
@@ -16,11 +17,30 @@ export default function Create({
         errors,
     } = useForm({
         custom_fields: {},
-        ip_range_id: '',
         package_id: '',
         name: '',
         mac_address: '',
         phone: '',
+        identity_type: '',
+        identity_number: '',
+        identity_barcode: '',
+        nationality: '',
+        date_of_birth: '',
+        gender: '',
+        document_expiry_date: '',
+        qatar_id_number: '',
+        qatar_id_expiry_date: '',
+        occupation: '',
+        passport_number: '',
+        passport_expiry_date: '',
+        document_serial_number: '',
+        residency_type: '',
+        employer: '',
+        place_of_birth: '',
+        qatar_id_front_scan_token: '',
+        qatar_id_back_scan_token: '',
+        passport_scan_token: '',
+
 
         connection_payment_status:
             canReceivePayment
@@ -65,47 +85,6 @@ export default function Create({
                     onSubmit={submit}
                     className="space-y-6"
                 >
-
-
-
-                    <section className="rounded-xl bg-white p-6 shadow">
-                        <h2 className="mb-5 text-xl font-bold text-slate-800">
-                            Network Configuration
-                        </h2>
-
-                        <div className="grid gap-5 md:grid-cols-2">
-<Field
-                                label="IP Pool"
-                                error={errors.ip_range_id}
-                            >
-                                <select
-                                    value={data.ip_range_id}
-                                    onChange={(event) =>
-                                        setData(
-                                            'ip_range_id',
-                                            event.target.value,
-                                        )
-                                    }
-                                    className={inputClass}
-                                >
-                                    <option value="">
-                                        Select IP Pool
-                                    </option>
-
-                                    {ipRanges.map(
-                                        (range) => (
-                                            <option
-                                                key={range.id}
-                                                value={range.id}
-                                            >
-                                                {range.name}
-                                            </option>
-                                        ),
-                                    )}
-                                </select>
-                            </Field>
-                        </div>
-                    </section>
 
                     <section className="rounded-xl bg-white p-6 shadow">
                         <h2 className="mb-5 text-xl font-bold text-slate-800">
@@ -155,6 +134,9 @@ export default function Create({
                                             value={pkg.id}
                                         >
                                             {pkg.name}
+                                            {pkg.zone?.name
+                                                ? ` · ${pkg.zone.name}`
+                                                : ''}
                                         </option>
                                     ))}
                                 </select>
@@ -388,6 +370,12 @@ export default function Create({
                     </section>
 
                     {/* CLIENT_CUSTOM_FIELDS_CREATE */}
+                                        <ClientIdentityFields
+                                            data={data}
+                                            setData={setData}
+                                            errors={errors}
+                                        />
+
                                         <ClientCustomFieldsForm
                                             values={data.custom_fields || {}}
                                             onChange={(values) =>

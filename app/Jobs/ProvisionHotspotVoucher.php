@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\HotspotVoucher;
-use App\Services\Hotspot\HotspotRouterService;
+use App\Services\Hotspot\HotspotZoneVoucherService;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -19,14 +19,12 @@ class ProvisionHotspotVoucher implements
     public int $tries = 2;
     public int $timeout = 60;
     public int $backoff = 5;
-    public int $uniqueFor = 120;
+    public int $uniqueFor = 3600;
 
     public function __construct(
         public int $voucherId
     ) {
-        $this->onQueue(
-            'router-sync'
-        );
+        $this->onQueue('router-sync');
     }
 
     public function uniqueId(): string
@@ -35,51 +33,33 @@ class ProvisionHotspotVoucher implements
     }
 
     public function handle(
-        HotspotRouterService $service
+        HotspotZoneVoucherService $service
     ): void {
-        $voucher =
-            HotspotVoucher::query()
-                ->find(
-                    $this->voucherId
-                );
+        $voucher = HotspotVoucher::query()
+            ->find($this->voucherId);
 
         if (
             !$voucher
-            || !$voucher->sold_at
             || !in_array(
                 $voucher->status,
-                [
-                    'unused',
-                    'active',
-                ],
+                ['unused', 'active'],
                 true
             )
         ) {
             return;
         }
 
-        $id =
-            $service->provisionVoucher(
-                $voucher
-            );
-
-        $voucher->forceFill([
-            'mikrotik_user_id' =>
-                $id,
-        ])->save();
+        $service->provisionVoucher($voucher);
     }
 
     public function failed(
         Throwable $exception
     ): void {
         Log::error(
-            'Hotspot voucher provisioning failed.',
+            'Hotspot zone voucher provisioning failed.',
             [
-                'voucher_id' =>
-                    $this->voucherId,
-
-                'message' =>
-                    $exception->getMessage(),
+                'voucher_id' => $this->voucherId,
+                'message' => $exception->getMessage(),
             ]
         );
     }

@@ -5,7 +5,7 @@ import {
     useForm,
 } from '@inertiajs/react';
 
-export default function Edit({ package: pkg }) {
+export default function Edit({ package: pkg, zones = [] }) {
     const {
         data,
         setData,
@@ -13,12 +13,20 @@ export default function Edit({ package: pkg }) {
         processing,
         errors,
     } = useForm({
+        zone_id:
+            pkg.zone_id
+            ?? (
+                zones.length === 1
+                    ? zones[0].id
+                    : ''
+            ),
         name: pkg.name ?? '',
         price: pkg.price ?? '',
         validity_days: pkg.validity_days ?? 30,
         speed_download: pkg.speed_download ?? '',
         speed_upload: pkg.speed_upload ?? '',
         mikrotik_profile: pkg.mikrotik_profile ?? '',
+        coverage_mode: pkg.coverage_mode ?? 'home_zone',
         enabled: Boolean(pkg.enabled),
     });
 
@@ -50,12 +58,78 @@ export default function Edit({ package: pkg }) {
                     onSubmit={submit}
                     className="space-y-6"
                 >
+
+                            {/* PACKAGE_ROAMING_COVERAGE_UI_V1 */}
+                            <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+                                <label className="block text-sm font-bold text-slate-800">
+                                    Internet Coverage
+                                </label>
+
+                                <select
+                                    value={data.coverage_mode}
+                                    onChange={(event) =>
+                                        setData(
+                                            'coverage_mode',
+                                            event.target.value,
+                                        )
+                                    }
+                                    className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 focus:border-cyan-500 focus:ring-cyan-500"
+                                >
+                                    <option value="home_zone">
+                                        This Zone Only
+                                    </option>
+
+                                    <option value="all_zones">
+                                        All Reseller MAC Zones
+                                    </option>
+                                </select>
+
+                                <p className="mt-2 text-xs leading-5 text-slate-600">
+                                    Billing, payment, refund and accounting remain in the selected package Network Zone. All Zones changes internet access only.
+                                </p>
+
+                                {errors.coverage_mode && (
+                                    <div className="mt-1 text-sm font-semibold text-red-600">
+                                        {errors.coverage_mode}
+                                    </div>
+                                )}
+                            </div>
+
                     <section className="rounded-2xl bg-white p-6 shadow">
                         <h2 className="mb-5 text-xl font-bold text-slate-800">
                             Package Information
                         </h2>
 
                         <div className="grid gap-5 md:grid-cols-2">
+                            <Field
+                                label="Network Zone"
+                                error={errors.zone_id}
+                            >
+                                <select
+                                    value={data.zone_id}
+                                    onChange={(event) =>
+                                        setData(
+                                            'zone_id',
+                                            event.target.value,
+                                        )
+                                    }
+                                    className={inputClass}
+                                >
+                                    <option value="">
+                                        Select MAC Network Zone
+                                    </option>
+
+                                    {zones.map((zone) => (
+                                        <option
+                                            key={zone.id}
+                                            value={zone.id}
+                                        >
+                                            {zone.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </Field>
+
                             <Field
                                 label="Package Name"
                                 error={errors.name}
@@ -137,7 +211,7 @@ export default function Edit({ package: pkg }) {
                         </h2>
 
                         <p className="mb-5 text-sm text-slate-500">
-                            শুধু number লিখুন। MikroTik Queue-তে M automatic যোগ হবে।
+                            Enter numbers only. "M" will be added automatically in the MikroTik Queue.
                         </p>
 
                         <div className="grid gap-5 md:grid-cols-2">
@@ -204,9 +278,9 @@ export default function Edit({ package: pkg }) {
                     </label>
 
                     <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                        Package speed পরিবর্তন করলে existing client-এর
-                        MikroTik Queue সঙ্গে সঙ্গে পরিবর্তন হবে না।
-                        Client Edit করে Update করলে নতুন speed apply হবে।
+                        Changing the package speed will not immediately update an existing client's
+                        MikroTik Queue.
+                        Edit the client and click Update to apply the new speed.
                     </div>
 
                     <div className="flex flex-wrap gap-3">

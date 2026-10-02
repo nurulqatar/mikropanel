@@ -158,6 +158,20 @@ function RouterCard({
                                 : ' • API'}
                         </p>
 
+                        <p className="mt-2 text-sm font-semibold text-cyan-700">
+                            Zone:{' '}
+                            <span>
+                                {item.zone?.name ||
+                                    'Unassigned'}
+                            </span>
+                            {item.zone?.service_type
+                                ? ` • ${item.zone.service_type.toUpperCase()}`
+                                : ''}
+                            {item.zone?.code
+                                ? ` • ${item.zone.code}`
+                                : ''}
+                        </p>
+
                         <p className="mt-1 text-xs text-slate-500">
                             Client Interface:{' '}
                             <span className="font-mono">
@@ -214,6 +228,45 @@ function RouterCard({
                             ? 'Syncing...'
                             : 'MikroTik Sync'}
                     </button>
+
+                    {/* RESELLER_ROUTER_WIREGUARD_V1 */}
+                    <Link
+                        href={route(
+                            'routers.wireguard.show',
+                            item.id,
+                        )}
+                        className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700"
+                    >
+                        WireGuard VPN
+                    </Link>
+
+                    {/* HOTSPOT_ROUTER_SETUP_WIZARD_PHASE1_V1 */}
+                    {item.zone?.service_type ===
+                        'hotspot' && (
+                        <Link
+                            href={route(
+                                'routers.hotspot-setup',
+                                item.id,
+                            )}
+                            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                        >
+                            Setup Hotspot
+                        </Link>
+                    )}
+
+                    {/* MAIN_HOTSPOT_PORTAL_PACKAGE_V1 */}
+                    {item.zone?.service_type ===
+                        'hotspot' && (
+                        <a
+                            href={route(
+                                'routers.hotspot-portal.download',
+                                item.id,
+                            )}
+                            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                        >
+                            Download Hotspot Portal
+                        </a>
+                    )}
 
                     <Link
                         href={route(

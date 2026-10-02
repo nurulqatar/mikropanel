@@ -11,6 +11,7 @@ use App\Models\Payment;
 use App\Models\Setting;
 use App\Models\ClientMonthlyUsage;
 use App\Models\IpRange;
+use App\Models\NetworkZone;
 use App\Models\Package;
 use App\Models\Router;
 use App\Services\ClientProvisionService;
@@ -28,8 +29,24 @@ class ClientController extends Controller
 {
     public function index(): Response
     {
-        return Inertia::render('Clients/Index', [
-            'clients' => Client::query()
+        /*
+         * CLIENT_FAMILY_LIST_V1
+         *
+         * Database:
+         *   1 Client row = 1 physical device.
+         *
+         * Clients page:
+         *   1 primary Client = 1 customer.
+         *   Additional-device rows are shown inside
+         *   that customer's device list instead of
+         *   appearing as separate customers.
+         *
+         * Reseller quota is intentionally NOT changed:
+         * every physical device row still consumes
+         * one client slot.
+         */
+        $deviceRows =
+            Client::query()
                 ->with([
                     'router',
                     'package',
@@ -39,18 +56,305 @@ class ClientController extends Controller
                     [
                         'invoices as total_due' =>
                             function ($query) {
-                                $query->where(
-                                    'status',
-                                    '!=',
-                                    'cancelled'
-                                );
+                                $query
+                                    ->whereNotIn(
+                                        'status',
+                                        [
+                                            'cancelled',
+                                            'refunded',
+                                        ]
+                                    );
                             },
                     ],
                     'due_amount'
                 )
-                ->latest()
-                ->get(),
-        ]);
+                ->latest('id')
+                ->get();
+
+        $clients =
+            $deviceRows
+                ->whereNull(
+                    'parent_client_id'
+                )
+                ->map(
+                    function (
+                        Client $primary
+                    ) use (
+                        $deviceRows
+                    ): array {
+                        $devices =
+                            $deviceRows
+                                ->filter(
+                                    fn (
+                                        Client $device
+                                    ): bool =>
+                                        (int) $device->id
+                                        ===
+                                        (int) $primary->id
+                                        ||
+                                        (int) (
+                                            $device
+                                                ->parent_client_id
+                                            ?? 0
+                                        )
+                                        ===
+                                        (int) $primary->id
+                                )
+                                ->sortBy(
+                                    function (
+                                        Client $device
+                                    ): string {
+                                        return
+                                            (
+                                                $device
+                                                    ->parent_client_id
+                                                ? '1-'
+                                                : '0-'
+                                            )
+                                            . str_pad(
+                                                (string)
+                                                $device->id,
+                                                12,
+                                                '0',
+                                                STR_PAD_LEFT
+                                            );
+                                    }
+                                )
+                                ->values();
+
+                        $accountDue =
+                            round(
+                                (float)
+                                $devices->sum(
+                                    fn (
+                                        Client $device
+                                    ): float =>
+                                        (float) (
+                                            $device
+                                                ->total_due
+                                            ?? 0
+                                        )
+                                ),
+                                2
+                            );
+
+                        /*
+                         * Clients page can receive due
+                         * against the actual device that
+                         * owns the due invoice.
+                         */
+                        $dueDevice =
+                            $devices->first(
+                                fn (
+                                    Client $device
+                                ): bool =>
+                                    round(
+                                        (float) (
+                                            $device
+                                                ->total_due
+                                            ?? 0
+                                        ),
+                                        2
+                                    ) > 0
+                            );
+
+                        $payload =
+                            $primary->toArray();
+
+                        $payload[
+                            'total_due'
+                        ] =
+                            $accountDue;
+
+                        $payload[
+                            'device_count'
+                        ] =
+                            $devices->count();
+
+                        $payload[
+                            'additional_device_count'
+                        ] =
+                            max(
+                                0,
+                                $devices->count()
+                                - 1
+                            );
+
+                        $payload[
+                            'payment_client_id'
+                        ] =
+                            (int) (
+                                $dueDevice
+                                    ?->id
+                                ?? $primary->id
+                            );
+
+                        $payload[
+                            'payment_due'
+                        ] =
+                            round(
+                                (float) (
+                                    $dueDevice
+                                        ?->total_due
+                                    ?? 0
+                                ),
+                                2
+                            );
+
+                        $payload[
+                            'devices'
+                        ] =
+                            $devices
+                                ->map(
+                                    function (
+                                        Client $device
+                                    ): array {
+                                        return [
+                                            'id' =>
+                                                (int)
+                                                $device->id,
+
+                                            'client_code' =>
+                                                $device
+                                                    ->client_code,
+
+                                            'parent_client_id' =>
+                                                $device
+                                                    ->parent_client_id,
+
+                                            'device_label' =>
+                                                !$device
+                                                    ->parent_client_id
+                                                    ? 'Main Device'
+                                                    : (
+                                                        $device
+                                                            ->device_label
+                                                        ?: 'Device #'
+                                                            . $device->id
+                                                    ),
+
+                                            'mac_address' =>
+                                                $device
+                                                    ->active_mac_address
+                                                ?: $device
+                                                    ->mac_address,
+
+                                            'ip_address' =>
+                                                $device
+                                                    ->ip_address,
+
+                                            'expiry_date' =>
+                                                $device
+                                                    ->expiry_date
+                                                    ?->format(
+                                                        'Y-m-d'
+                                                    ),
+
+                                            'enabled' =>
+                                                (bool)
+                                                $device
+                                                    ->enabled,
+
+                                            'connected' =>
+                                                (bool)
+                                                $device
+                                                    ->connected,
+
+                                            'total_due' =>
+                                                round(
+                                                    (float) (
+                                                        $device
+                                                            ->total_due
+                                                        ?? 0
+                                                    ),
+                                                    2
+                                                ),
+
+                                            'package' =>
+                                                $device
+                                                    ->package
+                                                ? [
+                                                    'id' =>
+                                                        $device
+                                                            ->package
+                                                            ->id,
+
+                                                    'name' =>
+                                                        $device
+                                                            ->package
+                                                            ->name,
+
+                                                    'price' =>
+                                                        (float)
+                                                        $device
+                                                            ->package
+                                                            ->price,
+
+                                                    'validity_days' =>
+                                                        (int)
+                                                        $device
+                                                            ->package
+                                                            ->validity_days,
+                                                ]
+                                                : null,
+                                        ];
+                                    }
+                                )
+                                ->values()
+                                ->all();
+
+                        /*
+                         * Searching any child MAC, IP,
+                         * code or label must find the
+                         * primary customer row.
+                         */
+                        $payload[
+                            'searchable_text'
+                        ] =
+                            $devices
+                                ->flatMap(
+                                    function (
+                                        Client $device
+                                    ): array {
+                                        return [
+                                            $device->name,
+                                            $device->client_code,
+                                            $device->device_label,
+                                            $device->mac_address,
+                                            $device->active_mac_address,
+                                            $device->ip_address,
+                                            $device->phone,
+                                            $device->identity_number,
+                                            $device->identity_barcode,
+                                            $device->qatar_id_number,
+                                            $device->passport_number,
+                                            $device
+                                                ->package
+                                                ?->name,
+                                        ];
+                                    }
+                                )
+                                ->filter(
+                                    fn ($value): bool =>
+                                        trim(
+                                            (string)
+                                            $value
+                                        ) !== ''
+                                )
+                                ->implode(' ');
+
+                        return $payload;
+                    }
+                )
+                ->values();
+
+        return Inertia::render(
+            'Clients/Index',
+            [
+                'clients' =>
+                    $clients,
+            ]
+        );
     }
 
     public function create(): Response
@@ -74,10 +378,14 @@ class ClientController extends Controller
                 ]),
 
             'packages' => Package::query()
+                ->with(
+                    'zone:id,name'
+                )
                 ->where('enabled', true)
                 ->orderBy('name')
                 ->get([
                     'id',
+                    'zone_id',
                     'name',
                     'price',
                     'validity_days',
@@ -105,6 +413,114 @@ class ClientController extends Controller
         IpAllocatorService $allocator
     ): RedirectResponse {
         $data = $request->validated();
+
+        /*
+         * Scan UUIDs are workflow tokens, not client
+         * database attributes. The Client model reads
+         * them directly from the current request after
+         * the client save succeeds.
+         */
+        unset(
+            $data['qatar_id_front_scan_token'],
+            $data['qatar_id_back_scan_token'],
+            $data['passport_scan_token']
+        );
+
+        /*
+         * MULTI_DEVICE_PARENT_START
+         *
+         * Extra devices remain normal Client rows.
+         * Existing billing / renewal / MikroTik
+         * logic can therefore continue unchanged.
+         */
+        if (
+            !empty(
+                $data['parent_client_id']
+            )
+        ) {
+            $parent =
+                Client::query()
+                    ->whereNull(
+                        'parent_client_id'
+                    )
+                    ->find(
+                        (int)
+                        $data[
+                            'parent_client_id'
+                        ]
+                    );
+
+            if (!$parent) {
+                return back()
+                    ->withErrors([
+                        'parent_client_id' =>
+                            'Primary client was not found.',
+                    ])
+                    ->withInput();
+            }
+
+            $deviceNumber =
+                Client::query()
+                    ->where(
+                        'parent_client_id',
+                        $parent->id
+                    )
+                    ->count()
+                + 2;
+
+            $data['device_label'] =
+                trim(
+                    (string) (
+                        $data['device_label']
+                        ?? ''
+                    )
+                )
+                ?: 'Device '
+                    . $deviceNumber;
+
+            /*
+             * Customer identity/account information
+             * comes from the primary client.
+             */
+            foreach ([
+                'name',
+                'phone',
+                'email',
+                'address',
+                'identity_type',
+                'identity_number',
+                'identity_barcode',
+                'nationality',
+                'date_of_birth',
+                'gender',
+                'document_expiry_date',
+                'qatar_id_number',
+                'qatar_id_expiry_date',
+                'occupation',
+                'passport_number',
+                'passport_expiry_date',
+                'document_serial_number',
+                'residency_type',
+                'employer',
+                'place_of_birth',
+                'passport_issue_date',
+                'issuing_country',
+                'issuing_authority',
+            ] as $field) {
+                $data[$field] =
+                    $parent->{$field};
+            }
+        } else {
+            $data['parent_client_id'] =
+                null;
+
+            $data['device_label'] =
+                null;
+        }
+
+        /*
+         * MULTI_DEVICE_PARENT_END
+         */
 
         /*
          * New connection billing is separate
@@ -157,61 +573,120 @@ class ClientController extends Controller
         }
 
         /*
-         * IP Pool is global.
-         * It is NOT tied to a selected router.
+         * ZONE_PACKAGE_AUTO_IP_V2
+         *
+         * Package defines the MAC Network Zone.
+         * MikroPanel selects an enabled pool and
+         * the first free IP automatically.
          */
-        $range = IpRange::query()
-            ->where(
-                'id',
-                $data['ip_range_id']
-            )
-            ->where(
-                'enabled',
-                true
-            )
-            ->first();
-
-        if (!$range) {
-            return back()
-                ->withErrors([
-                    'ip_range_id' =>
-                        'Selected IP Pool is not available.',
-                ])
-                ->withInput();
-        }
-
-        $ip = $allocator->allocate(
-            $range
+        unset(
+            $data['ip_range_id']
         );
 
-        if (!$ip) {
-            return back()
-                ->withErrors([
-                    'ip_range_id' =>
-                        'No free IP is available in this IP Pool.',
-                ])
-                ->withInput();
-        }
+        $package =
+            Package::query()
+                ->where(
+                    'id',
+                    $data['package_id']
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->first();
 
-        $package = Package::query()
-            ->where(
-                'id',
-                $data['package_id']
-            )
-            ->where(
-                'enabled',
-                true
-            )
-            ->first();
-
-        if (!$package) {
+        if (
+            !$package
+            || !$package->zone_id
+        ) {
             return back()
                 ->withErrors([
                     'package_id' =>
-                        'Selected Package is not available.',
+                        'Selected Package is not available in an active Network Zone.',
                 ])
                 ->withInput();
         }
+
+        $zone =
+            NetworkZone::query()
+                ->where(
+                    'id',
+                    $package->zone_id
+                )
+                ->where(
+                    'service_type',
+                    'mac'
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->first();
+
+        if (!$zone) {
+            return back()
+                ->withErrors([
+                    'package_id' =>
+                        'Selected Package Network Zone is not available.',
+                ])
+                ->withInput();
+        }
+
+        if (
+            !empty(
+                $data['parent_client_id']
+            )
+        ) {
+            $primaryZoneId =
+                Client::query()
+                    ->whereKey(
+                        (int)
+                        $data[
+                            'parent_client_id'
+                        ]
+                    )
+                    ->value(
+                        'zone_id'
+                    );
+
+            if (
+                !$primaryZoneId
+                || (int) $primaryZoneId
+                    !== (int) $zone->id
+            ) {
+                return back()
+                    ->withErrors([
+                        'package_id' =>
+                            'Additional devices must use a package from the primary client Network Zone.',
+                    ])
+                    ->withInput();
+            }
+        }
+
+        $allocation =
+            $allocator
+                ->allocateForZone(
+                    (int) $zone->id
+                );
+
+        if (!$allocation) {
+            return back()
+                ->withErrors([
+                    'package_id' =>
+                        'No free IP is available in any enabled IP Pool for this package Network Zone.',
+                ])
+                ->withInput();
+        }
+
+        /** @var IpRange $range */
+        $range =
+            $allocation['range'];
+
+        $ip =
+            $allocation['ip'];
+
+        $data['zone_id'] =
+            $zone->id;
 
         $validityDays =
             (int) $package->validity_days;
@@ -245,19 +720,24 @@ class ClientController extends Controller
          *
          * Operator no longer selects it.
          */
-        $primaryRouter = Router::query()
-            ->where(
-                'enabled',
-                true
-            )
-            ->orderBy('id')
-            ->first();
+        $primaryRouter =
+            Router::query()
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->where(
+                    'zone_id',
+                    $zone->id
+                )
+                ->orderBy('id')
+                ->first();
 
         if (!$primaryRouter) {
             return back()
                 ->withErrors([
-                    'ip_range_id' =>
-                        'At least one enabled MikroTik router is required.',
+                    'package_id' =>
+                        'At least one enabled MikroTik router is required in the package Network Zone.',
                 ])
                 ->withInput();
         }
@@ -303,21 +783,42 @@ class ClientController extends Controller
         $data['enabled'] = true;
         $data['connected'] = false;
 
+        /*
+         * CLIENT_CODE_GLOBAL_SEQUENCE_V1
+         *
+         * client_code has a global UNIQUE index.
+         * Tenant/Zone scopes must not reset the
+         * CLI sequence for reseller operators.
+         */
         $nextId =
             (
-                Client::withTrashed()
+                (int)
+                Client::withoutGlobalScopes()
                     ->max('id')
-                ?? 0
             ) + 1;
 
-        $data['client_code'] =
-            'CLI-'
-            . str_pad(
-                (string) $nextId,
-                5,
-                '0',
-                STR_PAD_LEFT
-            );
+        do {
+            $data['client_code'] =
+                'CLI-'
+                . str_pad(
+                    (string) $nextId,
+                    5,
+                    '0',
+                    STR_PAD_LEFT
+                );
+
+            $codeExists =
+                Client::withoutGlobalScopes()
+                    ->where(
+                        'client_code',
+                        $data['client_code']
+                    )
+                    ->exists();
+
+            if ($codeExists) {
+                $nextId++;
+            }
+        } while ($codeExists);
 
         /*
          * Client + first invoice + optional
@@ -429,6 +930,36 @@ class ClientController extends Controller
 
                         'created_by' =>
                             auth()->id(),
+
+                        'applies_service_period' =>
+                            true,
+
+                        'service_applied_at' =>
+                            Carbon::now(
+                                'Asia/Qatar'
+                            ),
+
+                        'service_validity_days' =>
+                            (int)
+                            $package
+                                ->validity_days,
+
+                        'service_price_snapshot' =>
+                            $connectionAmount,
+
+                        'service_start_date' =>
+                            $paymentDate
+                                ->toDateString(),
+
+                        'service_end_date' =>
+                            $client
+                                ->expiry_date
+                                ?->toDateString(),
+
+                        'initial_due_amount' =>
+                            $isPaid
+                                ? 0
+                                : $connectionAmount,
                     ]);
 
                     /*
@@ -529,7 +1060,13 @@ class ClientController extends Controller
         }
 
         return redirect()
-            ->route('clients.index')
+            ->route(
+                $request->input(
+                    'return_to'
+                ) === 'mac-pos'
+                    ? 'reseller.mac-pos'
+                    : 'clients.index'
+            )
             ->with(
                 'success',
                 $isPaid
@@ -616,8 +1153,94 @@ class ClientController extends Controller
             $usage?->download_bytes ?? 0
         );
 
+        /*
+         * Identity documents remain private.
+         * The browser receives authenticated route
+         * URLs, never filesystem paths.
+         */
+        $identityImageUrl =
+            static function (
+                Client $client,
+                string $column,
+                string $kind
+            ): ?string {
+                $path =
+                    $client->getAttribute(
+                        $column
+                    );
+
+                if (
+                    !is_string(
+                        $path
+                    )
+                    || $path === ''
+                    || !\Illuminate\Support\Facades\Storage
+                        ::disk('local')
+                        ->exists(
+                            $path
+                        )
+                ) {
+                    return null;
+                }
+
+                return route(
+                    'clients.identity-image',
+                    [
+                        'client' =>
+                            $client->id,
+
+                        'kind' =>
+                            $kind,
+                    ],
+                    false
+                );
+            };
+
+        $qidFrontUrl =
+            $identityImageUrl(
+                $client,
+                'qatar_id_front_image_path',
+                'qid-front'
+            );
+
+        $qidBackUrl =
+            $identityImageUrl(
+                $client,
+                'qatar_id_back_image_path',
+                'qid-back'
+            );
+
+        $passportUrl =
+            $identityImageUrl(
+                $client,
+                'passport_image_path',
+                'passport'
+            );
+
+
+        $profileFaceUrl =
+            $identityImageUrl(
+                $client,
+                'profile_image_path',
+                'face'
+            );
+
         return Inertia::render('Clients/Show', [
             'client' => $client,
+
+            'identityImages' => [
+                'profile_url' =>
+                    $profileFaceUrl,
+
+                'qatar_id_front_url' =>
+                    $qidFrontUrl,
+
+                'qatar_id_back_url' =>
+                    $qidBackUrl,
+
+                'passport_url' =>
+                    $passportUrl,
+            ],
 
             'billingSummary' => [
                 'invoice_count' =>
@@ -664,9 +1287,14 @@ class ClientController extends Controller
                 ]),
 
             'packages' => Package::query()
+                ->where(
+                    'zone_id',
+                    $client->zone_id
+                )
                 ->orderBy('name')
                 ->get([
                     'id',
+                    'zone_id',
                     'name',
                     'speed_download',
                     'speed_upload',
@@ -693,6 +1321,18 @@ class ClientController extends Controller
         ClientProvisionService $provision
     ): RedirectResponse {
         $data = $request->validated();
+
+        /*
+         * Scan UUIDs are workflow tokens, not client
+         * database attributes. The Client model reads
+         * them directly from the current request after
+         * the client save succeeds.
+         */
+        unset(
+            $data['qatar_id_front_scan_token'],
+            $data['qatar_id_back_scan_token'],
+            $data['passport_scan_token']
+        );
 
         unset(
             $data['router_id'],
@@ -746,6 +1386,8 @@ class ClientController extends Controller
 
         if (
             !$package
+            || (int) $package->zone_id
+                !== (int) $client->zone_id
             || (
                 !$package->enabled
                 && (int) $package->id
@@ -881,7 +1523,13 @@ class ClientController extends Controller
         }
 
         return redirect()
-            ->route('clients.index')
+            ->route(
+                $request->input(
+                    'return_to'
+                ) === 'mac-pos'
+                    ? 'reseller.mac-pos'
+                    : 'clients.index'
+            )
             ->with(
                 'success',
                 'Client updated across enabled MikroTik routers.'

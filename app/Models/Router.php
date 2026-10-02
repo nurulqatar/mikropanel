@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Router extends Model
 {
     protected $fillable = [
+        'zone_id',
         'name',
         'host',
         'api_port',
@@ -61,5 +62,15 @@ class Router extends Model
             ClientRouterBinding::class
         );
     }
+
+
+    public function zone()
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
+        );
+    }
+
 
 }

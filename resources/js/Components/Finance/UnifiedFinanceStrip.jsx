@@ -20,47 +20,65 @@ export default function UnifiedFinanceStrip() {
                 </h2>
 
                 <p className="text-sm text-slate-500">
-                    Normal clients + Hotspot.
-                    Each payment is counted once
-                    from its own ledger.
+                    MAC client refunds are deducted from
+                    collection. Hotspot and MAC ledgers are
+                    counted once only.
                 </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Card
-                    label="All-Time Collection"
+                    label="All-Time Net Collection"
                     value={
                         finance.combined_received
                     }
-                    hint={`Clients QAR ${money(
-                        finance.normal_received,
-                    )} · Hotspot QAR ${money(
-                        finance.hotspot_received,
-                    )}`}
+                    hint={
+                        `MAC Gross QAR ${money(
+                            finance.normal_gross_received,
+                        )} - Refund QAR ${money(
+                            finance.normal_refunded,
+                        )} = Net QAR ${money(
+                            finance.normal_received,
+                        )} · Hotspot QAR ${money(
+                            finance.hotspot_received,
+                        )}`
+                    }
                 />
 
                 <Card
-                    label="Today Collection"
+                    label="Today Net Collection"
                     value={
                         finance.combined_today
                     }
-                    hint={`Clients QAR ${money(
-                        finance.normal_today,
-                    )} · Hotspot QAR ${money(
-                        finance.hotspot_today,
-                    )}`}
+                    hint={
+                        `MAC Gross QAR ${money(
+                            finance.normal_today_gross,
+                        )} - Refund QAR ${money(
+                            finance.normal_today_refunded,
+                        )} = Net QAR ${money(
+                            finance.normal_today,
+                        )} · Hotspot QAR ${money(
+                            finance.hotspot_today,
+                        )}`
+                    }
                 />
 
                 <Card
-                    label="This Month"
+                    label="This Month Net Collection"
                     value={
                         finance.combined_month
                     }
-                    hint={`Clients QAR ${money(
-                        finance.normal_month,
-                    )} · Hotspot QAR ${money(
-                        finance.hotspot_month,
-                    )}`}
+                    hint={
+                        `MAC Gross QAR ${money(
+                            finance.normal_month_gross,
+                        )} - Refund QAR ${money(
+                            finance.normal_month_refunded,
+                        )} = Net QAR ${money(
+                            finance.normal_month,
+                        )} · Hotspot QAR ${money(
+                            finance.hotspot_month,
+                        )}`
+                    }
                 />
 
                 <Card
@@ -68,11 +86,13 @@ export default function UnifiedFinanceStrip() {
                     value={
                         finance.combined_due
                     }
-                    hint={`Clients QAR ${money(
-                        finance.normal_due,
-                    )} · Hotspot QAR ${money(
-                        finance.hotspot_due,
-                    )}`}
+                    hint={
+                        `MAC QAR ${money(
+                            finance.normal_due,
+                        )} · Hotspot QAR ${money(
+                            finance.hotspot_due,
+                        )}`
+                    }
                 />
             </div>
         </section>
@@ -94,7 +114,7 @@ function Card({
                 QAR {money(value)}
             </div>
 
-            <div className="mt-1 text-xs text-slate-500">
+            <div className="mt-1 text-xs leading-5 text-slate-500">
                 {hint}
             </div>
         </div>

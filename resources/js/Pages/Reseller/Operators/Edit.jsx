@@ -7,18 +7,118 @@ import {
 
 export default function Edit({
     operator,
-    permissionOptions = {},
+    zones = [],
+    permissionOptionsByZone = {},
 }) {
+    /*
+     * OPERATOR_MODULE_ZONE_UI_V2
+     */
+    const initialZone =
+        zones.find(
+            (item) =>
+                String(item.id)
+                === String(
+                    operator.zone_id
+                    ?? '',
+                ),
+        );
+
+    const initialPermissionOptions =
+        initialZone
+            ? (
+                permissionOptionsByZone[
+                    initialZone.service_type
+                ]
+                ?? {}
+            )
+            : {};
+
+    const initialAllowed =
+        new Set(
+            Object.keys(
+                initialPermissionOptions,
+            ),
+        );
+
     const form = useForm({
         name:
             operator.name ?? '',
         email:
             operator.email ?? '',
+        zone_id:
+            operator.zone_id
+                ? String(
+                      operator.zone_id,
+                  )
+                : '',
         password: '',
         password_confirmation: '',
         permissions:
-            operator.permissions ?? [],
+            (
+                operator.permissions
+                ?? []
+            ).filter(
+                (permission) =>
+                    initialAllowed.has(
+                        permission,
+                    ),
+            ),
     });
+
+    const optionsForZone = (
+        zoneId,
+    ) => {
+        const zone =
+            zones.find(
+                (item) =>
+                    String(item.id)
+                    === String(zoneId),
+            );
+
+        if (!zone) {
+            return {};
+        }
+
+        return (
+            permissionOptionsByZone[
+                zone.service_type
+            ]
+            ?? {}
+        );
+    };
+
+    const permissionOptions =
+        optionsForZone(
+            form.data.zone_id,
+        );
+
+    const changeZone = (
+        zoneId,
+    ) => {
+        const allowed =
+            new Set(
+                Object.keys(
+                    optionsForZone(
+                        zoneId,
+                    ),
+                ),
+            );
+
+        form.setData({
+            ...form.data,
+
+            zone_id:
+                zoneId,
+
+            permissions:
+                form.data.permissions.filter(
+                    (permission) =>
+                        allowed.has(
+                            permission,
+                        ),
+                ),
+        });
+    };
 
     const toggle = (
         permission,
@@ -98,6 +198,48 @@ export default function Edit({
                                 )
                             }
                         />
+
+                          <label>
+                              <div className="mb-1 text-sm font-semibold">
+                                  Network Zone
+                              </div>
+
+                              <select
+                                  required
+                                  className="w-full rounded-lg border-slate-300"
+                                  value={
+                                      form.data.zone_id
+                                  }
+                                  onChange={(e) =>
+                                      changeZone(
+                                          e.target.value,
+                                      )
+                                  }
+                              >
+                                  <option value="">
+                                      Select Network Zone
+                                  </option>
+
+                                  {zones.map(
+                                      (zone) => (
+                                          <option
+                                              key={zone.id}
+                                              value={zone.id}
+                                          >
+                                              {zone.name}{' '}
+                                              —{' '}
+                                              {zone.service_type.toUpperCase()}
+                                          </option>
+                                      ),
+                                  )}
+                              </select>
+
+                              {form.errors.zone_id && (
+                                  <div className="mt-1 text-sm font-semibold text-red-600">
+                                      {form.errors.zone_id}
+                                  </div>
+                              )}
+                          </label>
 
                         <Input
                             label="New Password"

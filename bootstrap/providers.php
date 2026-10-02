@@ -7,4 +7,7 @@ return [
     App\Providers\PanelSettingsServiceProvider::class,
     App\Providers\PanelAuthorizationServiceProvider::class,
     App\Providers\ResellerTenancyServiceProvider::class,
+    App\Providers\ZoneTenancyServiceProvider::class,
+    App\Providers\ManagerCashServiceProvider::class,
+    App\Providers\ResellerModuleScopeServiceProvider::class,
 ];

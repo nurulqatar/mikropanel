@@ -4,15 +4,21 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\RouterRequest;
 use App\Jobs\SyncRouterStatus;
+use App\Models\NetworkZone;
 use App\Models\Router;
+use App\Models\RouterWireGuardPeer;
 use App\Services\MikroTik\MikroTikService;
 use App\Services\RouterClientSyncService;
 use App\Services\RouterStatusService;
+use App\Services\Hotspot\HotspotPortalPackageService;
+use App\Services\Hotspot\HotspotRouterService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
 class RouterController extends Controller
@@ -21,6 +27,9 @@ class RouterController extends Controller
         RouterStatusService $status
     ): Response {
         $routers = Router::query()
+            ->with([
+                'zone:id,name,code,service_type',
+            ])
             ->latest()
             ->get()
             ->map(
@@ -44,9 +53,27 @@ class RouterController extends Controller
         );
     }
 
-    public function create(): Response
-    {
-        return Inertia::render('Routers/Create');
+    public function create(
+        Request $request
+    ): Response {
+        $zones =
+            $this->routerZoneOptions(
+                $request->user()
+            );
+
+        return Inertia::render(
+            'Routers/Create',
+            [
+                'zones' =>
+                    $zones,
+
+                'selectedZoneId' =>
+                    $this->preferredRouterZoneId(
+                        $request,
+                        $zones
+                    ),
+            ]
+        );
     }
 
     public function store(
@@ -56,9 +83,69 @@ class RouterController extends Controller
             $request->validated()
         );
 
+        /*
+         * VPN_FIRST_AUTO_LINK_V2
+         *
+         * If reseller created the VPN before registering
+         * the Router, entering the MikroTik VPN Local IP
+         * as Router Host automatically binds the peer.
+         */
+        $router->loadMissing([
+            'zone:id,reseller_id,service_type',
+        ]);
+
+        $routerResellerId =
+            $request->user()?->reseller_id
+            ?: $router->zone?->reseller_id;
+
+        if ($routerResellerId) {
+            RouterWireGuardPeer::query()
+                ->where(
+                    'reseller_id',
+                    (int)
+                    $routerResellerId
+                )
+                ->whereNull(
+                    'router_id'
+                )
+                ->where(
+                    'client_ip',
+                    $router->host
+                )
+                ->where(
+                    'active',
+                    true
+                )
+                ->update([
+                    'router_id' =>
+                        $router->id,
+                ]);
+        }
+
         SyncRouterStatus::dispatch(
             $router->id
         );
+
+        /*
+         * HOTSPOT_ROUTER_SETUP_WIZARD_PHASE1_V1
+         *
+         * MAC routers keep the old workflow.
+         * Hotspot routers continue into the guided setup.
+         */
+        if (
+            $router->zone?->service_type
+            === 'hotspot'
+        ) {
+            return redirect()
+                ->route(
+                    'routers.hotspot-setup',
+                    $router
+                )
+                ->with(
+                    'success',
+                    'Router saved. Continue with the Hotspot Setup Wizard.'
+                );
+        }
 
         return redirect()
             ->route('routers.index')
@@ -78,11 +165,36 @@ class RouterController extends Controller
     }
 
     public function edit(
+        Request $request,
         Router $router
     ): Response {
-        return Inertia::render('Routers/Edit', [
-            'router' => $router,
+        $zones =
+            $this->routerZoneOptions(
+                $request->user()
+            );
+
+        $router->loadMissing([
+            'zone:id,name,code,service_type',
         ]);
+
+        return Inertia::render(
+            'Routers/Edit',
+            [
+                'router' =>
+                    $router,
+
+                'zones' =>
+                    $zones,
+
+                'selectedZoneId' =>
+                    $this->preferredRouterZoneId(
+                        $request,
+                        $zones,
+                        (int)
+                        $router->zone_id
+                    ),
+            ]
+        );
     }
 
     public function update(
@@ -194,6 +306,1282 @@ class RouterController extends Controller
         }
     }
 
+    /*
+     * HOTSPOT_ROUTER_SETUP_WIZARD_PHASE1_V1
+     *
+     * Phase 1 is strictly read-only against RouterOS.
+     */
+    public function hotspotSetup(
+        Request $request,
+        Router $router,
+        MikroTikService $mikrotik
+    ): Response|RedirectResponse {
+        $router->loadMissing([
+            'zone:id,reseller_id,name,code,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : (
+                    $router->reseller_id
+                        ? (int)
+                            $router
+                                ->reseller_id
+                        : null
+                );
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                abort_unless(
+                    $user->zone_id
+                    && (int)
+                        $user->zone_id
+                        === (int)
+                            $router
+                                ->zone_id,
+                    403
+                );
+            }
+        }
+
+        $discovery =
+            $router->enabled
+                ? $mikrotik
+                    ->hotspotSetupDiscovery(
+                        $router
+                    )
+                : [
+                    'success' => false,
+
+                    'message' =>
+                        'Router is disabled. Enable it before continuing Hotspot setup.',
+
+                    'interfaces' => [],
+                    'ethernet_interfaces' => [],
+
+                    'routeros_query_count' => 0,
+
+                    'checked_at' =>
+                        now()->toISOString(),
+                ];
+
+        /*
+         * HOTSPOT_SMART_IMPORT_REDIRECT_V2
+         *
+         * Existing complete Hotspot:
+         * Setup Hotspot opens Router Health instead
+         * of forcing the setup wizard.
+         *
+         * force_wizard=1 always opens Advanced Setup.
+         */
+        if (
+            !$request->has(
+                'step'
+            )
+            && !$request->boolean(
+                'force_wizard'
+            )
+            && (
+                $discovery[
+                    'success'
+                ] ?? false
+            )
+        ) {
+            $complete =
+                collect(
+                    $discovery[
+                        'hotspot_topologies'
+                    ] ?? []
+                )->first(
+                    function ($row) {
+                        foreach (
+                            [
+                                'interface',
+                                'gateway_cidr',
+                                'pool_name',
+                                'dhcp_server',
+                                'hotspot_server',
+                                'hotspot_profile',
+                                'dns_name',
+                            ]
+                            as $field
+                        ) {
+                            if (
+                                trim(
+                                    (string) (
+                                        $row[$field]
+                                        ?? ''
+                                    )
+                                ) === ''
+                            ) {
+                                return false;
+                            }
+                        }
+
+                        return true;
+                    }
+                );
+
+            if ($complete) {
+                return redirect()
+                    ->route(
+                        'hotspot.router-health.show',
+                        [
+                            'router' =>
+                                $router,
+                        ]
+                    );
+            }
+        }
+
+        $activeGateway =
+            trim(
+                (string)
+                $request->query(
+                    'gateway',
+                    ''
+                )
+            ) ?: null;
+
+        $dhcpSuggestion = null;
+
+        if ($activeGateway) {
+            try {
+                $dhcpSuggestion =
+                    $mikrotik
+                        ->hotspotDhcpSuggestion(
+                            $activeGateway,
+                            (int)
+                            $router->id
+                        );
+
+            } catch (Throwable) {
+                $dhcpSuggestion = null;
+            }
+        }
+
+        return Inertia::render(
+            'Routers/HotspotSetup',
+            [
+                'router' => [
+                    'id' =>
+                        $router->id,
+
+                    'name' =>
+                        $router->name,
+
+                    'host' =>
+                        $router->host,
+
+                    'api_port' =>
+                        $router->api_port,
+
+                    'use_ssl' =>
+                        (bool)
+                        $router->use_ssl,
+
+                    'enabled' =>
+                        (bool)
+                        $router->enabled,
+
+                    'zone_id' =>
+                        $router->zone_id,
+
+                    'zone' => [
+                        'id' =>
+                            $router
+                                ->zone
+                                ->id,
+
+                        'name' =>
+                            $router
+                                ->zone
+                                ->name,
+
+                        'code' =>
+                            $router
+                                ->zone
+                                ->code,
+
+                        'service_type' =>
+                            $router
+                                ->zone
+                                ->service_type,
+                    ],
+                ],
+
+                'discovery' =>
+                    $discovery,
+
+                'wizardStep' =>
+                    max(
+                        1,
+                        min(
+                            9,
+                            (int)
+                            $request->query(
+                                'step',
+                                1
+                            )
+                        )
+                    ),
+
+                'activeBridge' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'bridge',
+                            ''
+                        )
+                    ) ?: null,
+
+                'activeGateway' =>
+                    $activeGateway,
+
+                'activePool' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'pool',
+                            ''
+                        )
+                    ) ?: null,
+
+                'activeDhcpServer' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'dhcp',
+                            ''
+                        )
+                    ) ?: null,
+
+                'dhcpSuggestion' =>
+                    $dhcpSuggestion,
+
+                'activeHotspotServer' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'hotspot',
+                            ''
+                        )
+                    ) ?: null,
+
+                'activeHotspotProfile' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'profile',
+                            ''
+                        )
+                    ) ?: null,
+
+                'activeDnsName' =>
+                    trim(
+                        (string)
+                        $request->query(
+                            'dns',
+                            ''
+                        )
+                    ) ?: null,
+
+                'finalCompleted' =>
+                    $request->boolean(
+                        'completed'
+                    ),
+            ]
+        );
+    }
+
+    /*
+     * HOTSPOT_BRIDGE_SETUP_PHASE2_V2
+     */
+    public function hotspotSetupBridge(
+        Request $request,
+        Router $router,
+        MikroTikService $mikrotik
+    ): RedirectResponse {
+        $router->loadMissing([
+            'zone:id,reseller_id,name,code,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : (
+                    $router->reseller_id
+                        ? (int)
+                            $router
+                                ->reseller_id
+                        : null
+                );
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                abort_unless(
+                    $user->zone_id
+                    && (int)
+                        $user->zone_id
+                        === (int)
+                            $router
+                                ->zone_id,
+                    403
+                );
+            }
+        }
+
+        $data =
+            $request->validate([
+                'mode' => [
+                    'required',
+                    'string',
+                    'in:existing,new',
+                ],
+
+                'bridge_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'ports' => [
+                    'required',
+                    'array',
+                    'min:1',
+                    'max:64',
+                ],
+
+                'ports.*' => [
+                    'required',
+                    'string',
+                    'max:100',
+                    'distinct',
+                ],
+            ]);
+
+        try {
+            $result =
+                $mikrotik
+                    ->applyHotspotBridge(
+                        $router,
+                        $data['mode'],
+                        $data['bridge_name'],
+                        $data['ports']
+                    );
+
+        } catch (Throwable $exception) {
+            return back()
+                ->withInput()
+                ->with(
+                    'error',
+                    $exception
+                        ->getMessage()
+                );
+        }
+
+        return redirect()
+            ->route(
+                'routers.hotspot-setup',
+                [
+                    'router' =>
+                        $router,
+
+                    'step' =>
+                        3,
+
+                    'bridge' =>
+                        $result[
+                            'bridge'
+                        ],
+                ]
+            )
+            ->with(
+                'success',
+                'Hotspot bridge is ready. Continue with Gateway & Subnet.'
+            );
+    }
+
+    /*
+     * HOTSPOT_GATEWAY_STEP3_V1
+     */
+    public function hotspotSetupGateway(
+        Request $request,
+        Router $router,
+        MikroTikService $mikrotik
+    ): RedirectResponse {
+        $router->loadMissing([
+            'zone:id,reseller_id,name,code,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : (
+                    $router->reseller_id
+                        ? (int)
+                            $router
+                                ->reseller_id
+                        : null
+                );
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                abort_unless(
+                    $user->zone_id
+                    && (int)
+                        $user->zone_id
+                        === (int)
+                            $router
+                                ->zone_id,
+                    403
+                );
+            }
+        }
+
+        $data =
+            $request->validate([
+                'mode' => [
+                    'required',
+                    'string',
+                    'in:existing,new',
+                ],
+
+                'bridge_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'gateway_cidr' => [
+                    'required',
+                    'string',
+                    'max:50',
+                ],
+            ]);
+
+        try {
+            $result =
+                $mikrotik
+                    ->applyHotspotGateway(
+                        $router,
+                        $data['mode'],
+                        $data['bridge_name'],
+                        $data['gateway_cidr']
+                    );
+
+        } catch (Throwable $exception) {
+            return back()
+                ->withInput()
+                ->with(
+                    'error',
+                    $exception
+                        ->getMessage()
+                );
+        }
+
+        return redirect()
+            ->route(
+                'routers.hotspot-setup',
+                [
+                    'router' =>
+                        $router,
+
+                    'step' =>
+                        4,
+
+                    'bridge' =>
+                        $result[
+                            'bridge'
+                        ],
+
+                    'gateway' =>
+                        $result[
+                            'gateway_cidr'
+                        ],
+                ]
+            )
+            ->with(
+                'success',
+                'Gateway and subnet are ready. Continue with DHCP & Client Pool.'
+            );
+    }
+
+    /*
+     * HOTSPOT_DHCP_STEP4_V1
+     */
+    public function hotspotSetupDhcp(
+        Request $request,
+        Router $router,
+        MikroTikService $mikrotik
+    ): RedirectResponse {
+        $router->loadMissing([
+            'zone:id,reseller_id,name,code,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : (
+                    $router->reseller_id
+                        ? (int)
+                            $router
+                                ->reseller_id
+                        : null
+                );
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                abort_unless(
+                    $user->zone_id
+                    && (int)
+                        $user->zone_id
+                        === (int)
+                            $router
+                                ->zone_id,
+                    403
+                );
+            }
+        }
+
+        $data =
+            $request->validate([
+                'mode' => [
+                    'required',
+                    'string',
+                    'in:existing,new',
+                ],
+
+                'bridge_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'gateway_cidr' => [
+                    'required',
+                    'string',
+                    'max:50',
+                ],
+
+                'pool_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'pool_ranges' => [
+                    'required',
+                    'string',
+                    'max:500',
+                ],
+
+                'dhcp_server' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'lease_time' => [
+                    'required',
+                    'string',
+                    'max:50',
+                ],
+            ]);
+
+        try {
+            $result =
+                $mikrotik
+                    ->applyHotspotDhcp(
+                        $router,
+                        $data['mode'],
+                        $data['bridge_name'],
+                        $data['gateway_cidr'],
+                        $data['pool_name'],
+                        $data['pool_ranges'],
+                        $data['dhcp_server'],
+                        $data['lease_time']
+                    );
+
+        } catch (Throwable $exception) {
+            return back()
+                ->withInput()
+                ->with(
+                    'error',
+                    $exception
+                        ->getMessage()
+                );
+        }
+
+        return redirect()
+            ->route(
+                'routers.hotspot-setup',
+                [
+                    'router' =>
+                        $router,
+
+                    'step' =>
+                        5,
+
+                    'bridge' =>
+                        $result[
+                            'bridge'
+                        ],
+
+                    'gateway' =>
+                        $result[
+                            'gateway_cidr'
+                        ],
+
+                    'pool' =>
+                        $result[
+                            'pool_name'
+                        ],
+
+                    'dhcp' =>
+                        $result[
+                            'dhcp_server'
+                        ],
+                ]
+            )
+            ->with(
+                'success',
+                'DHCP server and client IP pool are ready. Continue with Hotspot Server & Profile.'
+            );
+    }
+
+    /*
+     * HOTSPOT_WIZARD_FINAL_V1
+     *
+     * Completes Steps 5-9 in one operation.
+     */
+    public function hotspotSetupFinalize(
+        Request $request,
+        Router $router,
+        \App\Services\Hotspot\HotspotWizardFinalizerService $finalizer
+    ): RedirectResponse {
+        $router->loadMissing([
+            'zone:id,reseller_id,name,code,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : (
+                    $router->reseller_id
+                        ? (int)
+                            $router
+                                ->reseller_id
+                        : null
+                );
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                abort_unless(
+                    $user->zone_id
+                    && (int)
+                        $user->zone_id
+                        === (int)
+                            $router
+                                ->zone_id,
+                    403
+                );
+            }
+        }
+
+        $data =
+            $request->validate([
+                'mode' => [
+                    'required',
+                    'string',
+                    'in:existing,new',
+                ],
+
+                'bridge_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'gateway_cidr' => [
+                    'required',
+                    'string',
+                    'max:50',
+                ],
+
+                'pool_name' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'dhcp_server' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'hotspot_server' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'hotspot_profile' => [
+                    'required',
+                    'string',
+                    'max:100',
+                ],
+
+                'dns_name' => [
+                    'required',
+                    'string',
+                    'max:253',
+                ],
+
+                'cookie_lifetime' => [
+                    'required',
+                    'string',
+                    'max:50',
+                ],
+            ]);
+
+        /*
+         * Resolve company branding without making
+         * the finalizer dependent on one reseller model.
+         */
+        $brandName = null;
+
+        if ($resellerId) {
+            try {
+                $brandName =
+                    \Illuminate\Support\Facades\DB::table(
+                        'resellers'
+                    )
+                        ->where(
+                            'id',
+                            $resellerId
+                        )
+                        ->value(
+                            'name'
+                        );
+
+            } catch (Throwable) {
+                $brandName = null;
+            }
+        }
+
+        $brandName =
+            trim(
+                (string) (
+                    $brandName
+                    ?: (
+                        $router
+                            ->zone
+                            ->name
+                        ?: $router->name
+                    )
+                )
+            );
+
+        try {
+            $result =
+                $finalizer
+                    ->finalize(
+                        $router,
+                        [
+                            ...$data,
+
+                            'brand_name' =>
+                                $brandName,
+                        ]
+                    );
+
+        } catch (Throwable $exception) {
+            return back()
+                ->withInput()
+                ->with(
+                    'error',
+                    $exception
+                        ->getMessage()
+                );
+        }
+
+        /*
+         * Register/synchronize the RouterOS Hotspot
+         * server into the panel only after full RouterOS
+         * validation passed.
+         */
+        $server =
+            \App\Models\HotspotServer::withoutGlobalScopes()
+                ->where(
+                    'router_id',
+                    $router->id
+                )
+                ->where(
+                    'zone_id',
+                    $router->zone_id
+                )
+                ->where(
+                    'mikrotik_name',
+                    $result[
+                        'hotspot_server'
+                    ]
+                )
+                ->first();
+
+        if (!$server) {
+            $server =
+                \App\Models\HotspotServer::withoutGlobalScopes()
+                    ->where(
+                        'router_id',
+                        $router->id
+                    )
+                    ->where(
+                        'zone_id',
+                        $router->zone_id
+                    )
+                    ->first();
+        }
+
+        $server ??=
+            new \App\Models\HotspotServer();
+
+        $server->fill([
+            'reseller_id' =>
+                $resellerId,
+
+            'zone_id' =>
+                $router->zone_id,
+
+            'router_id' =>
+                $router->id,
+
+            'name' =>
+                $result[
+                    'hotspot_server'
+                ],
+
+            'mikrotik_name' =>
+                $result[
+                    'hotspot_server'
+                ],
+
+            'interface' =>
+                $result[
+                    'bridge'
+                ],
+
+            'address_pool' =>
+                $result[
+                    'pool_name'
+                ],
+
+            'hotspot_profile' =>
+                $result[
+                    'hotspot_profile'
+                ],
+
+            'dns_name' =>
+                $result[
+                    'dns_name'
+                ],
+
+            'enabled' =>
+                true,
+
+            'connected' =>
+                true,
+
+            'last_synced_at' =>
+                now(),
+
+            'last_error' =>
+                null,
+        ]);
+
+        $server->save();
+
+        return redirect()
+            ->route(
+                'routers.hotspot-setup',
+                [
+                    'router' =>
+                        $router,
+
+                    'step' =>
+                        9,
+
+                    'bridge' =>
+                        $result[
+                            'bridge'
+                        ],
+
+                    'gateway' =>
+                        $result[
+                            'gateway_cidr'
+                        ],
+
+                    'pool' =>
+                        $result[
+                            'pool_name'
+                        ],
+
+                    'dhcp' =>
+                        $result[
+                            'dhcp_server'
+                        ],
+
+                    'hotspot' =>
+                        $result[
+                            'hotspot_server'
+                        ],
+
+                    'profile' =>
+                        $result[
+                            'hotspot_profile'
+                        ],
+
+                    'dns' =>
+                        $result[
+                            'dns_name'
+                        ],
+
+                    'completed' =>
+                        1,
+                ]
+            )
+            ->with(
+                'success',
+                'HOTSPOT READY — server, login, Internet/NAT, branded portal and full validation completed.'
+            );
+    }
+
+    /*
+     * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
+     *
+     * Generates a reseller-branded MikroTik Hotspot
+     * portal ZIP. Download preparation adds only
+     * the MikroPanel walled-garden host to RouterOS.
+     */
+    public function downloadHotspotPortal(
+        Request $request,
+        Router $router,
+        HotspotPortalPackageService $packages,
+        HotspotRouterService $hotspotRouter
+    ): BinaryFileResponse|RedirectResponse {
+        $router->loadMissing([
+            'zone:id,reseller_id,service_type',
+        ]);
+
+        abort_unless(
+            $router->zone
+            && $router->zone->service_type
+                === 'hotspot',
+            404
+        );
+
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user,
+            403
+        );
+
+        $resellerId =
+            $router->zone->reseller_id
+                ? (int)
+                    $router
+                        ->zone
+                        ->reseller_id
+                : null;
+
+        $superAdmin =
+            method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin();
+
+        /*
+         * Normal Company users may only download
+         * packages for their own reseller zone.
+         *
+         * Super Admin may support any visible router.
+         */
+        if (!$superAdmin) {
+            abort_unless(
+                $resellerId
+                && $user->reseller_id
+                && (int)
+                    $user->reseller_id
+                    === $resellerId,
+                403
+            );
+        }
+
+        /*
+         * MAIN_HOTSPOT_PORTAL_WALLED_GARDEN_V1
+         *
+         * The public MAC-reset API must be reachable
+         * before Hotspot authentication.
+         */
+        $portalHost =
+            parse_url(
+                (string)
+                config('app.url'),
+                PHP_URL_HOST
+            );
+
+        if (
+            !is_string($portalHost)
+            || trim($portalHost) === ''
+        ) {
+            return back()->with(
+                'error',
+                'Portal host configuration is invalid.'
+            );
+        }
+
+        try {
+            $hotspotRouter
+                ->ensurePortalHostAccess(
+                    $router,
+                    $portalHost
+                );
+
+        } catch (Throwable $exception) {
+            return back()->with(
+                'error',
+                'Hotspot portal package was not downloaded because the router could not prepare MAC Reset access: '
+                . $exception->getMessage()
+            );
+        }
+
+        $package =
+            $packages->buildForRouter(
+                $router
+            );
+
+        return response()
+            ->download(
+                $package['path'],
+                $package['filename'],
+                [
+                    'Content-Type' =>
+                        'application/zip',
+
+                    'Cache-Control' =>
+                        'private, no-store, max-age=0',
+                ]
+            )
+            ->deleteFileAfterSend(
+                true
+            );
+    }
+
     public function destroy(
         Router $router
     ): RedirectResponse {
@@ -204,6 +1592,147 @@ class RouterController extends Controller
             'Router deleted.'
         );
     }
+
+    /*
+     * ROUTER_FORM_SERVICE_ZONE_OPTIONS_V2
+     *
+     * Router service is selected by Network Zone.
+     * MAC-zone routers participate in MAC/IP fanout.
+     * Hotspot-zone routers are used by Hotspot discovery.
+     */
+    private function routerZoneOptions(
+        $user
+    ) {
+        $query =
+            NetworkZone::query()
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->whereIn(
+                    'service_type',
+                    [
+                        'mac',
+                        'hotspot',
+                    ]
+                );
+
+        if (
+            $user
+            && method_exists(
+                $user,
+                'isSuperAdmin'
+            )
+            && $user->isSuperAdmin()
+        ) {
+            // All enabled MAC zones.
+
+        } elseif (
+            $user
+            && $user->reseller_id
+        ) {
+            $query->where(
+                'reseller_id',
+                (int)
+                $user->reseller_id
+            );
+
+            if (
+                method_exists(
+                    $user,
+                    'isOperator'
+                )
+                && $user->isOperator()
+            ) {
+                $query->whereKey(
+                    (int)
+                    $user->zone_id
+                );
+            }
+
+        } else {
+            $query->whereNull(
+                'reseller_id'
+            );
+        }
+
+        return $query
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+                'code',
+                'service_type',
+            ]);
+    }
+
+    private function preferredRouterZoneId(
+        Request $request,
+        $zones,
+        ?int $currentZoneId = null
+    ): ?int {
+        if (
+            $currentZoneId
+            && $zones->contains(
+                'id',
+                $currentZoneId
+            )
+        ) {
+            return $currentZoneId;
+        }
+
+        $user =
+            $request->user();
+
+        if (
+            $user
+            && method_exists(
+                $user,
+                'isOperator'
+            )
+            && $user->isOperator()
+            && $user->zone_id
+            && $zones->contains(
+                'id',
+                (int)
+                $user->zone_id
+            )
+        ) {
+            return (int)
+                $user->zone_id;
+        }
+
+        $sessionZoneId =
+            (int)
+            $request
+                ->session()
+                ->get(
+                    'network_zone_id',
+                    0
+                );
+
+        if (
+            $sessionZoneId
+            && $zones->contains(
+                'id',
+                $sessionZoneId
+            )
+        ) {
+            return $sessionZoneId;
+        }
+
+        if (
+            $zones->count() === 1
+        ) {
+            return (int)
+                $zones
+                    ->first()
+                    ->id;
+        }
+
+        return null;
+    }
+
 
     private function saveLiveStatus(
         Router $router,

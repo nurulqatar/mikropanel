@@ -175,18 +175,12 @@ $(endif)
         <input
             name="username"
             type="text"
-            placeholder="Voucher username"
+            placeholder="6-digit Voucher Code"
             autocomplete="username"
             required
-        >
+         id="voucher-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code">
 
-        <input
-            name="password"
-            type="password"
-            placeholder="Voucher password"
-            autocomplete="current-password"
-            required
-        >
+        <input type="hidden" name="password" id="voucher-password">
 
         <button type="submit">
             Connect
@@ -240,6 +234,68 @@ $(endif)
         </div>
     @endif
 </div>
+
+
+<script>
+/*
+ * MAIN_HOTSPOT_6_DIGIT_LOGIN_V1
+ *
+ * Only one Voucher Code is visible to the customer.
+ * RouterOS still receives username=password=the same code.
+ */
+(function () {
+    var code =
+        document.getElementById('voucher-code');
+
+    var password =
+        document.getElementById('voucher-password');
+
+    if (!code || !password) {
+        return;
+    }
+
+    var normalize = function () {
+        code.value =
+            String(code.value || '')
+                .replace(/\D/g, '')
+                .slice(0, 6);
+
+        password.value =
+            code.value;
+    };
+
+    code.addEventListener(
+        'input',
+        normalize
+    );
+
+    if (code.form) {
+        code.form.addEventListener(
+            'submit',
+            function (event) {
+                normalize();
+
+                if (!/^\d{6}$/.test(code.value)) {
+                    event.preventDefault();
+
+                    code.setCustomValidity(
+                        'Enter your 6-digit Voucher Code.'
+                    );
+
+                    code.reportValidity();
+
+                    return false;
+                }
+
+                code.setCustomValidity('');
+
+                return true;
+            },
+            true
+        );
+    }
+})();
+</script>
 
 </body>
 </html>

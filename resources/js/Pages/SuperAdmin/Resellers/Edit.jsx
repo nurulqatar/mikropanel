@@ -1,4 +1,4 @@
-import AppLayout from '@/Layouts/AppLayout';
+import SuperAdminLayout from '@/Layouts/SuperAdminLayout';
 import {
     Head,
     Link,
@@ -27,19 +27,14 @@ export default function Edit({
         client_limit_override:
             reseller.client_limit_override ??
             '',
-        operator_limit_override:
-            reseller.operator_limit_override ??
-            '',
-        router_limit_override:
-            reseller.router_limit_override ??
-            '',
+
         expiry_mode:
             reseller.expiry_mode ??
             'panel_lock',
     });
 
     return (
-        <AppLayout title="Edit Reseller">
+        <SuperAdminLayout title="Edit Reseller">
             <Head title="Edit Reseller" />
 
             <div className="mx-auto max-w-5xl">
@@ -200,45 +195,7 @@ export default function Edit({
                             />
                         </Field>
 
-                        <Field label="Custom Operator Limit">
-                            <input
-                                type="number"
-                                min="1"
-                                value={
-                                    form.data
-                                        .operator_limit_override
-                                }
-                                onChange={(e) =>
-                                    form.setData(
-                                        'operator_limit_override',
-                                        e.target.value,
-                                    )
-                                }
-                                className={
-                                    inputClass
-                                }
-                            />
-                        </Field>
 
-                        <Field label="Custom Router Limit">
-                            <input
-                                type="number"
-                                min="1"
-                                value={
-                                    form.data
-                                        .router_limit_override
-                                }
-                                onChange={(e) =>
-                                    form.setData(
-                                        'router_limit_override',
-                                        e.target.value,
-                                    )
-                                }
-                                className={
-                                    inputClass
-                                }
-                            />
-                        </Field>
 
                         <Field label="Expiry Mode">
                             <select
@@ -301,7 +258,7 @@ export default function Edit({
                     </button>
                 </form>
             </div>
-        </AppLayout>
+        </SuperAdminLayout>
     );
 }
 

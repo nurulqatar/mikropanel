@@ -8,7 +8,8 @@ use App\Models\HotspotPlan;
 use App\Models\HotspotServer;
 use App\Models\HotspotSession;
 use App\Models\HotspotVoucher;
-use Carbon\Carbon;
+
+use App\Models\NetworkZone;use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -207,9 +208,10 @@ class HotspotSectionController extends Controller
             [
                 'servers' =>
                     HotspotServer::query()
-                        ->with(
-                            'router:id,name'
-                        )
+                        ->with([
+                            'router:id,name,zone_id',
+                            'zone:id,name,code,service_type',
+                        ])
                         ->orderBy('name')
                         ->get(),
 
@@ -258,6 +260,7 @@ class HotspotSectionController extends Controller
             HotspotVoucher::query()
                 ->with([
                     'server:id,name',
+                    'zone:id,name,code',
                     'plan:id,name,price,validity_value,validity_unit,rate_limit',
                     'invoices' =>
                         function ($query) {
@@ -286,10 +289,6 @@ class HotspotSectionController extends Controller
                             'username' =>
                                 $voucher
                                     ->username,
-
-                            'password' =>
-                                $voucher
-                                    ->password,
 
                             'status' =>
                                 $voucher
@@ -332,7 +331,12 @@ class HotspotSectionController extends Controller
                                 $voucher
                                     ->server,
 
-                            'plan' =>
+
+                            'zone' =>
+                                $voucher
+                                    ->zone,
+
+'plan' =>
                                 $voucher
                                     ->plan,
 
@@ -376,6 +380,27 @@ class HotspotSectionController extends Controller
             [
                 'vouchers' =>
                     $vouchers,
+
+                'zones' =>
+                    NetworkZone::query()
+                        ->where(
+                            'reseller_id',
+                            $request->user()->reseller_id
+                        )
+                        ->where(
+                            'service_type',
+                            'hotspot'
+                        )
+                        ->where(
+                            'enabled',
+                            true
+                        )
+                        ->orderBy('name')
+                        ->get([
+                            'id',
+                            'name',
+                            'code',
+                        ]),
 
                 'servers' =>
                     HotspotServer::query()
@@ -526,24 +551,48 @@ class HotspotSectionController extends Controller
         $user =
             $request->user();
 
+        $owner =
+            $user
+            && (
+                $user->isAdmin()
+                || $user->isResellerOwner()
+            );
+
+        $manager =
+            $user
+            && $user->isManager();
+
         return [
             'manage' =>
-                $user->hasPermission(
-                    'hotspot.manage'
+                $owner
+                || (
+                    !$manager
+                    && $user->hasPermission(
+                        'hotspot.manage'
+                    )
                 ),
 
             'sell' =>
-                $user->hasPermission(
-                    'hotspot.sell'
+                $owner
+                || (
+                    !$manager
+                    && $user->hasPermission(
+                        'hotspot.sell'
+                    )
                 ),
 
             'payments' =>
-                $user->hasPermission(
-                    'hotspot.payments'
+                $owner
+                || (
+                    !$manager
+                    && $user->hasPermission(
+                        'hotspot.payments'
+                    )
                 ),
 
             'export' =>
-                $user->hasPermission(
+                $owner
+                || $user->hasPermission(
                     'hotspot.export'
                 ),
         ];

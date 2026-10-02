@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Client;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\Package;
 use App\Services\ClientProvisionService;
 use App\Services\InvoiceServicePeriodService;
 use Carbon\Carbon;
@@ -26,6 +27,11 @@ class ClientRenewalController extends Controller
         InvoiceServicePeriodService $servicePeriods
     ): RedirectResponse {
         $data = $request->validate([
+            'package_id' => [
+                'nullable',
+                'integer',
+            ],
+
             'received_amount' => [
                 'required',
                 'numeric',
@@ -70,10 +76,81 @@ class ClientRenewalController extends Controller
                 $data,
                 $servicePeriods
             ): array {
-                $lockedClient = Client::query()
-                    ->with('package')
-                    ->lockForUpdate()
-                    ->findOrFail($client->id);
+                /*
+                 * ACCOUNT_DEVICE_DUE_LOCK_V1
+                 *
+                 * Lock the entire customer/device family
+                 * in deterministic ID order.
+                 *
+                 * This prevents two operators from
+                 * renewing two sibling devices at the
+                 * same time before either due invoice
+                 * becomes visible to the other request.
+                 */
+                $primaryId =
+                    (int) (
+                        $client->parent_client_id
+                        ?: $client->id
+                    );
+
+                $accountDevices =
+                    Client::withoutGlobalScopes()
+                        ->whereNull(
+                            'deleted_at'
+                        )
+                        ->where(
+                            function (
+                                $query
+                            ) use (
+                                $primaryId
+                            ): void {
+                                $query
+                                    ->whereKey(
+                                        $primaryId
+                                    )
+                                    ->orWhere(
+                                        'parent_client_id',
+                                        $primaryId
+                                    );
+                            }
+                        )
+                        ->orderBy('id')
+                        ->lockForUpdate()
+                        ->get([
+                            'id',
+                        ]);
+
+                $accountDeviceIds =
+                    $accountDevices
+                        ->pluck('id')
+                        ->map(
+                            fn ($id) =>
+                                (int) $id
+                        )
+                        ->values();
+
+                if (
+                    !$accountDeviceIds
+                        ->contains(
+                            (int) $client->id
+                        )
+                ) {
+                    throw ValidationException::withMessages([
+                        'renewal' =>
+                            'This device is not available in the customer account.',
+                    ]);
+                }
+
+                /*
+                 * Reload through normal tenant/zone
+                 * scopes after the family lock.
+                 */
+                $lockedClient =
+                    Client::query()
+                        ->with('package')
+                        ->findOrFail(
+                            $client->id
+                        );
 
                 $paymentDate = Carbon::today(
                     'Asia/Qatar'
@@ -88,10 +165,12 @@ class ClientRenewalController extends Controller
                         'client_id',
                         $lockedClient->id
                     )
-                    ->where(
+                    ->whereNotIn(
                         'status',
-                        '!=',
-                        'cancelled'
+                        [
+                            'cancelled',
+                            'refunded',
+                        ]
                     )
                     ->where(
                         'due_amount',
@@ -145,6 +224,12 @@ class ClientRenewalController extends Controller
                  * গ্রহণ করবে। Expiry আবার বাড়বে না।
                  */
                 if ($totalDue > 0) {
+                    /*
+                     * The device that OWES the money is
+                     * always allowed to pay that existing
+                     * due. This request does not create
+                     * another service period.
+                     */
                     return $this->receiveDuePayment(
                         $lockedClient,
                         $dueInvoices,
@@ -156,8 +241,161 @@ class ClientRenewalController extends Controller
                 }
 
                 /*
-                 * Due না থাকলে নতুন মাসের Pay & Renew।
+                 * ACCOUNT_DEVICE_DUE_LOCK_V1
+                 *
+                 * Current device has no own due.
+                 * Before a NEW renewal is created, every
+                 * device belonging to this customer must
+                 * have zero outstanding balance.
+                 *
+                 * Refunded/cancelled invoices do not
+                 * count as customer due.
                  */
+                $accountDueInvoices =
+                    Invoice::withoutGlobalScopes()
+                        ->whereIn(
+                            'client_id',
+                            $accountDeviceIds
+                        )
+                        ->whereNotIn(
+                            'status',
+                            [
+                                'cancelled',
+                                'refunded',
+                            ]
+                        )
+                        ->where(
+                            'due_amount',
+                            '>',
+                            0
+                        )
+                        ->orderBy('client_id')
+                        ->orderBy('id')
+                        ->lockForUpdate()
+                        ->get([
+                            'id',
+                            'client_id',
+                            'due_amount',
+                        ]);
+
+                $accountDue = round(
+                    (float)
+                    $accountDueInvoices
+                        ->sum(
+                            'due_amount'
+                        ),
+                    2
+                );
+
+                if ($accountDue > 0) {
+                    $blockingClientId =
+                        (int) (
+                            $accountDueInvoices
+                                ->first()
+                                ?->client_id
+                            ?? 0
+                        );
+
+                    $blockingDevice =
+                        $blockingClientId > 0
+                            ? Client::withoutGlobalScopes()
+                                ->whereKey(
+                                    $blockingClientId
+                                )
+                                ->first([
+                                    'id',
+                                    'client_code',
+                                    'device_label',
+                                ])
+                            : null;
+
+                    $blockingLabel =
+                        trim(
+                            (string) (
+                                $blockingDevice
+                                    ?->device_label
+                                ?: $blockingDevice
+                                    ?->client_code
+                                ?: (
+                                    $blockingClientId
+                                        ? 'Device #'
+                                            . $blockingClientId
+                                        : 'another device'
+                                )
+                            )
+                        );
+
+                    throw ValidationException::withMessages([
+                        'renewal' =>
+                            'Renewal blocked. '
+                            . $blockingLabel
+                            . ' has outstanding due. '
+                            . 'Clear all account due first. '
+                            . 'Account due QAR '
+                            . number_format(
+                                $accountDue,
+                                2
+                            )
+                            . '.',
+                    ]);
+                }
+
+                /*
+                 * Due না থাকলে নতুন মাসের Pay & Renew।
+                 *
+                 * POS_PACKAGE_CHANGE_START
+                 * POS থেকে package select করা হলে
+                 * শুধুমাত্র নতুন renewal-এর আগে package
+                 * change হবে। পুরোনো Due Payment কখনো
+                 * package change করবে না।
+                 */
+                if (
+                    !empty(
+                        $data['package_id']
+                    )
+                ) {
+                    $package =
+                        Package::query()
+                            ->whereKey(
+                                (int)
+                                $data['package_id']
+                            )
+                            ->where(
+                                'zone_id',
+                                $lockedClient->zone_id
+                            )
+                            ->where(
+                                'enabled',
+                                true
+                            )
+                            ->first();
+
+                    if (!$package) {
+                        throw ValidationException::withMessages([
+                            'package_id' =>
+                                'Selected package is not available.',
+                        ]);
+                    }
+
+                    if (
+                        (int)
+                        $lockedClient->package_id
+                        !==
+                        (int)
+                        $package->id
+                    ) {
+                        $lockedClient->update([
+                            'package_id' =>
+                                $package->id,
+                        ]);
+                    }
+
+                    $lockedClient->setRelation(
+                        'package',
+                        $package
+                    );
+                }
+
                 return $this->renewClient(
                     $lockedClient,
                     $data,
@@ -550,7 +788,23 @@ class ClientRenewalController extends Controller
                 Carbon::now(
                     'Asia/Qatar'
                 ),
-        ]);
+
+            'service_validity_days' =>
+                $validityDays,
+
+            'service_price_snapshot' =>
+                $price,
+
+            'service_start_date' =>
+                $baseDate
+                    ->toDateString(),
+
+            'service_end_date' =>
+                $newExpiry
+                    ->toDateString(),
+
+            'initial_due_amount' =>
+                $remainingDue,        ]);
 
         /*
          * Received amount 0 হলে payment record হবে না।

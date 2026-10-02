@@ -5,7 +5,10 @@ import {
     useForm,
 } from '@inertiajs/react';
 
-export default function Create() {
+export default function Create({
+    zones = [],
+    selectedZoneId = null,
+}) {
     const {
         data,
         setData,
@@ -13,6 +16,12 @@ export default function Create() {
         processing,
         errors,
     } = useForm({
+        zone_id:
+            selectedZoneId
+                ? String(selectedZoneId)
+                : zones.length === 1
+                  ? String(zones[0].id)
+                  : '',
         name: '',
         host: '',
         api_port: 8728,
@@ -44,7 +53,7 @@ export default function Create() {
                     </h1>
 
                     <p className="mt-1 text-slate-500">
-                        Add RouterOS API connection
+                        Bind this MikroTik to one MAC or Hotspot Network Zone
                     </p>
                 </div>
 
@@ -53,6 +62,43 @@ export default function Create() {
                     className="space-y-6 rounded-xl bg-white p-6 shadow"
                 >
                     <div className="grid gap-5 md:grid-cols-2">
+                        <Field
+                            label="Network Zone"
+                            error={errors.zone_id}
+                        >
+                            <select
+                                className={inputClass}
+                                value={data.zone_id}
+                                onChange={(event) =>
+                                    setData(
+                                        'zone_id',
+                                        event.target.value,
+                                    )
+                                }
+                            >
+                                <option value="">
+                                    Select Network Zone
+                                </option>
+
+                                {zones.map((zone) => (
+                                    <option
+                                        key={zone.id}
+                                        value={zone.id}
+                                    >
+                                        {zone.service_type?.toUpperCase()} — {zone.name}
+                                        {zone.code
+                                            ? ` — ${zone.code}`
+                                            : ''}
+                                    </option>
+                                ))}
+                            </select>
+
+                            <p className="mt-1 text-xs text-slate-500">
+                                MAC zones synchronize MAC/IP clients.
+                                Hotspot zones are isolated for MikroTik Hotspot service.
+                            </p>
+                        </Field>
+
                         <Field
                             label="Router Name"
                             error={errors.name}
@@ -139,7 +185,7 @@ export default function Create() {
                         </Field>
 
                         <Field
-                            label="Client Interface"
+                            label="MAC Client Interface"
                             error={errors.client_interface}
                         >
                             <input
@@ -160,7 +206,7 @@ export default function Create() {
                         </Field>
 
                         <Field
-                            label="DHCP Server"
+                            label="MAC DHCP Server"
                             error={errors.dhcp_server}
                         >
                             <input

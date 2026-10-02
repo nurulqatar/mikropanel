@@ -9,8 +9,11 @@ use App\Http\Controllers\HotspotBrandingController;
 use App\Http\Controllers\HotspotReportController;
 use App\Http\Controllers\HotspotVoucherDocumentController;
 use App\Http\Controllers\HotspotVoucherController;
+use App\Http\Controllers\HotspotSellerController;
 use Inertia\Inertia;
 use App\Http\Controllers\RouterController;
+use App\Http\Controllers\RouterWireGuardController;
+use App\Http\Controllers\HotspotPortalActionController;
 use App\Http\Controllers\PackageController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\IpRangeController;
@@ -21,16 +24,69 @@ use App\Http\Controllers\SettingController;
 use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\NotificationController;
 
-Route::get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-    ]);
-});
+/* Public homepage loaded from routes/public_reseller.php */
 
 use App\Http\Controllers\DashboardController;
+
+/*
+ * MAIN_HOTSPOT_PUBLIC_MAC_RESET_V1
+ *
+ * Public captive-portal action.
+ * Protected by router-specific HMAC token
+ * plus application rate limiting.
+ */
+Route::post(
+    'hotspot-portal/mac-reset/{router}/{token}',
+    [
+        HotspotPortalActionController::class,
+        'resetMac',
+    ]
+)
+    ->whereNumber(
+        'router'
+    )
+    ->where(
+        'token',
+        '[a-f0-9]{64}'
+    )
+    ->withoutMiddleware([
+        \App\Http\Middleware\SuperAdminPanelOnly::class,
+        \App\Http\Middleware\ShareUnifiedFinance::class,
+        \App\Http\Middleware\EnforceResellerAccess::class,
+    ])
+    ->name(
+        'hotspot.portal.mac-reset'
+    );
+
+
+/*
+ * MAIN_HOTSPOT_PUBLIC_BRANDING_V1
+ */
+Route::get(
+    'hotspot-portal/branding/{router}/{token}',
+    [
+        HotspotPortalActionController::class,
+        'branding',
+    ]
+)
+    ->whereNumber(
+        'router'
+    )
+    ->where(
+        'token',
+        '[a-f0-9]{64}'
+    )
+    ->withoutMiddleware([
+        \App\Http\Middleware\SuperAdminPanelOnly::class,
+        \App\Http\Middleware\ShareUnifiedFinance::class,
+        \App\Http\Middleware\EnforceResellerAccess::class,
+    ])
+    ->middleware(
+        'throttle:120,1'
+    )
+    ->name(
+        'hotspot.portal.branding'
+    );
 
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware([
@@ -59,6 +115,283 @@ Route::post(
     'routers/{router}/sync',
     [RouterController::class, 'sync']
 )->name('routers.sync');
+
+
+/*
+ * RESELLER_ROUTER_WIREGUARD_V1
+ */
+Route::get(
+    'routers/{router}/wireguard',
+    [
+        RouterWireGuardController::class,
+        'show',
+    ]
+)->name(
+    'routers.wireguard.show'
+);
+
+Route::post(
+    'routers/{router}/wireguard',
+    [
+        RouterWireGuardController::class,
+        'create',
+    ]
+)->name(
+    'routers.wireguard.create'
+);
+
+Route::post(
+    'routers/{router}/wireguard/check',
+    [
+        RouterWireGuardController::class,
+        'refresh',
+    ]
+)->name(
+    'routers.wireguard.check'
+);
+
+Route::post(
+    'routers/{router}/wireguard/regenerate',
+    [
+        RouterWireGuardController::class,
+        'rotate',
+    ]
+)->name(
+    'routers.wireguard.rotate'
+);
+
+Route::post(
+    'routers/{router}/wireguard/use-as-host',
+    [
+        RouterWireGuardController::class,
+        'activateHost',
+    ]
+)->name(
+    'routers.wireguard.activate-host'
+);
+
+Route::delete(
+    'routers/{router}/wireguard',
+    [
+        RouterWireGuardController::class,
+        'revoke',
+    ]
+)->name(
+    'routers.wireguard.revoke'
+);
+
+/*
+ * HOTSPOT_ROUTER_SETUP_WIZARD_PHASE1_V1
+ *
+ * Read-only RouterOS discovery page used before
+ * MikroPanel applies any Hotspot configuration.
+ */
+Route::get(
+    'routers/{router}/hotspot-setup',
+    [
+        RouterController::class,
+        'hotspotSetup',
+    ]
+)->name(
+    'routers.hotspot-setup'
+);
+
+/*
+ * HOTSPOT_BRIDGE_SETUP_PHASE2_V2
+ */
+Route::post(
+    'routers/{router}/hotspot-setup/bridge',
+    [
+        RouterController::class,
+        'hotspotSetupBridge',
+    ]
+)->name(
+    'routers.hotspot-setup.bridge'
+);
+
+/*
+ * HOTSPOT_GATEWAY_STEP3_V1
+ */
+Route::post(
+    'routers/{router}/hotspot-setup/gateway',
+    [
+        RouterController::class,
+        'hotspotSetupGateway',
+    ]
+)->name(
+    'routers.hotspot-setup.gateway'
+);
+
+/*
+ * HOTSPOT_DHCP_STEP4_V1
+ */
+Route::post(
+    'routers/{router}/hotspot-setup/dhcp',
+    [
+        RouterController::class,
+        'hotspotSetupDhcp',
+    ]
+)->name(
+    'routers.hotspot-setup.dhcp'
+);
+
+/*
+ * HOTSPOT_WIZARD_FINAL_V1
+ *
+ * Steps 5-9 are completed in one safe operation:
+ * Hotspot/Profile -> Login -> NAT -> Portal -> Validation.
+ */
+Route::post(
+    'routers/{router}/hotspot-setup/finalize',
+    [
+        RouterController::class,
+        'hotspotSetupFinalize',
+    ]
+)->name(
+    'routers.hotspot-setup.finalize'
+);
+
+/*
+ * HOTSPOT_ROUTER_HEALTH_V2
+ */
+Route::get(
+    'router-health',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'index',
+    ]
+)->name(
+    'hotspot.router-health.index'
+);
+
+Route::post(
+    'router-health/reset-policy',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'updateResetPolicy',
+    ]
+)->name(
+    'hotspot.router-health.reset-policy'
+);
+
+Route::get(
+    'router-health/{router}',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'show',
+    ]
+)->name(
+    'hotspot.router-health.show'
+);
+
+Route::get(
+    'router-health/{router}/snapshot',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'snapshot',
+    ]
+)->name(
+    'hotspot.router-health.snapshot'
+);
+
+Route::get(
+    'router-health/{router}/live',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'live',
+    ]
+)->name(
+    'hotspot.router-health.live'
+);
+
+Route::post(
+    'router-health/{router}/import',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'import',
+    ]
+)->name(
+    'hotspot.router-health.import'
+);
+
+Route::post(
+    'router-health/{router}/repair',
+    [
+        \App\Http\Controllers\HotspotRouterHealthController::class,
+        'repair',
+    ]
+)->name(
+    'hotspot.router-health.repair'
+);
+
+/*
+ * MAIN_HOTSPOT_PORTAL_PACKAGE_V1
+ */
+Route::get(
+    'routers/{router}/hotspot-portal',
+    [
+        RouterController::class,
+        'downloadHotspotPortal',
+    ]
+)->name(
+    'routers.hotspot-portal.download'
+);
+
+
+/*
+ * RESELLER_VPN_FIRST_FLOW_V2
+ *
+ * VPN is created before Router registration.
+ */
+Route::get(
+    '/reseller/mikrotik-vpn',
+    [
+        \App\Http\Controllers\Reseller\MikroTikVpnController::class,
+        'index',
+    ]
+)->name(
+    'reseller.mikrotik-vpn.index'
+);
+
+Route::post(
+    '/reseller/mikrotik-vpn',
+    [
+        \App\Http\Controllers\Reseller\MikroTikVpnController::class,
+        'store',
+    ]
+)->name(
+    'reseller.mikrotik-vpn.store'
+);
+
+Route::post(
+    '/reseller/mikrotik-vpn/{peer}/check',
+    [
+        \App\Http\Controllers\Reseller\MikroTikVpnController::class,
+        'check',
+    ]
+)->name(
+    'reseller.mikrotik-vpn.check'
+);
+
+Route::post(
+    '/reseller/mikrotik-vpn/{peer}/regenerate',
+    [
+        \App\Http\Controllers\Reseller\MikroTikVpnController::class,
+        'rotate',
+    ]
+)->name(
+    'reseller.mikrotik-vpn.rotate'
+);
+
+Route::delete(
+    '/reseller/mikrotik-vpn/{peer}',
+    [
+        \App\Http\Controllers\Reseller\MikroTikVpnController::class,
+        'revoke',
+    ]
+)->name(
+    'reseller.mikrotik-vpn.revoke'
+);
 
     Route::resource('routers', RouterController::class);
     Route::resource('packages', PackageController::class);
@@ -122,6 +455,23 @@ Route::get(
         ->name('clients.unsuspend');
     Route::resource('payments', \App\Http\Controllers\PaymentController::class)
     ->except(['show', 'edit', 'update']);
+
+
+    Route::get(
+        'clients/{client}/refund-preview',
+        [
+            \App\Http\Controllers\ClientRefundController::class,
+            'preview',
+        ]
+    )->name('payments.refund.preview');
+
+    Route::post(
+        'clients/{client}/refund',
+        [
+            \App\Http\Controllers\ClientRefundController::class,
+            'store',
+        ]
+    )->name('payments.refund.store');
 
     Route::get(
         'accounting/print',
@@ -190,6 +540,15 @@ Route::get(
     [ClientRenewalController::class, 'store']
 )->name('clients.renew');
 
+    Route::post(
+        '/clients/{client}/renew-all-devices',
+        [
+            \App\Http\Controllers\ClientBulkRenewalController::class,
+            'store',
+        ]
+    )->name('clients.renew-all');
+
+
 
     Route::resource(
         'users',
@@ -199,13 +558,76 @@ Route::get(
 
     /*
      * Hotspot module.
-     * Controller currently enforces admin-only
-     * access until granular Hotspot permissions
-     * are installed in the next phase.
+     * Access is protected by reseller tenancy,
+     * Network Zone isolation and granular
+     * panel permissions.
      */
     Route::prefix('hotspot')
         ->name('hotspot.')
         ->group(function () {
+
+            /*
+             * HOTSPOT_SELLER_LEDGER_V1
+             */
+            Route::get(
+                'sellers',
+                [
+                    HotspotSellerController::class,
+                    'index',
+                ]
+            )->name(
+                'sellers.index'
+            );
+
+            Route::post(
+                'sellers',
+                [
+                    HotspotSellerController::class,
+                    'store',
+                ]
+            )->name(
+                'sellers.store'
+            );
+
+            Route::put(
+                'sellers/{seller}',
+                [
+                    HotspotSellerController::class,
+                    'update',
+                ]
+            )->name(
+                'sellers.update'
+            );
+
+            Route::post(
+                'sellers/{seller}/collections',
+                [
+                    HotspotSellerController::class,
+                    'collect',
+                ]
+            )->name(
+                'sellers.collections.store'
+            );
+
+            Route::post(
+                'seller-assignments/batch',
+                [
+                    HotspotSellerController::class,
+                    'assignBatch',
+                ]
+            )->name(
+                'sellers.assign-batch'
+            );
+
+            Route::post(
+                'seller-assignments/voucher',
+                [
+                    HotspotSellerController::class,
+                    'assignVoucher',
+                ]
+            )->name(
+                'sellers.assign-voucher'
+            );
             Route::get(
                 '/',
                 [
@@ -524,6 +946,137 @@ Route::get(
         });
 
 });
+
+
+/*
+|--------------------------------------------------------------------------
+| Reseller MAC Client Migration
+|--------------------------------------------------------------------------
+*/
+Route::middleware([
+    'auth',
+    'active.panel.user',
+    \App\Http\Middleware\EnforceResellerAccess::class,
+])
+    ->prefix('reseller/mac-clients')
+    ->name('reseller.mac-clients.')
+    ->group(function () {
+        Route::get(
+            '/migration',
+            [
+                \App\Http\Controllers\Reseller\ClientMigrationController::class,
+                'index',
+            ]
+        )->name('migration');
+
+        Route::get(
+            '/template',
+            [
+                \App\Http\Controllers\Reseller\ClientMigrationController::class,
+                'template',
+            ]
+        )->name('template');
+
+        Route::get(
+            '/export',
+            [
+                \App\Http\Controllers\Reseller\ClientMigrationController::class,
+                'export',
+            ]
+        )->name('export');
+
+        Route::post(
+            '/import',
+            [
+                \App\Http\Controllers\Reseller\ClientMigrationController::class,
+                'import',
+            ]
+        )->name('import');
+
+        Route::get(
+            '/form-fields',
+            [
+                \App\Http\Controllers\Reseller\ClientFormFieldController::class,
+                'index',
+            ]
+        )->name('form-fields.index');
+
+        Route::post(
+            '/form-fields',
+            [
+                \App\Http\Controllers\Reseller\ClientFormFieldController::class,
+                'store',
+            ]
+        )->name('form-fields.store');
+
+        Route::patch(
+            '/form-fields/{clientCustomField}/toggle',
+            [
+                \App\Http\Controllers\Reseller\ClientFormFieldController::class,
+                'toggle',
+            ]
+        )->name('form-fields.toggle');
+
+        Route::delete(
+            '/form-fields/{clientCustomField}',
+            [
+                \App\Http\Controllers\Reseller\ClientFormFieldController::class,
+                'destroy',
+            ]
+        )->name('form-fields.destroy');
+    });
+
+Route::post(
+    '/clients/identity-scan',
+    \App\Http\Controllers\ClientIdentityScanController::class
+)
+    ->middleware([
+        'auth',
+        'active.panel.user',
+    ])
+    ->name('clients.identity-scan');
+
+
+Route::get(
+    '/clients/{client}/identity-image/{kind}',
+    \App\Http\Controllers\ClientIdentityImageController::class
+)
+    ->middleware([
+        'auth',
+        'active.panel.user',
+    ])
+    ->name('clients.identity-image');
+
+
+Route::get(
+    '/clients/identity-scan-preview/{token}',
+    [
+        \App\Http\Controllers\ClientIdentityImageController::class,
+        'preview',
+    ]
+)
+    ->middleware([
+        'auth',
+        'active.panel.user',
+    ])
+    ->whereUuid('token')
+    ->name('clients.identity-scan-preview');
+
+
+Route::get(
+    '/clients/identity-face-preview/{token}',
+    [
+        \App\Http\Controllers\ClientIdentityImageController::class,
+        'previewFace',
+    ]
+)
+    ->middleware([
+        'auth',
+        'active.panel.user',
+    ])
+    ->whereUuid('token')
+    ->name('clients.identity-face-preview');
+
 require __DIR__.'/auth.php';
 
 
@@ -756,3 +1309,121 @@ unset(
 
 require __DIR__.'/super_admin.php';
 require __DIR__.'/reseller.php';
+
+
+/*
+|--------------------------------------------------------------------------
+| Reseller MAC Client POS
+|--------------------------------------------------------------------------
+*/
+\Illuminate\Support\Facades\Route::middleware([
+    'auth',
+    \App\Http\Middleware\EnforceResellerAccess::class,
+])->get(
+    '/reseller/mac-pos',
+    \App\Http\Controllers\Reseller\MacClientPosController::class
+)->name('reseller.mac-pos');
+
+/*
+ * MAC_POS_DEVICE_TRANSFER_ROUTE_V2
+ */
+\Illuminate\Support\Facades\Route::middleware([
+    'auth',
+    \App\Http\Middleware\EnforceResellerAccess::class,
+])->post(
+    '/reseller/mac-pos/transfer-device',
+    [
+        \App\Http\Controllers\Reseller\MacClientPosController::class,
+        'transferDevice',
+    ]
+)->name(
+    'reseller.mac-pos.transfer-device'
+);
+
+
+
+/*
+|--------------------------------------------------------------------------
+| Universal Windows Scanner Agent
+|--------------------------------------------------------------------------
+|
+| Authenticated browser sessions receive a short-lived signed token.
+| The local Windows Agent validates the signature before allowing a
+| panel origin to pair/re-pair.
+|
+*/
+
+Route::get(
+    '/scanner/agent-token',
+    \App\Http\Controllers\ScannerAgentTokenController::class,
+)
+    ->middleware('auth')
+    ->name('scanner.agent-token');
+
+require __DIR__.'/manager_cash.php';
+
+require __DIR__.'/public_reseller.php';
+
+/*
+ * HOTEL_HOTSPOT_ROUTE_INCLUDE_V1
+ */
+require __DIR__.'/hotel.php';
+
+/*
+ * HOTEL_COMMERCIAL_SUPERADMIN_V1
+ */
+Route::middleware([
+    'auth',
+])
+    ->prefix(
+        'super-admin/hotel-hotspot'
+    )
+    ->name(
+        'superadmin.hotel.'
+    )
+    ->group(
+        function (): void {
+            Route::get(
+                'commercial',
+                [
+                    \App\Http\Controllers\SuperAdmin\Hotel\CommercialController::class,
+                    'index',
+                ]
+            )->name(
+                'commercial.index'
+            );
+
+            Route::post(
+                'commercial/invoices/{invoice}/payment',
+                [
+                    \App\Http\Controllers\SuperAdmin\Hotel\CommercialController::class,
+                    'payment',
+                ]
+            )->name(
+                'commercial.payment'
+            );
+
+            Route::post(
+                'commercial/hotels/{hotel}/renew',
+                [
+                    \App\Http\Controllers\SuperAdmin\Hotel\CommercialController::class,
+                    'renew',
+                ]
+            )->name(
+                'commercial.renew'
+            );
+        }
+    );
+
+require __DIR__.'/compliance.php';
+
+/* RENTAL_CUSTOMER_STATUS_PORTAL_V1 */
+\Illuminate\Support\Facades\Route::get(
+    '/rental/status/{token}',
+    [\App\Http\Controllers\PublicRentalStatusController::class, 'show']
+)->where('token', '[a-f0-9]{64}')->name('rental.status');
+
+\Illuminate\Support\Facades\Route::post(
+    '/rental/status/{token}/ticket',
+    [\App\Http\Controllers\PublicRentalStatusController::class, 'ticket']
+)->where('token', '[a-f0-9]{64}')->middleware('throttle:10,1')->name('rental.status.ticket');

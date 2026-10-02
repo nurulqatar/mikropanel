@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class HotspotServer extends Model
 {
     protected $fillable = [
+        'reseller_id',
+        'zone_id',
         'router_id',
         'name',
         'mikrotik_name',
@@ -52,4 +54,14 @@ class HotspotServer extends Model
             HotspotSession::class
         );
     }
+
+    public function zone()
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
+        );
+    }
+
+
 }

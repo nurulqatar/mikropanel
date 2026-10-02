@@ -119,14 +119,11 @@ export default function Voucher({
 
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <Card
-                        label="Username"
+                        label="Voucher Code"
                         value={voucher.username}
                     />
 
-                    <Card
-                        label="Password"
-                        value={voucher.password}
-                    />
+
 
                     <Card
                         label="Status"

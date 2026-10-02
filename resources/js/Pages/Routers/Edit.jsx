@@ -5,7 +5,11 @@ import {
     useForm,
 } from '@inertiajs/react';
 
-export default function Edit({ router }) {
+export default function Edit({
+    router,
+    zones = [],
+    selectedZoneId = null,
+}) {
     const {
         data,
         setData,
@@ -13,6 +17,12 @@ export default function Edit({ router }) {
         processing,
         errors,
     } = useForm({
+        zone_id:
+            String(
+                selectedZoneId ??
+                    router.zone_id ??
+                    '',
+            ),
         name: router.name ?? '',
         host: router.host ?? '',
         api_port: router.api_port ?? 8728,
@@ -56,6 +66,43 @@ export default function Edit({ router }) {
                     className="space-y-6 rounded-xl bg-white p-6 shadow"
                 >
                     <div className="grid gap-5 md:grid-cols-2">
+                        <Field
+                            label="Network Zone"
+                            error={errors.zone_id}
+                        >
+                            <select
+                                className={inputClass}
+                                value={data.zone_id}
+                                onChange={(event) =>
+                                    setData(
+                                        'zone_id',
+                                        event.target.value,
+                                    )
+                                }
+                            >
+                                <option value="">
+                                    Select Network Zone
+                                </option>
+
+                                {zones.map((zone) => (
+                                    <option
+                                        key={zone.id}
+                                        value={zone.id}
+                                    >
+                                        {zone.service_type?.toUpperCase()} — {zone.name}
+                                        {zone.code
+                                            ? ` — ${zone.code}`
+                                            : ''}
+                                    </option>
+                                ))}
+                            </select>
+
+                            <p className="mt-1 text-xs text-slate-500">
+                                The selected zone determines whether this
+                                router serves MAC clients or Hotspot service.
+                            </p>
+                        </Field>
+
                         <Field
                             label="Router Name"
                             error={errors.name}
@@ -140,7 +187,7 @@ export default function Edit({ router }) {
                         </Field>
 
                         <Field
-                            label="Client Interface"
+                            label="MAC Client Interface"
                             error={errors.client_interface}
                         >
                             <input
@@ -160,7 +207,7 @@ export default function Edit({ router }) {
                         </Field>
 
                         <Field
-                            label="DHCP Server"
+                            label="MAC DHCP Server"
                             error={errors.dhcp_server}
                         >
                             <input
@@ -213,8 +260,8 @@ export default function Edit({ router }) {
                     </div>
 
                     <div className="rounded-lg bg-cyan-50 px-4 py-3 text-sm text-cyan-800">
-                        Update করার পর MikroTik API connection
-                        automatic test এবং sync হবে।
+                        After updating, the MikroTik API connection
+                        will be tested and synchronized automatically.
                     </div>
 
                     <div className="flex gap-3">

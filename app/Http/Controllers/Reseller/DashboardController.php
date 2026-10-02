@@ -4,15 +4,21 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Models\Client;
+use App\Models\ClientRefund;
 use App\Models\Expense;
 use App\Models\HotspotInvoice;
 use App\Models\HotspotPayment;
+use App\Models\HotspotSellerCollection;
 use App\Models\HotspotSession;
 use App\Models\HotspotVoucher;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\Package;
 use App\Models\Reseller;
+use App\Models\ResellerPlan;
+use App\Models\ResellerNotification;
 use App\Models\Router;
+use App\Services\Reseller\ResellerModuleService;
 use App\Services\Reseller\ResellerUsageService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -23,7 +29,8 @@ class DashboardController extends Controller
 {
     public function __invoke(
         Request $request,
-        ResellerUsageService $usage
+        ResellerUsageService $usage,
+        ResellerModuleService $modules
     ): Response {
         $user =
             $request->user();
@@ -43,6 +50,95 @@ class DashboardController extends Controller
                     $user->reseller_id
                 );
 
+        /*
+         * COMPANY_DASHBOARD_MODULE_AWARE_V2
+         */
+        $enabledModules =
+            $modules
+                ->enabledKeysForResellerId(
+                    (int) $reseller->id
+                );
+
+        $hasMacClientModule =
+            in_array(
+                ResellerModuleService::MAC_CLIENT,
+                $enabledModules,
+                true
+            );
+
+        $hasHotspotModule =
+            in_array(
+                ResellerModuleService::HOTSPOT,
+                $enabledModules,
+                true
+            );
+
+        /*
+         * RESELLER_SELF_UPGRADE_DATA_V1
+         */
+        $currentSubscription =
+            $reseller
+                ->activeSubscription;
+
+        $currentClientLimit =
+            (int) (
+                $currentSubscription
+                    ?->client_limit
+                ?? 0
+            );
+
+        $upgradePlans =
+            $user->isResellerOwner()
+                ? ResellerPlan::query()
+                    ->where(
+                        'active',
+                        true
+                    )
+                    ->where(
+                        'price',
+                        '>',
+                        0
+                    )
+                    ->where(
+                        'client_limit',
+                        '>',
+                        $currentClientLimit
+                    )
+                    ->orderBy(
+                        'client_limit'
+                    )
+                    ->get([
+                        'id',
+                        'name',
+                        'code',
+                        'client_limit',
+                        'price',
+                        'validity_days',
+                    ])
+                    ->map(
+                        fn (
+                            ResellerPlan $plan
+                        ): array => [
+                            'id' =>
+                                $plan->id,
+                            'name' =>
+                                $plan->name,
+                            'code' =>
+                                $plan->code,
+                            'client_limit' =>
+                                (int)
+                                $plan->client_limit,
+                            'price' =>
+                                (float)
+                                $plan->price,
+                            'validity_days' =>
+                                (int)
+                                $plan->validity_days,
+                        ]
+                    )
+                    ->values()
+                : collect();
+
         $today =
             Carbon::now(
                 $reseller->timezone
@@ -61,7 +157,7 @@ class DashboardController extends Controller
                     'amount'
                 );
 
-        $hotspotCollection =
+        $directHotspotCollection =
             (float)
             HotspotPayment::query()
                 ->whereDate(
@@ -72,6 +168,216 @@ class DashboardController extends Controller
                 ->sum(
                     'amount'
                 );
+
+        $sellerHotspotCollection =
+            (float)
+            HotspotSellerCollection::query()
+                ->whereDate(
+                    'collected_at',
+                    $today
+                        ->toDateString()
+                )
+                ->sum(
+                    'amount'
+                );
+
+        $hotspotCollection =
+            round(
+                $directHotspotCollection
+                + $sellerHotspotCollection,
+                2
+            );
+
+
+        /*
+         * MAIN_ACCOUNT_RECONCILIATION_V1
+         *
+         * Hotspot Seller money belongs to the
+         * reseller/company Main Account, not the
+         * MAC Client Manager Cash account.
+         *
+         * Main Credit:
+         *   Client payments
+         *   + direct Hotspot payments
+         *   + Seller collections
+         *
+         * Main Debit:
+         *   Client refunds
+         *   + approved business expenses
+         */
+        $todayDate =
+            $today->toDateString();
+
+        $todayCredit =
+            round(
+                $normalCollection
+                + $hotspotCollection,
+                2
+            );
+
+        $todayRefund =
+            round(
+                (float)
+                ClientRefund::query()
+                    ->whereDate(
+                        'refund_date',
+                        $todayDate
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $todayExpense =
+            round(
+                (float)
+                Expense::query()
+                    ->where(
+                        'approval_status',
+                        '!=',
+                        'rejected'
+                    )
+                    ->whereDate(
+                        'expense_date',
+                        $todayDate
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $todayDebit =
+            round(
+                $todayRefund
+                + $todayExpense,
+                2
+            );
+
+        $mainCredit =
+            round(
+                (float)
+                Payment::query()
+                    ->sum(
+                        'amount'
+                    )
+                +
+                (float)
+                HotspotPayment::query()
+                    ->sum(
+                        'amount'
+                    )
+                +
+                (float)
+                HotspotSellerCollection::query()
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $mainRefund =
+            round(
+                (float)
+                ClientRefund::query()
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $mainExpense =
+            round(
+                (float)
+                Expense::query()
+                    ->where(
+                        'approval_status',
+                        '!=',
+                        'rejected'
+                    )
+                    ->sum(
+                        'amount'
+                    ),
+                2
+            );
+
+        $mainDebit =
+            round(
+                $mainRefund
+                + $mainExpense,
+                2
+            );
+
+        $mainClosing =
+            round(
+                $mainCredit
+                - $mainDebit,
+                2
+            );
+
+        $sellerSales =
+            (float)
+            HotspotInvoice::query()
+                ->whereNotNull(
+                    'hotspot_seller_id'
+                )
+                ->where(
+                    'invoice_type',
+                    'sale'
+                )
+                ->where(
+                    'status',
+                    '!=',
+                    'cancelled'
+                )
+                ->selectRaw(
+                    '
+                        COALESCE(
+                            SUM(
+                                amount
+                                - discount
+                            ),
+                            0
+                        ) AS total
+                    '
+                )
+                ->value(
+                    'total'
+                );
+
+        $sellerCollected =
+            (float)
+            HotspotSellerCollection::query()
+                ->sum(
+                    'amount'
+                );
+
+        $sellerOutstanding =
+            max(
+                0,
+                round(
+                    $sellerSales
+                    - $sellerCollected,
+                    2
+                )
+            );
+
+        $hotspotCustomerDue =
+            round(
+                (float)
+                HotspotInvoice::query()
+                    ->where(
+                        'status',
+                        '!=',
+                        'cancelled'
+                    )
+                    ->sum(
+                        'due_amount'
+                    ),
+                2
+            );
+
 
         return Inertia::render(
             'Reseller/Dashboard',
@@ -104,7 +410,45 @@ class DashboardController extends Controller
                             ->activeSubscription
                             ?->plan
                             ?->name,
+
+                    'current_plan' =>
+                        $currentSubscription
+                            ? [
+                                'id' =>
+                                    $currentSubscription
+                                        ->reseller_plan_id,
+
+                                'name' =>
+                                    $currentSubscription
+                                        ->plan
+                                        ?->name,
+
+                                'client_limit' =>
+                                    (int)
+                                    $currentSubscription
+                                        ->client_limit,
+
+                                'price' =>
+                                    (float)
+                                    $currentSubscription
+                                        ->price,
+
+                                'expires_at' =>
+                                    $currentSubscription
+                                        ->expires_at
+                                        ?->timezone(
+                                            $reseller->timezone
+                                            ?: 'Asia/Qatar'
+                                        )
+                                        ->format(
+                                            'Y-m-d H:i'
+                                        ),
+                            ]
+                            : null,
                 ],
+
+                'upgradePlans' =>
+                    $upgradePlans,
 
                 'usage' =>
                     $usage->snapshot(
@@ -113,16 +457,30 @@ class DashboardController extends Controller
 
                 'stats' => [
                     'clients' =>
-                        Client::query()
-                            ->count(),
+                        $hasMacClientModule
+                            ? Client::query()
+                                ->count()
+                            : 0,
 
                     'active_clients' =>
-                        Client::query()
-                            ->where(
-                                'enabled',
-                                true
-                            )
-                            ->count(),
+                        $hasMacClientModule
+                            ? Client::query()
+                                ->where(
+                                    'enabled',
+                                    true
+                                )
+                                ->count()
+                            : 0,
+
+                    'online_clients' =>
+                        $hasMacClientModule
+                            ? Client::query()
+                                ->where(
+                                    'connected',
+                                    true
+                                )
+                                ->count()
+                            : 0,
 
                     'routers' =>
                         Router::query()
@@ -145,56 +503,240 @@ class DashboardController extends Controller
 
                     'hotspot_due' =>
                         round(
-                            (float)
-                            HotspotInvoice::query()
-                                ->where(
-                                    'status',
-                                    '!=',
-                                    'cancelled'
-                                )
-                                ->sum(
-                                    'due_amount'
-                                ),
+                            $hotspotCustomerDue
+                            + $sellerOutstanding,
                             2
                         ),
+
+                    'hotspot_customer_due' =>
+                        $hotspotCustomerDue,
+
+                    'seller_receivable' =>
+                        $sellerOutstanding,
 
                     'today_collection' =>
-                        round(
-                            $normalCollection
-                            + $hotspotCollection,
-                            2
-                        ),
+                        $todayCredit,
+
+                    'today_credit' =>
+                        $todayCredit,
+
+                    'today_refund' =>
+                        $todayRefund,
+
+                    'today_expense' =>
+                        $todayExpense,
+
+                    'today_debit' =>
+                        $todayDebit,
+
+                    'main_credit' =>
+                        $mainCredit,
+
+                    'main_debit' =>
+                        $mainDebit,
+
+                    'main_closing' =>
+                        $mainClosing,
 
                     'expenses' =>
-                        round(
-                            (float)
-                            Expense::query()
-                                ->whereDate(
-                                    'expense_date',
-                                    $today
-                                        ->toDateString()
-                                )
-                                ->sum(
-                                    'amount'
-                                ),
-                            2
-                        ),
+                        $todayExpense,
 
                     'hotspot_vouchers' =>
-                        HotspotVoucher::query()
-                            ->count(),
+                        $hasHotspotModule
+                            ? HotspotVoucher::query()
+                                ->count()
+                            : 0,
 
                     'online_hotspot' =>
-                        HotspotSession::query()
-                            ->where(
-                                'active',
-                                true
+                        $hasHotspotModule
+                            ? HotspotSession::query()
+                                ->where(
+                                    'active',
+                                    true
+                                )
+                                ->count()
+                            : 0,
+
+                    'unread_notifications' =>
+                        ResellerNotification::query()
+                            ->whereNull(
+                                'read_at'
                             )
                             ->count(),
                 ],
 
+                'pos' =>
+                    $hasMacClientModule
+                        ? [
+                    'can_renew' =>
+                        $user->hasPermission(
+                            'clients.renew'
+                        ),
+
+                    'can_receive_payment' =>
+                        $user->hasPermission(
+                            'payments.manage'
+                        ),
+
+                    'clients' =>
+                        Client::query()
+                            ->with([
+                                'package:id,name,price,validity_days',
+                            ])
+                            ->withSum(
+                                [
+                                    'invoices as total_due' =>
+                                        function ($query) {
+                                            $query->where(
+                                                'status',
+                                                '!=',
+                                                'cancelled'
+                                            );
+                                        },
+                                ],
+                                'due_amount'
+                            )
+                            ->orderBy('name')
+                            ->get()
+                            ->map(
+                                function (
+                                    Client $client
+                                ): array {
+                                    return [
+                                        'id' =>
+                                            $client->id,
+
+                                        'name' =>
+                                            $client->name,
+
+                                        'client_code' =>
+                                            $client->client_code,
+
+                                        'phone' =>
+                                            $client->phone,
+
+                                        'mac_address' =>
+                                            $client->active_mac_address
+                                            ?: $client->mac_address,
+
+                                        'ip_address' =>
+                                            $client->ip_address,
+
+                                        'enabled' =>
+                                            (bool)
+                                            $client->enabled,
+
+                                        'expiry_date' =>
+                                            $client->expiry_date
+                                                ?->format(
+                                                    'Y-m-d'
+                                                ),
+
+                                        'zone_id' =>
+                                            $client->zone_id,
+
+                                        'package_id' =>
+                                            $client->package_id,
+
+                                        'package' =>
+                                            $client->package
+                                                ? [
+                                                    'id' =>
+                                                        $client
+                                                            ->package
+                                                            ->id,
+
+                                                    'name' =>
+                                                        $client
+                                                            ->package
+                                                            ->name,
+
+                                                    'price' =>
+                                                        (float)
+                                                        $client
+                                                            ->package
+                                                            ->price,
+
+                                                    'validity_days' =>
+                                                        (int)
+                                                        $client
+                                                            ->package
+                                                            ->validity_days,
+                                                ]
+                                                : null,
+
+                                        'total_due' =>
+                                            round(
+                                                (float) (
+                                                    $client
+                                                        ->total_due
+                                                    ?? 0
+                                                ),
+                                                2
+                                            ),
+                                    ];
+                                }
+                            )
+                            ->values(),
+
+                    'packages' =>
+                        Package::query()
+                            ->where(
+                                'enabled',
+                                true
+                            )
+                            ->orderBy('name')
+                            ->get([
+                                'id',
+                                'zone_id',
+                                'name',
+                                'price',
+                                'validity_days',
+                            ])
+                            ->map(
+                                function (
+                                    Package $package
+                                ): array {
+                                    return [
+                                        'id' =>
+                                            $package->id,
+
+                                        'zone_id' =>
+                                            $package->zone_id,
+
+                                        'name' =>
+                                            $package->name,
+
+                                        'price' =>
+                                            (float)
+                                            $package->price,
+
+                                        'validity_days' =>
+                                            (int)
+                                            $package
+                                                ->validity_days,
+                                    ];
+                                }
+                            )
+                            ->values(),
+                ]
+                        : [
+                            'can_renew' =>
+                                false,
+
+                            'can_receive_payment' =>
+                                false,
+
+                            'clients' =>
+                                collect(),
+
+                            'packages' =>
+                                collect(),
+                        ],
+
                 'recentClients' =>
-                    Client::query()
+                    $hasMacClientModule
+                        ? Client::query()
                         ->with([
                             'package:id,name',
                             'router:id,name',
@@ -210,7 +752,8 @@ class DashboardController extends Controller
                             'expiry_date',
                             'package_id',
                             'router_id',
-                        ]),
+                        ])
+                        : collect(),
 
                 'isOwner' =>
                     $user

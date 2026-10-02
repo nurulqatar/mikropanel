@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\DiscoverHotspotServersJob;
 use App\Jobs\DisconnectHotspotSession;
+use App\Jobs\ProvisionHotspotVoucher;
 use App\Jobs\SyncHotspotServer;
 use App\Models\HotspotBatch;
 use App\Models\HotspotInvoice;
@@ -12,14 +13,16 @@ use App\Models\HotspotPlan;
 use App\Models\HotspotServer;
 use App\Models\HotspotSession;
 use App\Models\HotspotVoucher;
-use App\Services\Hotspot\HotspotBillingService;
+
+use App\Models\NetworkZone;use App\Services\Hotspot\HotspotBillingService;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Inertia\Inertia;
+
+use Illuminate\Validation\ValidationException;use Inertia\Inertia;
 use Inertia\Response;
 
 class HotspotController extends Controller
@@ -27,7 +30,7 @@ class HotspotController extends Controller
     public function index(
         Request $request
     ): Response {
-        $this->assertAdmin($request);
+        $this->assertViewAccess($request);
 
         $today = Carbon::now(
             'Asia/Qatar'
@@ -45,9 +48,10 @@ class HotspotController extends Controller
 
         $servers =
             HotspotServer::query()
-                ->with(
-                    'router:id,name'
-                )
+                ->with([
+                    'router:id,name,zone_id',
+                    'zone:id,name,code,service_type',
+                ])
                 ->orderBy('name')
                 ->get();
 
@@ -87,14 +91,6 @@ class HotspotController extends Controller
                             'username' =>
                                 $voucher
                                     ->username,
-
-                            /*
-                             * Admin-only operations page.
-                             * Password cast decrypts value.
-                             */
-                            'password' =>
-                                $voucher
-                                    ->password,
 
                             'status' =>
                                 $voucher
@@ -393,7 +389,7 @@ class HotspotController extends Controller
     public function discover(
         Request $request
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertOwnerAction($request);
 
         DiscoverHotspotServersJob::dispatch();
 
@@ -407,7 +403,10 @@ class HotspotController extends Controller
         Request $request,
         HotspotServer $server
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.manage'
+        );
 
         SyncHotspotServer::dispatch(
             $server->id
@@ -422,7 +421,7 @@ class HotspotController extends Controller
     public function storePlan(
         Request $request
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertOwnerAction($request);
 
         $data =
             $this->validatePlan(
@@ -430,6 +429,19 @@ class HotspotController extends Controller
             );
 
         HotspotPlan::create($data);
+
+        /*
+         * HOTSPOT_PLAN_AUTO_PROFILE_V2
+         */
+        HotspotServer::query()
+            ->where('enabled', true)
+            ->pluck('id')
+            ->each(
+                fn ($serverId) =>
+                    SyncHotspotServer::dispatch(
+                        (int) $serverId
+                    )
+            );
 
         return back()->with(
             'success',
@@ -441,7 +453,7 @@ class HotspotController extends Controller
         Request $request,
         HotspotPlan $plan
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertOwnerAction($request);
 
         $data =
             $this->validatePlan(
@@ -449,6 +461,16 @@ class HotspotController extends Controller
             );
 
         $plan->update($data);
+
+        HotspotServer::query()
+            ->where('enabled', true)
+            ->pluck('id')
+            ->each(
+                fn ($serverId) =>
+                    SyncHotspotServer::dispatch(
+                        (int) $serverId
+                    )
+            );
 
         return back()->with(
             'success',
@@ -460,7 +482,7 @@ class HotspotController extends Controller
         Request $request,
         HotspotPlan $plan
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertOwnerAction($request);
 
         if (
             $plan->vouchers()
@@ -484,21 +506,23 @@ class HotspotController extends Controller
     public function generateVouchers(
         Request $request
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.manage'
+        );
 
         $data = $request->validate([
+            'zone_id' => [
+                'nullable',
+                'integer',
+            ],
+
+            /*
+             * Legacy compatibility only. New UI sends zone_id.
+             */
             'hotspot_server_id' => [
-                'required',
-                Rule::exists(
-                    'hotspot_servers',
-                    'id'
-                )->where(
-                    fn ($query) =>
-                        $query->where(
-                            'enabled',
-                            true
-                        )
-                ),
+                'nullable',
+                'integer',
             ],
 
             'hotspot_plan_id' => [
@@ -527,94 +551,248 @@ class HotspotController extends Controller
                 'alpha_dash',
                 'max:8',
             ],
+
+            'batch_name' => [
+                'nullable',
+                'string',
+                'max:180',
+            ],
         ]);
 
-        $quantity =
-            (int) $data['quantity'];
+        $resellerId = (int) (
+            $request->user()?->reseller_id
+        );
 
-        $prefix =
-            Str::upper(
-                trim(
-                    (string) (
-                        $data['prefix']
-                        ?? ''
-                    )
+        abort_unless($resellerId > 0, 403);
+
+        $zoneId = (int) (
+            $data['zone_id'] ?? 0
+        );
+
+        if (
+            !$zoneId
+            && !empty($data['hotspot_server_id'])
+        ) {
+            $legacyServer = HotspotServer::query()
+                ->where(
+                    'reseller_id',
+                    $resellerId
                 )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->find(
+                    (int) $data['hotspot_server_id']
+                );
+
+            $zoneId = (int) (
+                $legacyServer?->zone_id
             );
+        }
+
+        $zone = NetworkZone::query()
+            ->where('id', $zoneId)
+            ->where(
+                'reseller_id',
+                $resellerId
+            )
+            ->where(
+                'service_type',
+                'hotspot'
+            )
+            ->where('enabled', true)
+            ->first();
+
+        if (!$zone) {
+            throw ValidationException::withMessages([
+                'zone_id' =>
+                    'Select an active Hotspot Network Zone.',
+            ]);
+        }
+
+        $anchorServer = HotspotServer::query()
+            ->where(
+                'reseller_id',
+                $resellerId
+            )
+            ->where(
+                'zone_id',
+                $zone->id
+            )
+            ->where('enabled', true)
+            ->whereHas(
+                'router',
+                fn ($query) =>
+                    $query->where(
+                        'enabled',
+                        true
+                    )
+            )
+            ->orderBy('router_id')
+            ->orderBy('id')
+            ->first();
+
+        if (!$anchorServer) {
+            throw ValidationException::withMessages([
+                'zone_id' =>
+                    'This Hotspot zone has no enabled MikroTik Hotspot server.',
+            ]);
+        }
+
+        $quantity = (int) $data['quantity'];
+
+        $prefix = Str::upper(
+            trim(
+                (string) (
+                    $data['prefix'] ?? ''
+                )
+            )
+        );
+
+        $batchName = trim(
+            (string) (
+                $data['batch_name'] ?? ''
+            )
+        );
+
+        if ($batchName === '') {
+            $batchName =
+                $zone->name
+                . ' - '
+                . now('Asia/Qatar')
+                    ->format('Y-m-d H:i');
+        }
+
+        $voucherIds = [];
 
         DB::transaction(
             function () use (
+                &$voucherIds,
+                $anchorServer,
+                $batchName,
                 $data,
-                $quantity,
                 $prefix,
-                $request
+                $quantity,
+                $request,
+                $resellerId,
+                $zone
             ): void {
-                $batch =
-                    HotspotBatch::create([
-                        'batch_code' =>
-                            'HB-'
-                            . now(
-                                'Asia/Qatar'
-                            )->format(
-                                'YmdHis'
-                            )
-                            . '-'
-                            . Str::upper(
-                                Str::random(5)
-                            ),
+                /*
+                 * SHARED_CLIENT_LIMIT_HOTSPOT_GENERATION_V2
+                 *
+                 * The voucher consumes its Company client
+                 * slot at creation time, not first login.
+                 *
+                 * Lock the Company row before checking
+                 * remaining quota so two voucher batches
+                 * cannot reserve the same remaining slots.
+                 */
+                $quotaReseller =
+                    \App\Models\Reseller::query()
+                        ->lockForUpdate()
+                        ->findOrFail(
+                            $resellerId
+                        );
 
-                        'hotspot_server_id' =>
-                            $data[
-                                'hotspot_server_id'
-                            ],
+                $quota =
+                    app(
+                        \App\Services\Reseller\ResellerUsageService::class
+                    );
 
-                        'hotspot_plan_id' =>
-                            $data[
-                                'hotspot_plan_id'
-                            ],
+                $remaining =
+                    $quota
+                        ->remainingClientSlots(
+                            $quotaReseller
+                        );
 
-                        'quantity' =>
-                            $quantity,
+                if (
+                    !$quota->canConsumeClientSlots(
+                        $quotaReseller,
+                        $quantity
+                    )
+                ) {
+                    throw
+                        \Illuminate\Validation\ValidationException::withMessages([
+                            'quantity' =>
+                                $quota->clientUnlimited(
+                                    $quotaReseller
+                                )
+                                    ? 'Company subscription is unavailable.'
+                                    : 'Only '
+                                        . $remaining
+                                        . ' client slot(s) remaining. Reduce voucher quantity or upgrade the package.',
+                        ]);
+                }
 
-                        'prefix' =>
-                            $prefix !== ''
-                                ? $prefix
-                                : null,
+                $zoneCode = Str::upper(
+                    Str::slug(
+                        $zone->code ?: $zone->name,
+                        '-'
+                    )
+                );
 
-                        'status' =>
-                            'ready',
+                $batch = HotspotBatch::create([
+                    'batch_code' =>
+                        'HB-'
+                        . Str::limit(
+                            $zoneCode,
+                            35,
+                            ''
+                        )
+                        . '-'
+                        . now('Asia/Qatar')
+                            ->format('YmdHis')
+                        . '-'
+                        . Str::upper(
+                            Str::random(5)
+                        ),
 
-                        'created_by' =>
-                            $request
-                                ->user()
-                                ->id,
-                    ]);
+                    'batch_name' =>
+                        $batchName,
+
+                    'zone_id' =>
+                        $zone->id,
+
+                    /*
+                     * Compatibility anchor for billing,
+                     * tenancy and legacy documents.
+                     */
+                    'hotspot_server_id' =>
+                        $anchorServer->id,
+
+                    'hotspot_plan_id' =>
+                        $data['hotspot_plan_id'],
+
+                    'quantity' =>
+                        $quantity,
+
+                    'prefix' =>
+                        $prefix !== ''
+                            ? $prefix
+                            : null,
+
+                    'status' =>
+                        'ready',
+
+                    'created_by' =>
+                        $request->user()->id,
+                ]);
 
                 $generated = [];
 
-                for (
-                    $i = 0;
-                    $i < $quantity;
-                    $i++
-                ) {
+                for ($i = 0; $i < $quantity; $i++) {
                     do {
-                        $digits =
-                            (string)
-                            random_int(
-                                100000,
-                                999999
-                            );
+                        $digits = (string) random_int(
+                            100000,
+                            999999
+                        );
 
                         $username =
-                            $prefix
-                            . $digits;
+                            $prefix . $digits;
 
                     } while (
-                        isset(
-                            $generated[
-                                $username
-                            ]
-                        )
+                        isset($generated[$username])
                         || HotspotVoucher::withTrashed()
                             ->where(
                                 'username',
@@ -623,47 +801,52 @@ class HotspotController extends Controller
                             ->exists()
                     );
 
-                    $generated[
-                        $username
-                    ] = true;
+                    $generated[$username] = true;
 
-                    $password = $username;
-
-                    HotspotVoucher::create([
+                    $voucher = HotspotVoucher::create([
                         'hotspot_batch_id' =>
                             $batch->id,
 
+                        'zone_id' =>
+                            $zone->id,
+
                         'hotspot_server_id' =>
-                            $data[
-                                'hotspot_server_id'
-                            ],
+                            $anchorServer->id,
 
                         'hotspot_plan_id' =>
-                            $data[
-                                'hotspot_plan_id'
-                            ],
+                            $data['hotspot_plan_id'],
 
                         'username' =>
                             $username,
 
                         'password' =>
-                            $password,
+                            $username,
 
                         'status' =>
                             'unused',
 
                         'created_by' =>
-                            $request
-                                ->user()
-                                ->id,
+                            $request->user()->id,
                     ]);
+
+                    $voucherIds[] =
+                        $voucher->id;
                 }
             }
         );
 
+        foreach ($voucherIds as $voucherId) {
+            ProvisionHotspotVoucher::dispatch(
+                $voucherId
+            );
+        }
+
         return back()->with(
             'success',
-            "{$quantity} voucher(s) generated successfully. Sell a voucher to activate RouterOS provisioning."
+            $quantity
+            . ' voucher(s) generated for '
+            . $zone->name
+            . '. Every voucher is queued to synchronize to every enabled MikroTik in this zone.'
         );
     }
 
@@ -672,7 +855,10 @@ class HotspotController extends Controller
         HotspotVoucher $voucher,
         HotspotBillingService $billing
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.sell'
+        );
 
         $data = $request->validate([
             'customer_name' => [
@@ -736,7 +922,10 @@ class HotspotController extends Controller
         HotspotInvoice $invoice,
         HotspotBillingService $billing
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.payments'
+        );
 
         $data = $request->validate([
             'amount' => [
@@ -783,7 +972,10 @@ class HotspotController extends Controller
         Request $request,
         HotspotSession $session
     ): RedirectResponse {
-        $this->assertAdmin($request);
+        $this->assertPermission(
+            $request,
+            'hotspot.manage'
+        );
 
         DisconnectHotspotSession::dispatch(
             $session->id
@@ -866,22 +1058,85 @@ class HotspotController extends Controller
         ]);
     }
 
-    private function assertAdmin(
+    private function assertViewAccess(
         Request $request
     ): void {
+        $user =
+            $request->user();
+
+        /*
+         * HOTSPOT_READ_ACCESS_V2
+         *
+         * Reseller Owner has full tenant access.
+         * Manager remains read/export only.
+         * Operators require an assigned Hotspot permission.
+         */
         abort_unless(
-            $request->user()
-                && $request
-                    ->user()
+            $user
+            && (
+                $user->isResellerOwner()
+                || $user
                     ->hasAnyPermission([
                         'hotspot.view',
                         'hotspot.manage',
                         'hotspot.sell',
                         'hotspot.payments',
                         'hotspot.export',
-                    ]),
+                    ])
+            ),
             403,
-            'Hotspot management is currently restricted to administrators.'
+            'You do not have permission to view Hotspot data.'
+        );
+    }
+
+        private function assertOwnerAction(
+        Request $request
+    ): void {
+        $user =
+            $request->user();
+
+        abort_unless(
+            $user
+            && !$user->isManager()
+            && (
+                $user->isResellerOwner()
+                || $user->isAdmin()
+            ),
+            403,
+            'Only the reseller owner may perform this Hotspot action.'
+        );
+    }
+
+private function assertPermission(
+        Request $request,
+        string $permission
+    ): void {
+        $user =
+            $request->user();
+
+        /*
+         * HOTSPOT_MUTATION_PERMISSION_V2
+         *
+         * Manager is always read/export only,
+         * even if a stale permission array contains
+         * a historical mutation permission.
+         *
+         * Reseller Owner has full tenant control.
+         * Platform Admin passes hasPermission().
+         * Normal operators require the exact action permission.
+         */
+        abort_unless(
+            $user
+            && !$user->isManager()
+            && (
+                $user->isResellerOwner()
+                || $user
+                    ->hasPermission(
+                        $permission
+                    )
+            ),
+            403,
+            'You do not have permission to perform this Hotspot action.'
         );
     }
 }

@@ -3,14 +3,138 @@
 namespace App\Services;
 
 use App\Models\Client;
+use App\Models\ClientRouterBinding;
 use App\Models\IpRange;
 use Illuminate\Support\Facades\Log;
 
 class IpAllocatorService
 {
+    public function allocateForZone(
+        int $zoneId
+    ): ?array {
+        $ranges =
+            IpRange::query()
+                ->where(
+                    'zone_id',
+                    $zoneId
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->orderBy('id')
+                ->get();
+
+        foreach ($ranges as $range) {
+            $ip =
+                $this->allocate(
+                    $range
+                );
+
+            if ($ip) {
+                return [
+                    'range' => $range,
+                    'ip' => $ip,
+                ];
+            }
+        }
+
+        Log::warning(
+            'No free IP is available in any enabled pool for zone.',
+            [
+                'zone_id' => $zoneId,
+            ]
+        );
+
+        return null;
+    }
+
+    /*
+     * ROAMING_ZONE_ALLOCATOR_V1
+     *
+     * Allocate from a target zone explicitly,
+     * bypassing the logged-in Operator ZoneScope,
+     * while retaining a hard reseller boundary.
+     */
+    public function allocateForResellerZone(
+        ?int $resellerId,
+        int $zoneId
+    ): ?array {
+        $ranges =
+            IpRange::withoutGlobalScopes()
+                ->where(
+                    'zone_id',
+                    $zoneId
+                )
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->when(
+                    $resellerId === null,
+                    fn ($query) =>
+                        $query->whereNull(
+                            'reseller_id'
+                        ),
+                    fn ($query) =>
+                        $query->where(
+                            'reseller_id',
+                            $resellerId
+                        )
+                )
+                ->orderBy('id')
+                ->get();
+
+        foreach ($ranges as $range) {
+            $ip =
+                $this->allocate(
+                    $range
+                );
+
+            if ($ip) {
+                return [
+                    'range' => $range,
+                    'ip' => $ip,
+                ];
+            }
+        }
+
+        Log::warning(
+            'No free roaming IP is available in target zone.',
+            [
+                'reseller_id' =>
+                    $resellerId,
+
+                'zone_id' =>
+                    $zoneId,
+            ]
+        );
+
+        return null;
+    }
+
     public function allocate(
         IpRange $range
     ): ?string {
+        /*
+         * ZONE_LOCAL_IP_ALLOCATION_V5
+         *
+         * Different remote zones may reuse the
+         * same private subnet. Inside one zone,
+         * every client IP remains unique.
+         */
+        if (!$range->zone_id) {
+            Log::error(
+                'Cannot allocate IP from an IP Pool without zone.',
+                [
+                    'ip_range_id' =>
+                        $range->id,
+                ]
+            );
+
+            return null;
+        }
+
         $start = ip2long(
             $range->start_ip
         );
@@ -80,14 +204,49 @@ class IpAllocatorService
 
             $address = long2ip($ip);
 
-            $exists = Client::query()
-                ->where(
-                    'ip_address',
-                    $address
-                )
-                ->exists();
+            /*
+             * ROAMING_BINDING_IP_COLLISION_V1
+             *
+             * A zone-local IP is occupied when it
+             * belongs either to a live home client
+             * or to an active roaming binding.
+             */
+            $clientExists =
+                Client::withoutGlobalScopes()
+                    ->whereNull(
+                        'deleted_at'
+                    )
+                    ->where(
+                        'zone_id',
+                        $range->zone_id
+                    )
+                    ->where(
+                        'ip_address',
+                        $address
+                    )
+                    ->exists();
 
-            if (!$exists) {
+            $bindingExists =
+                ClientRouterBinding::query()
+                    ->where(
+                        'zone_id',
+                        $range->zone_id
+                    )
+                    ->where(
+                        'ip_address',
+                        $address
+                    )
+                    ->where(
+                        'sync_status',
+                        '!=',
+                        'removed'
+                    )
+                    ->exists();
+
+            if (
+                !$clientExists
+                && !$bindingExists
+            ) {
                 return $address;
             }
         }

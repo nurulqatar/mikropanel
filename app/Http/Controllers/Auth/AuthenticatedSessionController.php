@@ -33,6 +33,24 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        /*
+         * SUPER_ADMIN_DIRECT_LOGIN_V1
+         *
+         * Super Admin never enters the public site
+         * or the normal Company dashboard after login.
+         */
+        if (
+            $request
+                ->user()
+                ?->isSuperAdmin()
+        ) {
+            return redirect()
+                ->route(
+                    'superadmin.dashboard'
+                );
+        }
+
+
         return redirect()->intended(route('dashboard', absolute: false));
     }
 

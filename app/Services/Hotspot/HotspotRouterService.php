@@ -2,6 +2,7 @@
 
 namespace App\Services\Hotspot;
 
+use App\Jobs\ProvisionHotspotVoucher;
 use App\Models\HotspotPlan;
 use App\Models\HotspotServer;
 use App\Models\HotspotSession;
@@ -15,6 +16,11 @@ use Throwable;
 
 class HotspotRouterService
 {
+    public function __construct(
+        private readonly HotspotBillingService $billing
+    ) {
+    }
+
     public function discover(
         Router $router
     ): array {
@@ -124,6 +130,13 @@ class HotspotRouterService
         $profileName =
             $plan->mikrotikProfileName();
 
+        /*
+         * HOTSPOT_FIRST_LOGIN_AUTO_SALE_V2
+         */
+        $expectedComment =
+            'MikroPanel Voucher #'
+            . $voucher->id;
+
         $existing = $api->query(
             (new Query(
                 '/ip/hotspot/user/print'
@@ -134,11 +147,25 @@ class HotspotRouterService
                 )
                 ->equal(
                     '.proplist',
-                    '.id,name'
+                    '.id,name,comment'
                 )
         )->read();
 
         if ($existing !== []) {
+            foreach ($existing as $row) {
+                if (
+                    (string) (
+                        $row['comment']
+                        ?? ''
+                    ) !== $expectedComment
+                ) {
+                    throw new \RuntimeException(
+                        'Hotspot username conflict: '
+                        . $voucher->username
+                    );
+                }
+            }
+
             $id = $existing[0]['.id'];
 
             $query = (new Query(
@@ -159,7 +186,7 @@ class HotspotRouterService
                 )
                 ->equal(
                     'disabled',
-                    'no'
+                    'false'
                 )
                 ->equal(
                     'comment',
@@ -203,7 +230,7 @@ class HotspotRouterService
             )
             ->equal(
                 'disabled',
-                'no'
+                'false'
             )
             ->equal(
                 'comment',
@@ -244,6 +271,79 @@ class HotspotRouterService
         }
 
         return $created[0]['.id'];
+    }
+
+
+    public function deleteVoucherFromRouter(
+        HotspotVoucher $voucher
+    ): void {
+        $voucher->loadMissing(
+            'server.router'
+        );
+
+        if (
+            !$voucher->server
+            || !$voucher->server->router
+        ) {
+            throw new \RuntimeException(
+                'Hotspot server/router is unavailable.'
+            );
+        }
+
+        $api = $this->api(
+            $voucher->server->router
+        );
+
+        $this->disconnectUsername(
+            $api,
+            $voucher->username
+        );
+
+        $expectedComment =
+            'MikroPanel Voucher #'
+            . $voucher->id;
+
+        $users = $api->query(
+            (new Query(
+                '/ip/hotspot/user/print'
+            ))
+                ->where(
+                    'name',
+                    $voucher->username
+                )
+                ->equal(
+                    '.proplist',
+                    '.id,name,comment'
+                )
+        )->read();
+
+        foreach ($users as $user) {
+            if (!isset($user['.id'])) {
+                continue;
+            }
+
+            if (
+                (string) (
+                    $user['comment']
+                    ?? ''
+                ) !== $expectedComment
+            ) {
+                throw new \RuntimeException(
+                    'Refusing to remove unmanaged Hotspot user '
+                    . $voucher->username
+                );
+            }
+
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/user/remove'
+                ))
+                    ->equal(
+                        '.id',
+                        $user['.id']
+                    )
+            )->read();
+        }
     }
 
     public function suspendVoucher(
@@ -293,7 +393,7 @@ class HotspotRouterService
                     )
                     ->equal(
                         'disabled',
-                        'yes'
+                        'true'
                     )
             )->read();
         }
@@ -353,7 +453,7 @@ class HotspotRouterService
                     )
                     ->equal(
                         'disabled',
-                        'no'
+                        'false'
                     )
             )->read();
         }
@@ -370,9 +470,78 @@ class HotspotRouterService
             );
         }
 
+        /*
+         * AUTO_HOTSPOT_PORTAL_ACCESS_V1
+         *
+         * Every normal Hotspot sync refreshes the
+         * portal hostname and server IPv4 fallback.
+         */
+        $portalHost =
+            parse_url(
+                (string)
+                config(
+                    'app.url'
+                ),
+                PHP_URL_HOST
+            );
+
+        if (
+            is_string(
+                $portalHost
+            )
+            && trim(
+                $portalHost
+            ) !== ''
+        ) {
+            try {
+                $this
+                    ->ensurePortalHostAccess(
+                        $server->router,
+                        $portalHost
+                    );
+
+            } catch (\Throwable $exception) {
+                report(
+                    $exception
+                );
+            }
+        }
+
         $api = $this->api(
             $server->router
         );
+
+        /*
+         * HOTSPOT_PLAN_AUTO_PROFILE_V2
+         */
+        HotspotPlan::withoutGlobalScopes()
+            ->where(
+                'enabled',
+                true
+            )
+            ->when(
+                $server->reseller_id !== null,
+                fn ($query) =>
+                    $query->where(
+                        'reseller_id',
+                        $server->reseller_id
+                    ),
+                fn ($query) =>
+                    $query->whereNull(
+                        'reseller_id'
+                    )
+            )
+            ->orderBy('id')
+            ->each(
+                function (
+                    HotspotPlan $plan
+                ) use ($api): void {
+                    $this->ensureProfile(
+                        $api,
+                        $plan
+                    );
+                }
+            );
 
         $users = $api->query(
             (new Query(
@@ -436,12 +605,24 @@ class HotspotRouterService
 
             $voucher = HotspotVoucher::query()
                 ->where(
-                    'hotspot_server_id',
-                    $server->id
-                )
-                ->where(
                     'username',
                     $username
+                )
+                ->where(
+                    function ($query) use ($server): void {
+                        if ($server->zone_id) {
+                            $query->where(
+                                'zone_id',
+                                $server->zone_id
+                            );
+                            return;
+                        }
+
+                        $query->where(
+                            'hotspot_server_id',
+                            $server->id
+                        );
+                    }
                 )
                 ->first();
 
@@ -484,6 +665,10 @@ class HotspotRouterService
                             'mac_address' =>
                                 $observedMac,
                         ])->save();
+
+                        ProvisionHotspotVoucher::dispatch(
+                            $voucher->id
+                        );
 
                         $usersForMac =
                             $api->query(
@@ -557,29 +742,56 @@ class HotspotRouterService
                     }
                 }
 
-                if (!$voucher->activated_at) {
-                    $voucher->loadMissing(
-                        'plan'
-                    );
+                $voucher->loadMissing(
+                    'plan'
+                );
 
-                    $expiry = $now
-                        ->copy()
-                        ->addSeconds(
-                            $voucher
-                                ->plan
-                                ->validitySeconds()
+                if (!$voucher->plan) {
+                    throw new \RuntimeException(
+                        'Hotspot voucher plan is missing.'
+                    );
+                }
+
+                /*
+                 * HOTSPOT_SELLER_FIRST_LOGIN_PAID_V1
+                 *
+                 * First actual RouterOS session starts the
+                 * validity and records a fully-paid sale.
+                 */
+                if (!$voucher->activated_at) {
+                    $sessionUptime =
+                        $this->durationToSeconds(
+                            $row['uptime']
+                            ?? '0s'
                         );
 
-                    $voucher->forceFill([
-                        'activated_at' =>
-                            $now,
+                    $firstLoginAt =
+                        $now
+                            ->copy()
+                            ->subSeconds(
+                                max(
+                                    0,
+                                    $sessionUptime
+                                )
+                            );
 
-                        'expires_at' =>
-                            $expiry,
+                    $expiry =
+                        $firstLoginAt
+                            ->copy()
+                            ->addSeconds(
+                                $voucher
+                                    ->plan
+                                    ->validitySeconds()
+                            );
 
-                        'status' =>
-                            'active',
-                    ]);
+                    $this->billing
+                        ->recordFirstLoginPaidSale(
+                            $voucher,
+                            $firstLoginAt,
+                            $expiry
+                        );
+
+                    $voucher->refresh();
                 }
 
                 $voucher->forceFill([
@@ -888,6 +1100,694 @@ class HotspotRouterService
                     )
             )->read();
         }
+    }
+
+    /*
+     * MAIN_HOTSPOT_PUBLIC_MAC_RESET_V1
+     *
+     * Allow the MikroPanel reset endpoint before
+     * Hotspot authentication.
+     *
+     * RouterOS creates dynamic destination entries
+     * for dst-host in walled-garden ip.
+     */
+    /*
+     * MAIN_HOTSPOT_PUBLIC_MAC_RESET_V2
+     *
+     * Primary:
+     *   APP_URL hostname.
+     *
+     * Fallback:
+     *   Current resolved IPv4 A record(s).
+     *
+     * Only MikroPanel-owned fallback IP rules
+     * are removed when DNS changes.
+     */
+    public function ensurePortalHostAccess(
+        Router $router,
+        string $host
+    ): array {
+        $host =
+            strtolower(
+                rtrim(
+                    trim(
+                        $host
+                    ),
+                    '.'
+                )
+            );
+
+        if (
+            $host === ''
+            || !preg_match(
+                '/^[a-z0-9.-]+$/',
+                $host
+            )
+        ) {
+            throw new \RuntimeException(
+                'Invalid portal host.'
+            );
+        }
+
+        $api =
+            $this->api(
+                $router
+            );
+
+        $rows =
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/walled-garden/ip/print'
+                ))
+                    ->equal(
+                        '.proplist',
+                        implode(',', [
+                            '.id',
+                            'dst-host',
+                            'dst-address',
+                            'action',
+                            'disabled',
+                            'comment',
+                        ])
+                    )
+            )->read();
+
+        $hostComment =
+            'MikroPanel Portal MAC Reset';
+
+        $ipComment =
+            'MikroPanel Portal MAC Reset IP';
+
+        $hostReady = false;
+        $hostAdded = false;
+
+        foreach ($rows as $row) {
+            $rowHost =
+                strtolower(
+                    rtrim(
+                        trim(
+                            (string) (
+                                $row[
+                                    'dst-host'
+                                ]
+                                ?? ''
+                            )
+                        ),
+                        '.'
+                    )
+                );
+
+            if ($rowHost !== $host) {
+                continue;
+            }
+
+            $disabled =
+                in_array(
+                    strtolower(
+                        (string) (
+                            $row[
+                                'disabled'
+                            ]
+                            ?? 'false'
+                        )
+                    ),
+                    [
+                        'true',
+                        'yes',
+                        '1',
+                    ],
+                    true
+                );
+
+            $action =
+                strtolower(
+                    (string) (
+                        $row[
+                            'action'
+                        ]
+                        ?? 'accept'
+                    )
+                );
+
+            if (
+                !$disabled
+                && $action === 'accept'
+            ) {
+                $hostReady = true;
+                break;
+            }
+
+            if (
+                (string) (
+                    $row[
+                        'comment'
+                    ]
+                    ?? ''
+                ) === $hostComment
+                && isset(
+                    $row['.id']
+                )
+            ) {
+                $api->query(
+                    (new Query(
+                        '/ip/hotspot/walled-garden/ip/set'
+                    ))
+                        ->equal(
+                            '.id',
+                            $row['.id']
+                        )
+                        ->equal(
+                            'action',
+                            'accept'
+                        )
+                        ->equal(
+                            'disabled',
+                            'false'
+                        )
+                )->read();
+
+                $hostReady = true;
+                break;
+            }
+        }
+
+        if (!$hostReady) {
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/walled-garden/ip/add'
+                ))
+                    ->equal(
+                        'dst-host',
+                        $host
+                    )
+                    ->equal(
+                        'action',
+                        'accept'
+                    )
+                    ->equal(
+                        'comment',
+                        $hostComment
+                    )
+            )->read();
+
+            $hostAdded = true;
+        }
+
+        $resolved = [];
+
+        if (
+            filter_var(
+                $host,
+                FILTER_VALIDATE_IP,
+                FILTER_FLAG_IPV4
+            )
+        ) {
+            $resolved[] =
+                $host;
+
+        } else {
+            $dnsRows =
+                @dns_get_record(
+                    $host,
+                    DNS_A
+                );
+
+            if (is_array($dnsRows)) {
+                foreach ($dnsRows as $dnsRow) {
+                    $ip =
+                        trim(
+                            (string) (
+                                $dnsRow['ip']
+                                ?? ''
+                            )
+                        );
+
+                    if (
+                        filter_var(
+                            $ip,
+                            FILTER_VALIDATE_IP,
+                            FILTER_FLAG_IPV4
+                        )
+                    ) {
+                        $resolved[] =
+                            $ip;
+                    }
+                }
+            }
+
+            if ($resolved === []) {
+                $fallback =
+                    @gethostbynamel(
+                        $host
+                    );
+
+                if (is_array($fallback)) {
+                    foreach ($fallback as $ip) {
+                        if (
+                            filter_var(
+                                $ip,
+                                FILTER_VALIDATE_IP,
+                                FILTER_FLAG_IPV4
+                            )
+                        ) {
+                            $resolved[] =
+                                $ip;
+                        }
+                    }
+                }
+            }
+        }
+
+        $resolved =
+            array_values(
+                array_unique(
+                    $resolved
+                )
+            );
+
+        sort(
+            $resolved
+        );
+
+        /*
+         * Protection against an unexpectedly huge
+         * DNS pool.
+         */
+        $resolved =
+            array_slice(
+                $resolved,
+                0,
+                8
+            );
+
+        $managed = [];
+
+        foreach ($rows as $row) {
+            if (
+                (string) (
+                    $row[
+                        'comment'
+                    ]
+                    ?? ''
+                ) !== $ipComment
+            ) {
+                continue;
+            }
+
+            $address =
+                trim(
+                    (string) (
+                        $row[
+                            'dst-address'
+                        ]
+                        ?? ''
+                    )
+                );
+
+            if ($address === '') {
+                continue;
+            }
+
+            $ip =
+                explode(
+                    '/',
+                    $address,
+                    2
+                )[0];
+
+            if (
+                filter_var(
+                    $ip,
+                    FILTER_VALIDATE_IP,
+                    FILTER_FLAG_IPV4
+                )
+            ) {
+                $managed[
+                    $ip
+                ] = $row;
+            }
+        }
+
+        $ipAdded = [];
+        $ipRemoved = [];
+
+        foreach ($resolved as $ip) {
+            if (
+                isset(
+                    $managed[$ip]
+                )
+            ) {
+                $row =
+                    $managed[$ip];
+
+                $disabled =
+                    in_array(
+                        strtolower(
+                            (string) (
+                                $row[
+                                    'disabled'
+                                ]
+                                ?? 'false'
+                            )
+                        ),
+                        [
+                            'true',
+                            'yes',
+                            '1',
+                        ],
+                        true
+                    );
+
+                if (
+                    $disabled
+                    && isset(
+                        $row['.id']
+                    )
+                ) {
+                    $api->query(
+                        (new Query(
+                            '/ip/hotspot/walled-garden/ip/set'
+                        ))
+                            ->equal(
+                                '.id',
+                                $row['.id']
+                            )
+                            ->equal(
+                                'action',
+                                'accept'
+                            )
+                            ->equal(
+                                'disabled',
+                                'false'
+                            )
+                    )->read();
+                }
+
+                continue;
+            }
+
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/walled-garden/ip/add'
+                ))
+                    ->equal(
+                        'dst-address',
+                        $ip . '/32'
+                    )
+                    ->equal(
+                        'action',
+                        'accept'
+                    )
+                    ->equal(
+                        'comment',
+                        $ipComment
+                    )
+            )->read();
+
+            $ipAdded[] =
+                $ip;
+        }
+
+        /*
+         * If DNS fails completely, keep existing
+         * fallback rules rather than deleting them.
+         */
+        if ($resolved !== []) {
+            foreach (
+                $managed
+                as $ip => $row
+            ) {
+                if (
+                    in_array(
+                        $ip,
+                        $resolved,
+                        true
+                    )
+                ) {
+                    continue;
+                }
+
+                if (
+                    !isset(
+                        $row['.id']
+                    )
+                ) {
+                    continue;
+                }
+
+                $api->query(
+                    (new Query(
+                        '/ip/hotspot/walled-garden/ip/remove'
+                    ))
+                        ->equal(
+                            '.id',
+                            $row['.id']
+                        )
+                )->read();
+
+                $ipRemoved[] =
+                    $ip;
+            }
+        }
+
+        return [
+            'host' =>
+                $host,
+
+            'host_added' =>
+                $hostAdded,
+
+            'resolved_ipv4' =>
+                $resolved,
+
+            'ip_added' =>
+                $ipAdded,
+
+            'ip_removed' =>
+                $ipRemoved,
+        ];
+    }
+
+    /*
+     * Clear the RouterOS Hotspot user's permanent
+     * MAC restriction and terminate old sessions.
+     *
+     * No database write is performed here.
+     */
+    /*
+     * MAIN_HOTSPOT_VOUCHER_DEVICE_INFO_V1
+     *
+     * Read the current RouterOS Hotspot user and
+     * active session without changing anything.
+     */
+    public function voucherDeviceInfo(
+        HotspotVoucher $voucher
+    ): array {
+        $server =
+            HotspotServer::withoutGlobalScopes()
+                ->find(
+                    $voucher
+                        ->hotspot_server_id
+                );
+
+        if (!$server) {
+            throw new \RuntimeException(
+                'Hotspot server was not found.'
+            );
+        }
+
+        $router =
+            Router::withoutGlobalScopes()
+                ->find(
+                    $server->router_id
+                );
+
+        if (!$router) {
+            throw new \RuntimeException(
+                'Hotspot router was not found.'
+            );
+        }
+
+        $api =
+            $this->api(
+                $router
+            );
+
+        $users =
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/user/print'
+                ))
+                    ->where(
+                        'name',
+                        $voucher->username
+                    )
+                    ->equal(
+                        '.proplist',
+                        '.id,name,mac-address,disabled'
+                    )
+            )->read();
+
+        $activeRows =
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/active/print'
+                ))
+                    ->where(
+                        'user',
+                        $voucher->username
+                    )
+                    ->equal(
+                        '.proplist',
+                        '.id,user,address,mac-address,login-by,uptime,server'
+                    )
+            )->read();
+
+        $user =
+            $users[0]
+            ?? [];
+
+        $active =
+            $activeRows[0]
+            ?? [];
+
+        $mac =
+            trim(
+                (string) (
+                    $active['mac-address']
+                    ?? $user['mac-address']
+                    ?? $voucher->mac_address
+                    ?? ''
+                )
+            );
+
+        if (
+            $mac === ''
+            || $mac
+                === '00:00:00:00:00:00'
+        ) {
+            $mac = null;
+        }
+
+        return [
+            'online' =>
+                $active !== [],
+
+            'mac_address' =>
+                $mac
+                    ? strtoupper($mac)
+                    : null,
+
+            'ip_address' =>
+                $active['address']
+                ?? null,
+
+            'login_by' =>
+                $active['login-by']
+                ?? null,
+
+            'uptime' =>
+                $active['uptime']
+                ?? null,
+
+            'hotspot_server' =>
+                $active['server']
+                ?? $server->mikrotik_name
+                ?? $server->name,
+
+            'router_name' =>
+                $router->name,
+
+            'router_user_found' =>
+                $user !== [],
+        ];
+    }
+
+    public function resetVoucherMac(
+        HotspotVoucher $voucher
+    ): bool {
+        $server =
+            HotspotServer::withoutGlobalScopes()
+                ->find(
+                    $voucher
+                        ->hotspot_server_id
+                );
+
+        if (!$server) {
+            throw new \RuntimeException(
+                'Hotspot server was not found.'
+            );
+        }
+
+        $router =
+            Router::withoutGlobalScopes()
+                ->find(
+                    $server->router_id
+                );
+
+        if (!$router) {
+            throw new \RuntimeException(
+                'Hotspot router was not found.'
+            );
+        }
+
+        $api =
+            $this->api(
+                $router
+            );
+
+        $users =
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/user/print'
+                ))
+                    ->where(
+                        'name',
+                        $voucher->username
+                    )
+                    ->equal(
+                        '.proplist',
+                        '.id,name,mac-address'
+                    )
+            )->read();
+
+        foreach (
+            $users
+            as $user
+        ) {
+            $id =
+                $user['.id']
+                ?? null;
+
+            if (!$id) {
+                continue;
+            }
+
+            $api->query(
+                (new Query(
+                    '/ip/hotspot/user/set'
+                ))
+                    ->equal(
+                        '.id',
+                        $id
+                    )
+                    ->equal(
+                        'mac-address',
+                        '00:00:00:00:00:00'
+                    )
+            )->read();
+        }
+
+        /*
+         * Release the old connected device so the
+         * same voucher may authenticate elsewhere.
+         */
+        $this->disconnectUsername(
+            $api,
+            $voucher->username
+        );
+
+        return $users !== [];
     }
 
     private function api(

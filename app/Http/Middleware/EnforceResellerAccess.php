@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Reseller;
+use App\Services\Reseller\ResellerModuleService;
 use App\Services\Reseller\ResellerUsageService;
 use Closure;
 use Illuminate\Http\Request;
@@ -13,7 +14,8 @@ use Symfony\Component\HttpFoundation\Response;
 class EnforceResellerAccess
 {
     public function __construct(
-        private ResellerUsageService $usage
+        private ResellerUsageService $usage,
+        private ResellerModuleService $modules
     ) {
     }
 
@@ -63,6 +65,51 @@ class EnforceResellerAccess
             );
         }
 
+        /*
+         * PUBLIC_WEBSITE_RESELLER_BYPASS
+         *
+         * Public marketing, pricing, legal and reseller
+         * registration/status pages must remain accessible
+         * even when the browser already has a reseller
+         * session. These are not reseller-panel actions.
+         */
+        if (
+            $routeName
+            && str_starts_with(
+                $routeName,
+                'website.'
+            )
+        ) {
+            return $next(
+                $request
+            );
+        }
+
+        /*
+         * PUBLIC_AUTH_RESELLER_BYPASS
+         *
+         * Login and password-recovery screens are public
+         * authentication endpoints, not reseller-panel actions.
+         */
+        if (
+            in_array(
+                $routeName,
+                [
+                    'login',
+                    'password.request',
+                    'password.email',
+                    'password.reset',
+                    'password.store',
+                ],
+                true
+            )
+        ) {
+            return $next(
+                $request
+            );
+        }
+
+
         if (
             $routeName === 'dashboard'
         ) {
@@ -108,6 +155,27 @@ class EnforceResellerAccess
             );
         }
 
+
+        /*
+         * COMPANY_MODULE_ROUTE_GUARD_V1
+         *
+         * Disabled modules are blocked even when
+         * somebody manually types the URL.
+         */
+        if (
+            !$this->modules
+                ->routeAllowedForReseller(
+                    (int)
+                    $reseller->id,
+                    $routeName
+                )
+        ) {
+            abort(
+                403,
+                'This service module is not enabled for your company.'
+            );
+        }
+
         if (
             $reseller->status
             !== 'active'
@@ -115,6 +183,22 @@ class EnforceResellerAccess
             abort(
                 403,
                 'Reseller account is suspended.'
+            );
+        }
+
+        /*
+         * RESELLER_SUBSCRIPTION_UPGRADE_BYPASS_V1
+         *
+         * Active reseller owners may buy a higher
+         * package from wallet even after expiry.
+         */
+        if (
+            $routeName
+            === 'reseller.subscription.upgrade'
+            && $user->isResellerOwner()
+        ) {
+            return $next(
+                $request
             );
         }
 

@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Jobs\SuspendHotspotVoucher;
+use App\Jobs\DeleteHotspotVoucherFromRouter;
 use App\Models\HotspotVoucher;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -13,11 +13,12 @@ class ExpireHotspotVouchers extends Command
         'hotspot:expire';
 
     protected $description =
-        'Expire Hotspot vouchers whose validity has ended';
+        'Expire Hotspot vouchers and remove RouterOS users';
 
     public function handle(): int
     {
         $expired = 0;
+        $cleanup = 0;
 
         HotspotVoucher::query()
             ->where(
@@ -51,14 +52,12 @@ class ExpireHotspotVouchers extends Command
                                         HotspotVoucher::query()
                                             ->lockForUpdate()
                                             ->find(
-                                                $voucher
-                                                    ->id
+                                                $voucher->id
                                             );
 
                                     if (
                                         !$locked
-                                        || $locked
-                                            ->status
+                                        || $locked->status
                                             !== 'active'
                                         || !$locked
                                             ->expires_at
@@ -69,32 +68,65 @@ class ExpireHotspotVouchers extends Command
                                         return false;
                                     }
 
-                                    $locked
-                                        ->forceFill([
-                                            'status' =>
-                                                'expired',
-                                        ])
-                                        ->save();
+                                    $locked->forceFill([
+                                        'status' =>
+                                            'expired',
+                                    ])->save();
+
+                                    /*
+                                     * Remove from live panel.
+                                     * Soft-delete preserves
+                                     * historical reporting.
+                                     */
+                                    $locked->delete();
 
                                     return true;
                                 }
                             );
 
-                        if (!$changed) {
-                            continue;
+                        if ($changed) {
+                            $expired++;
                         }
-
-                        SuspendHotspotVoucher::dispatch(
-                            $voucher->id
-                        );
-
-                        $expired++;
                     }
+                }
+            );
+
+        /*
+         * Retry RouterOS deletion every
+         * maintenance cycle until confirmed.
+         */
+        HotspotVoucher::withoutGlobalScopes()
+            ->withTrashed()
+            ->whereIn(
+                'status',
+                [
+                    'expired',
+                    'archived',
+                ]
+            )
+            ->whereNotNull(
+                'mikrotik_user_id'
+            )
+            ->orderBy('id')
+            ->limit(500)
+            ->each(
+                function (
+                    HotspotVoucher $voucher
+                ) use (&$cleanup): void {
+                    DeleteHotspotVoucherFromRouter::dispatch(
+                        $voucher->id
+                    );
+
+                    $cleanup++;
                 }
             );
 
         $this->info(
             "HOTSPOT_EXPIRED={$expired}"
+        );
+
+        $this->info(
+            "HOTSPOT_ROUTER_DELETE_QUEUED={$cleanup}"
         );
 
         return self::SUCCESS;

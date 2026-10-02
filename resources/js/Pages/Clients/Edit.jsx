@@ -1,6 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
 import ClientCustomFieldsForm from '@/Components/Clients/ClientCustomFieldsForm';
+import ClientIdentityFields from '@/Components/Clients/ClientIdentityFields';
 
 export default function Edit({
     client,
@@ -21,6 +22,42 @@ export default function Edit({
         name: client.name ?? '',
         mac_address: client.mac_address ?? '',
         phone: client.phone ?? '',
+        identity_type:
+            client.identity_type ?? '',
+        identity_number:
+            client.identity_number ?? '',
+        identity_barcode:
+            client.identity_barcode ?? '',
+        nationality:
+            client.nationality ?? '',
+        date_of_birth:
+            client.date_of_birth ?? '',
+        gender:
+            client.gender ?? '',
+        document_expiry_date:
+            client.document_expiry_date ?? '',
+        qatar_id_number:
+            client.qatar_id_number ?? '',
+        qatar_id_expiry_date:
+            client.qatar_id_expiry_date ?? '',
+        occupation:
+            client.occupation ?? '',
+        passport_number:
+            client.passport_number ?? '',
+        passport_expiry_date:
+            client.passport_expiry_date ?? '',
+        document_serial_number:
+            client.document_serial_number ?? '',
+        residency_type:
+            client.residency_type ?? '',
+        employer:
+            client.employer ?? '',
+        place_of_birth:
+            client.place_of_birth ?? '',
+        qatar_id_front_scan_token: '',
+        qatar_id_back_scan_token: '',
+        passport_scan_token: '',
+
     });
 
     const submit = (event) => {
@@ -196,6 +233,12 @@ export default function Edit({
                     </section>
 
                     {/* CLIENT_CUSTOM_FIELDS_EDIT */}
+                                        <ClientIdentityFields
+                                            data={data}
+                                            setData={setData}
+                                            errors={errors}
+                                        />
+
                                         <ClientCustomFieldsForm
                                             clientId={client.id}
                                             values={data.custom_fields || {}}
@@ -210,10 +253,10 @@ export default function Edit({
 
 
                     <div className="rounded-lg bg-cyan-50 px-4 py-3 text-sm text-cyan-800">
-                        Package বা MAC পরিবর্তন করলে MikroTik DHCP
-                        Lease, ARP এবং Simple Queue update হবে।
-                        Installation date, billing day এবং expiry date
-                        অপরিবর্তিত থাকবে।
+                        Changing the package or MAC will update the MikroTik DHCP
+                        Lease, ARP, and Simple Queue.
+                        The installation date, billing day, and expiry date
+                        will remain unchanged.
                     </div>
 
                     <div className="flex flex-wrap gap-3">

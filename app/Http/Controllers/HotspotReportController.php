@@ -173,14 +173,21 @@ class HotspotReportController extends Controller
     private function access(
         Request $request
     ): void {
+        $user =
+            $request->user();
+
+        /*
+         * Hotspot report service is reseller-wide.
+         * Normal zone operators are denied here to
+         * prevent cross-zone report leakage.
+         */
         abort_unless(
-            $request->user()
-            && $request
-                ->user()
-                ->hasAnyPermission([
-                    'hotspot.view',
-                    'hotspot.export',
-                ]),
+            $user
+            && (
+                $user->isAdmin()
+                || $user->isResellerOwner()
+                || $user->isManager()
+            ),
             403
         );
     }

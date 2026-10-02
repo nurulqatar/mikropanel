@@ -179,6 +179,246 @@ class HotspotBillingService
         return $invoice;
     }
 
+    /*
+     * HOTSPOT_SELLER_FIRST_LOGIN_PAID_V1
+     *
+     * First successful login means the customer has
+     * already paid for the printed voucher.
+     *
+     * Customer invoice:
+     *   paid_amount = full plan price
+     *   due_amount  = 0
+     *   status      = paid
+     *
+     * No HotspotPayment row is created here because
+     * that cash is still physically held by the
+     * assigned seller. Seller settlement is tracked
+     * independently by hotspot_seller_collections.
+     */
+    public function recordFirstLoginPaidSale(
+        HotspotVoucher $voucher,
+        Carbon $firstLoginAt,
+        Carbon $serviceUntil
+    ): HotspotInvoice {
+        return DB::transaction(
+            function () use (
+                $voucher,
+                $firstLoginAt,
+                $serviceUntil
+            ): HotspotInvoice {
+                $locked =
+                    HotspotVoucher::withoutGlobalScopes()
+                        ->with([
+                            'plan',
+                        ])
+                        ->lockForUpdate()
+                        ->findOrFail(
+                            $voucher->id
+                        );
+
+                if (!$locked->plan) {
+                    throw new \RuntimeException(
+                        'Hotspot voucher plan is missing.'
+                    );
+                }
+
+                $locked->forceFill([
+                    'sold_at' =>
+                        $locked->sold_at
+                        ?? $firstLoginAt,
+
+                    'activated_at' =>
+                        $locked->activated_at
+                        ?? $firstLoginAt,
+
+                    'expires_at' =>
+                        $locked->expires_at
+                        ?? $serviceUntil,
+
+                    'status' =>
+                        'active',
+                ])->save();
+
+                $existing =
+                    HotspotInvoice::withoutGlobalScopes()
+                        ->where(
+                            'hotspot_voucher_id',
+                            $locked->id
+                        )
+                        ->where(
+                            'invoice_type',
+                            'sale'
+                        )
+                        ->where(
+                            'status',
+                            '!=',
+                            'cancelled'
+                        )
+                        ->orderBy('id')
+                        ->first();
+
+                if ($existing) {
+                    $changes = [];
+
+                    /*
+                     * First mobile login is a PAID
+                     * voucher sale even if somebody
+                     * previously created the invoice
+                     * manually as due/unpaid.
+                     */
+                    $netAmount =
+                        max(
+                            0,
+                            round(
+                                (float)
+                                $existing->amount
+                                - (float)
+                                $existing->discount,
+                                2
+                            )
+                        );
+
+                    $changes['paid_amount'] =
+                        $netAmount;
+
+                    $changes['due_amount'] =
+                        0;
+
+                    $changes['status'] =
+                        'paid';
+
+                    if (
+                        !$existing
+                            ->service_from
+                    ) {
+                        $changes[
+                            'service_from'
+                        ] = $firstLoginAt;
+                    }
+
+                    if (
+                        !$existing
+                            ->service_until
+                    ) {
+                        $changes[
+                            'service_until'
+                        ] = $serviceUntil;
+                    }
+
+                    if (
+                        !$existing
+                            ->hotspot_seller_id
+                        && $locked
+                            ->hotspot_seller_id
+                    ) {
+                        $changes[
+                            'hotspot_seller_id'
+                        ] = $locked
+                            ->hotspot_seller_id;
+                    }
+
+                    if ($changes !== []) {
+                        $existing
+                            ->forceFill(
+                                $changes
+                            )
+                            ->save();
+                    }
+
+                    return $existing->fresh();
+                }
+
+                $price =
+                    max(
+                        0,
+                        round(
+                            (float)
+                            $locked
+                                ->plan
+                                ->price,
+                            2
+                        )
+                    );
+
+                $issueDate =
+                    $firstLoginAt
+                        ->copy()
+                        ->timezone(
+                            'Asia/Qatar'
+                        )
+                        ->startOfDay();
+
+                $invoice =
+                    new HotspotInvoice();
+
+                $invoice->forceFill([
+                    'reseller_id' =>
+                        $locked
+                            ->reseller_id,
+
+                    'hotspot_voucher_id' =>
+                        $locked->id,
+
+                    'hotspot_seller_id' =>
+                        $locked
+                            ->hotspot_seller_id,
+
+                    'invoice_no' =>
+                        $this
+                            ->invoiceNumber(
+                                'SALE',
+                                $locked->id
+                            ),
+
+                    'invoice_type' =>
+                        'sale',
+
+                    'amount' =>
+                        $price,
+
+                    'discount' =>
+                        0,
+
+                    'paid_amount' =>
+                        $price,
+
+                    'due_amount' =>
+                        0,
+
+                    'issue_date' =>
+                        $issueDate
+                            ->toDateString(),
+
+                    'due_date' =>
+                        $issueDate
+                            ->toDateString(),
+
+                    'service_from' =>
+                        $firstLoginAt,
+
+                    'service_until' =>
+                        $serviceUntil,
+
+                    'status' =>
+                        'paid',
+
+                    'notes' =>
+                        'Automatic paid first-login voucher sale - '
+                        . $locked
+                            ->plan
+                            ->name,
+
+                    'created_by' =>
+                        null,
+                ]);
+
+                $invoice->save();
+
+                return $invoice;
+            }
+        );
+    }
+
     public function renewVoucher(
         HotspotVoucher $voucher,
         array $data,

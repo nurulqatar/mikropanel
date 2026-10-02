@@ -40,14 +40,11 @@ class DhcpLeaseService
     ): string {
         $api = $this->api($client);
 
-        $server = trim(
-            (string) (
+        $server =
+            $this->resolveServer(
+                $api,
                 $client
-                    ->router
-                    ?->dhcp_server
-                ?? ''
-            )
-        );
+            );
 
         $existing = $this->findId(
             $api,
@@ -85,14 +82,24 @@ class DhcpLeaseService
             );
         }
 
-        $api->query(
-            $query
-        )->read();
+        $result =
+            $api->query(
+                $query
+            )->read();
 
-        $id = $this->findId(
-            $api,
-            $client
+        $this->assertNoRouterOsError(
+            $result,
+            'create DHCP lease'
         );
+
+        $id =
+            $this->createdId(
+                $result
+            )
+            ?: $this->findId(
+                $api,
+                $client
+            );
 
         if (!$id) {
             throw new RuntimeException(
@@ -108,14 +115,11 @@ class DhcpLeaseService
     ): void {
         $api = $this->api($client);
 
-        $server = trim(
-            (string) (
+        $server =
+            $this->resolveServer(
+                $api,
                 $client
-                    ->router
-                    ?->dhcp_server
-                ?? ''
-            )
-        );
+            );
 
         $id = $this->resolveId(
             $api,
@@ -152,9 +156,15 @@ class DhcpLeaseService
             );
         }
 
-        $api->query(
-            $query
-        )->read();
+        $result =
+            $api->query(
+                $query
+            )->read();
+
+        $this->assertNoRouterOsError(
+            $result,
+            'update DHCP lease'
+        );
     }
 
     public function disable(
@@ -237,6 +247,279 @@ class DhcpLeaseService
         )->read();
     }
 
+    /*
+     * ROUTEROS_DHCP_SERVER_RESOLUTION_V3
+     *
+     * A saved RouterOS server name may become
+     * stale after router reconfiguration.
+     *
+     * First validate the configured name.
+     * If missing, safely resolve the active DHCP
+     * server attached to the client's interface.
+     */
+    private function resolveServer(
+        RouterClient $api,
+        Client $client
+    ): string {
+        $configured =
+            trim(
+                (string) (
+                    $client
+                        ->router
+                        ?->dhcp_server
+                    ?? ''
+                )
+            );
+
+        if ($configured !== '') {
+            $rows =
+                $api->query(
+                    (new Query(
+                        '/ip/dhcp-server/print'
+                    ))
+                        ->where(
+                            'name',
+                            $configured
+                        )
+                )->read();
+
+            $this->assertNoRouterOsError(
+                $rows,
+                'read DHCP servers'
+            );
+
+            foreach ($rows as $row) {
+                if (
+                    (string) (
+                        $row['name']
+                        ?? ''
+                    ) === $configured
+                    && !$this->truthy(
+                        $row['disabled']
+                        ?? false
+                    )
+                    && !$this->truthy(
+                        $row['invalid']
+                        ?? false
+                    )
+                ) {
+                    return $configured;
+                }
+            }
+        }
+
+        $interface =
+            trim(
+                (string) (
+                    $client
+                        ->router
+                        ?->client_interface
+                    ?: $client
+                        ->ipRange
+                        ?->interface
+                    ?: ''
+                )
+            );
+
+        if ($interface === '') {
+            throw new RuntimeException(
+                'MikroTik client interface is missing; DHCP server cannot be resolved.'
+            );
+        }
+
+        $rows =
+            $api->query(
+                (new Query(
+                    '/ip/dhcp-server/print'
+                ))
+                    ->where(
+                        'interface',
+                        $interface
+                    )
+            )->read();
+
+        $this->assertNoRouterOsError(
+            $rows,
+            'resolve DHCP server by interface'
+        );
+
+        $matches = [];
+
+        foreach ($rows as $row) {
+            if (
+                (string) (
+                    $row['interface']
+                    ?? ''
+                ) !== $interface
+            ) {
+                continue;
+            }
+
+            if (
+                $this->truthy(
+                    $row['disabled']
+                    ?? false
+                )
+                || $this->truthy(
+                    $row['invalid']
+                    ?? false
+                )
+            ) {
+                continue;
+            }
+
+            $name =
+                trim(
+                    (string) (
+                        $row['name']
+                        ?? ''
+                    )
+                );
+
+            if ($name !== '') {
+                $matches[] = $name;
+            }
+        }
+
+        $matches =
+            array_values(
+                array_unique(
+                    $matches
+                )
+            );
+
+        if (count($matches) === 1) {
+            return $matches[0];
+        }
+
+        if (count($matches) === 0) {
+            throw new RuntimeException(
+                'No active DHCP server was found on MikroTik interface '
+                . $interface
+                . '.'
+            );
+        }
+
+        throw new RuntimeException(
+            'Multiple active DHCP servers were found on MikroTik interface '
+            . $interface
+            . '; select the intended DHCP server in the router settings.'
+        );
+    }
+
+    private function createdId(
+        mixed $value
+    ): ?string {
+        if (!is_array($value)) {
+            return null;
+        }
+
+        foreach ($value as $key => $item) {
+            if (
+                $key === 'ret'
+                && is_scalar($item)
+                && trim(
+                    (string) $item
+                ) !== ''
+            ) {
+                return (string) $item;
+            }
+
+            if (is_array($item)) {
+                $found =
+                    $this->createdId(
+                        $item
+                    );
+
+                if ($found !== null) {
+                    return $found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function assertNoRouterOsError(
+        mixed $value,
+        string $operation
+    ): void {
+        $message =
+            $this->routerOsMessage(
+                $value
+            );
+
+        if ($message === null) {
+            return;
+        }
+
+        throw new RuntimeException(
+            'RouterOS failed to '
+            . $operation
+            . ': '
+            . $message
+        );
+    }
+
+    private function routerOsMessage(
+        mixed $value
+    ): ?string {
+        if (!is_array($value)) {
+            return null;
+        }
+
+        foreach ($value as $key => $item) {
+            if (
+                $key === 'message'
+                && is_scalar($item)
+            ) {
+                $message =
+                    trim(
+                        (string) $item
+                    );
+
+                if ($message !== '') {
+                    return $message;
+                }
+            }
+
+            if (is_array($item)) {
+                $found =
+                    $this->routerOsMessage(
+                        $item
+                    );
+
+                if ($found !== null) {
+                    return $found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function truthy(
+        mixed $value
+    ): bool {
+        if ($value === true) {
+            return true;
+        }
+
+        return in_array(
+            strtolower(
+                trim(
+                    (string) $value
+                )
+            ),
+            [
+                'true',
+                'yes',
+                '1',
+            ],
+            true
+        );
+    }
+
     private function resolveId(
         RouterClient $api,
         Client $client
@@ -252,28 +535,174 @@ class DhcpLeaseService
         );
     }
 
+    /*
+     * ROUTEROS_DHCP_ID_RECOVERY_V2
+     *
+     * RouterOS filtering by comment is not
+     * reliable enough to be the only identity
+     * check after an add operation.
+     *
+     * Ownership order:
+     * 1. Exact MikroPanel client comment.
+     * 2. Exact IP + MAC with empty/same comment.
+     *
+     * Never adopt a foreign lease with another
+     * non-empty comment or another MAC.
+     */
     private function findId(
         RouterClient $api,
         Client $client
     ): ?string {
-        $rows = $api->query(
-            (new Query(
-                '/ip/dhcp-server/lease/print'
-            ))
-                ->where(
-                    'comment',
-                    $client->client_code
+        $code =
+            trim(
+                (string)
+                $client->client_code
+            );
+
+        if ($code !== '') {
+            $rows =
+                $api->query(
+                    (new Query(
+                        '/ip/dhcp-server/lease/print'
+                    ))
+                        ->where(
+                            'comment',
+                            $code
+                        )
+                )->read();
+
+            foreach ($rows as $row) {
+                if (
+                    trim(
+                        (string) (
+                            $row['comment']
+                            ?? ''
+                        )
+                    ) === $code
+                    && !empty(
+                        $row['.id']
+                    )
+                ) {
+                    return (string)
+                        $row['.id'];
+                }
+            }
+        }
+
+        $address =
+            trim(
+                (string)
+                $client->ip_address
+            );
+
+        $wantedMac =
+            strtoupper(
+                trim(
+                    (string)
+                    $client->mac_address
                 )
-        )->read();
+            );
+
+        if (
+            $address === ''
+            || $wantedMac === ''
+        ) {
+            return null;
+        }
+
+        $rows =
+            $api->query(
+                (new Query(
+                    '/ip/dhcp-server/lease/print'
+                ))
+                    ->where(
+                        'address',
+                        $address
+                    )
+            )->read();
+
+        $ipCollision =
+            false;
 
         foreach ($rows as $row) {
             if (
-                ($row['comment'] ?? null)
-                    === $client->client_code
+                trim(
+                    (string) (
+                        $row['address']
+                        ?? ''
+                    )
+                ) !== $address
             ) {
-                return $row['.id']
-                    ?? null;
+                continue;
             }
+
+            $rowMac =
+                strtoupper(
+                    trim(
+                        (string) (
+                            $row['mac-address']
+                            ?? ''
+                        )
+                    )
+                );
+
+            if (
+                $rowMac !== ''
+                && $rowMac
+                    !== $wantedMac
+            ) {
+                $ipCollision =
+                    true;
+
+                continue;
+            }
+
+            if (
+                $rowMac
+                !== $wantedMac
+            ) {
+                continue;
+            }
+
+            $comment =
+                trim(
+                    (string) (
+                        $row['comment']
+                        ?? ''
+                    )
+                );
+
+            if (
+                $comment !== ''
+                && $comment !== $code
+            ) {
+                throw new RuntimeException(
+                    'DHCP ownership collision: '
+                    . $address
+                    . ' / '
+                    . $wantedMac
+                    . ' already exists with foreign comment "'
+                    . $comment
+                    . '".'
+                );
+            }
+
+            if (
+                !empty(
+                    $row['.id']
+                )
+            ) {
+                return (string)
+                    $row['.id'];
+            }
+        }
+
+        if ($ipCollision) {
+            throw new RuntimeException(
+                'DHCP IP collision: '
+                . $address
+                . ' already exists with another MAC address.'
+            );
         }
 
         return null;

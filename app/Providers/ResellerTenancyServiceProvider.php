@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\ActivityLog;
 use App\Models\Client;
+use App\Models\ClientRefund;
 use App\Models\ClientMonthlyUsage;
 use App\Models\ClientRouterBinding;
 use App\Models\Expense;
@@ -12,14 +13,18 @@ use App\Models\HotspotBranding;
 use App\Models\HotspotInvoice;
 use App\Models\HotspotPayment;
 use App\Models\HotspotPlan;
+use App\Models\HotspotSeller;
+use App\Models\HotspotSellerCollection;
 use App\Models\HotspotServer;
 use App\Models\HotspotSession;
 use App\Models\HotspotVoucher;
 use App\Models\Invoice;
+use App\Models\NetworkZone;
 use App\Models\IpRange;
 use App\Models\Package;
 use App\Models\Payment;
 use App\Models\Reseller;
+use App\Models\ResellerNotification;
 use App\Models\Router;
 use App\Models\Scopes\ResellerScope;
 use App\Services\Reseller\ResellerUsageService;
@@ -231,6 +236,12 @@ class ResellerTenancyServiceProvider extends ServiceProvider
             }
         }
 
+        /*
+         * ROUTER_UNLIMITED_COUNT_ACCESS_GATE_V1
+         *
+         * Router count is unlimited for a reseller.
+         * Account/subscription access rules still apply.
+         */
         if ($model instanceof Router) {
             if (
                 !$usage
@@ -239,14 +250,10 @@ class ResellerTenancyServiceProvider extends ServiceProvider
                     )
                 || $reseller->status
                     !== 'active'
-                || $usage
-                    ->remainingRouterSlots(
-                        $reseller
-                    ) <= 0
             ) {
                 throw ValidationException::withMessages([
                     'router' =>
-                        'Router limit reached or reseller subscription is unavailable.',
+                        'Router creation is unavailable because the reseller account or subscription is inactive.',
                 ]);
             }
         }
@@ -256,6 +263,9 @@ class ResellerTenancyServiceProvider extends ServiceProvider
     {
         $models = [
             Client::class,
+            NetworkZone::class,
+            ClientRefund::class,
+            ResellerNotification::class,
             Router::class,
             Package::class,
             IpRange::class,
@@ -271,6 +281,8 @@ class ResellerTenancyServiceProvider extends ServiceProvider
             HotspotVoucher::class,
             HotspotInvoice::class,
             HotspotPayment::class,
+            HotspotSeller::class,
+            HotspotSellerCollection::class,
             HotspotSession::class,
         ];
 

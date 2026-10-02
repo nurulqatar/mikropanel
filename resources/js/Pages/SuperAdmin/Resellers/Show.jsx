@@ -1,4 +1,4 @@
-import AppLayout from '@/Layouts/AppLayout';
+import SuperAdminLayout from '@/Layouts/SuperAdminLayout';
 import {
     Head,
     Link,
@@ -37,7 +37,7 @@ export default function Show({
     });
 
     return (
-        <AppLayout title="Reseller Details">
+        <SuperAdminLayout title="Reseller Details">
             <Head
                 title={
                     reseller.company_name
@@ -176,7 +176,7 @@ export default function Show({
                                 reseller.owner
                                     ?.is_active
                                     ? 'Enabled'
-                                    : 'Disabled - pending tenant isolation'
+                                    : 'Disabled'
                             }
                         />
 
@@ -508,7 +508,7 @@ export default function Show({
                     </table>
                 </section>
             </div>
-        </AppLayout>
+        </SuperAdminLayout>
     );
 }
 

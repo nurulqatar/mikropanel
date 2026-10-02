@@ -1,9 +1,14 @@
 <?php
 
 use App\Http\Controllers\SuperAdmin\DashboardController;
+use App\Http\Controllers\SuperAdmin\CompanyModuleController;
 use App\Http\Controllers\SuperAdmin\ResellerController;
 use App\Http\Controllers\SuperAdmin\ResellerFinanceController;
 use App\Http\Controllers\SuperAdmin\ResellerPlanController;
+use App\Http\Controllers\SuperAdmin\WebsiteSettingsController;
+use App\Http\Controllers\SuperAdmin\ResellerReportController;
+use App\Http\Controllers\SuperAdmin\ResellerAuditController;
+use App\Http\Controllers\SuperAdmin\ResellerNotificationController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware([
@@ -17,6 +22,63 @@ Route::middleware([
             DashboardController::class
         )->name(
             'dashboard'
+        );
+
+
+        /*
+         * COMPANY_MODULE_ENTITLEMENTS_V1
+         */
+        Route::get(
+            'company-modules',
+            [
+                CompanyModuleController::class,
+                'index',
+            ]
+        )->name(
+            'company-modules.index'
+        );
+
+        Route::put(
+            'company-modules/{reseller}',
+            [
+                CompanyModuleController::class,
+                'update',
+            ]
+        )->name(
+            'company-modules.update'
+        );
+
+        /*
+         * SUPER_ADMIN_WEBSITE_SETTINGS_V1
+         */
+        Route::get(
+            'website-settings',
+            [
+                WebsiteSettingsController::class,
+                'index',
+            ]
+        )->name(
+            'website-settings.index'
+        );
+
+        Route::post(
+            'website-settings',
+            [
+                WebsiteSettingsController::class,
+                'update',
+            ]
+        )->name(
+            'website-settings.update'
+        );
+
+        Route::delete(
+            'website-settings/logo',
+            [
+                WebsiteSettingsController::class,
+                'removeLogo',
+            ]
+        )->name(
+            'website-settings.logo.destroy'
         );
 
         Route::get(
@@ -57,6 +119,66 @@ Route::middleware([
             ]
         )->name(
             'plans.destroy'
+        );
+
+        Route::get(
+            'reports',
+            [
+                ResellerReportController::class,
+                'index',
+            ]
+        )->name(
+            'reports.index'
+        );
+
+        Route::get(
+            'reports/csv',
+            [
+                ResellerReportController::class,
+                'csv',
+            ]
+        )->name(
+            'reports.csv'
+        );
+
+        Route::get(
+            'audit',
+            [
+                ResellerAuditController::class,
+                'index',
+            ]
+        )->name(
+            'audit.index'
+        );
+
+        Route::get(
+            'notifications',
+            [
+                ResellerNotificationController::class,
+                'index',
+            ]
+        )->name(
+            'notifications.index'
+        );
+
+        Route::post(
+            'notifications/read-all',
+            [
+                ResellerNotificationController::class,
+                'readAll',
+            ]
+        )->name(
+            'notifications.read-all'
+        );
+
+        Route::post(
+            'notifications/{notification}/read',
+            [
+                ResellerNotificationController::class,
+                'read',
+            ]
+        )->name(
+            'notifications.read'
         );
 
         Route::get(
@@ -208,4 +330,24 @@ Route::middleware([
         )->name(
             'resellers.change-plan'
         );
+    });
+
+/* RENTAL_MASTER_PLATFORM_V1 */
+\Illuminate\Support\Facades\Route::middleware(['auth'])
+    ->prefix('super-admin/rentals')
+    ->name('superadmin.rentals.')
+    ->group(function (): void {
+        $c = \App\Http\Controllers\SuperAdmin\RentalManagementController::class;
+
+        \Illuminate\Support\Facades\Route::get('/', [$c, 'index'])->name('index');
+        \Illuminate\Support\Facades\Route::post('/sync', [$c, 'sync'])->name('sync');
+        \Illuminate\Support\Facades\Route::get('/export.csv', [$c, 'export'])->name('export');
+        \Illuminate\Support\Facades\Route::get('/invoices/{invoice}/print', [$c, 'printInvoice'])->name('invoices.print');
+        \Illuminate\Support\Facades\Route::post('/invoices/{invoice}/payments', [$c, 'payment'])->name('payments.store');
+        \Illuminate\Support\Facades\Route::put('/tickets/{ticket}', [$c, 'ticketStatus'])->name('tickets.update');
+        \Illuminate\Support\Facades\Route::get('/{contract}', [$c, 'show'])->name('show');
+        \Illuminate\Support\Facades\Route::put('/{contract}', [$c, 'update'])->name('update');
+        \Illuminate\Support\Facades\Route::post('/{contract}/invoices', [$c, 'invoice'])->name('invoices.store');
+        \Illuminate\Support\Facades\Route::post('/{contract}/tickets', [$c, 'ticket'])->name('tickets.store');
+        \Illuminate\Support\Facades\Route::post('/{contract}/cancel', [$c, 'cancel'])->name('cancel');
     });

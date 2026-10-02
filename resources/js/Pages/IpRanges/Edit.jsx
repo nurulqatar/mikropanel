@@ -3,6 +3,8 @@ import { Head, Link, useForm } from '@inertiajs/react';
 
 export default function Edit({
     range,
+    zones = [],
+    selectedZoneId = null,
 }) {
     const {
         data,
@@ -11,6 +13,12 @@ export default function Edit({
         processing,
         errors,
     } = useForm({
+        zone_id:
+            String(
+                selectedZoneId ??
+                    range.zone_id ??
+                    '',
+            ),
         name: range.name ?? '',
         network: range.network ?? '',
         gateway: range.gateway ?? '',
@@ -41,7 +49,7 @@ export default function Edit({
             <div className="mx-auto max-w-4xl space-y-6">
                 <div>
                     <h1 className="text-3xl font-bold text-slate-800">
-                        Edit Global IP Pool
+                        Edit Zone IP Pool
                     </h1>
 
                     <p className="mt-1 text-slate-500">
@@ -54,11 +62,43 @@ export default function Edit({
                     className="space-y-6 rounded-xl bg-white p-6 shadow"
                 >
                     <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-800">
-                        This pool is global. Router and MikroTik
-                        interface are configured from the Routers menu.
+                        This pool belongs only to its selected MAC
+                        Network Zone. IP usage in other zones is independent.
                     </div>
 
                     <div className="grid gap-5 md:grid-cols-2">
+                        <Field
+                            label="Network Zone"
+                            error={errors.zone_id}
+                        >
+                            <select
+                                className={inputClass}
+                                value={data.zone_id}
+                                onChange={(event) =>
+                                    setData(
+                                        'zone_id',
+                                        event.target.value,
+                                    )
+                                }
+                            >
+                                <option value="">
+                                    Select MAC Zone
+                                </option>
+
+                                {zones.map((zone) => (
+                                    <option
+                                        key={zone.id}
+                                        value={zone.id}
+                                    >
+                                        {zone.name}
+                                        {zone.code
+                                            ? ` — ${zone.code}`
+                                            : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </Field>
+
                         <Field
                             label="Pool Name"
                             error={errors.name}

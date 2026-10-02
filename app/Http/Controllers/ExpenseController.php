@@ -103,6 +103,43 @@ class ExpenseController extends Controller
 
         $data['created_by'] = auth()->id();
 
+        /*
+         * MANAGER_EXPENSE_AUTO_APPROVAL_V1
+         *
+         * Expense is accepted immediately. Manager
+         * expense always comes from Manager cash.
+         * Reseller Admin may reject it later, which
+         * creates a reversal instead of deleting the
+         * financial history.
+         */
+        $user = $request->user();
+
+        if (
+            $user
+            && $user->isManager()
+        ) {
+            $data['payment_method'] =
+                'Cash';
+        }
+
+        $data['approval_status'] =
+            'approved';
+
+        $data['approved_at'] =
+            now(
+                'Asia/Qatar'
+            );
+
+        $data['reviewed_by'] =
+            null;
+
+        $data['reviewed_at'] =
+            null;
+
+        $data['rejection_reason'] =
+            null;
+
+
         Expense::create($data);
 
         return redirect()

@@ -124,3 +124,83 @@ Schedule::command(
 )
     ->everyMinute()
     ->withoutOverlapping(5);
+
+
+Schedule::command(
+    'resellers:monitor-subscriptions'
+)
+    ->hourly()
+    ->withoutOverlapping()
+    ->timezone(
+        'Asia/Qatar'
+    );
+
+
+Schedule::command(
+    'resellers:snapshot-usage'
+)
+    ->dailyAt('00:15')
+    ->withoutOverlapping()
+    ->timezone(
+        'Asia/Qatar'
+    );
+
+
+/*
+ * RESELLER_WALLET_AUTO_RENEW_V1
+ *
+ * Paid reseller subscriptions renew automatically
+ * after expiry when wallet balance is sufficient.
+ */
+Schedule::command(
+    'resellers:auto-renew'
+)
+    ->everyMinute()
+    ->timezone(
+        'Asia/Qatar'
+    )
+    ->withoutOverlapping(5);
+
+/* NETWORK_COMPLIANCE_IDENTITY_SYNC_V1 */
+\Illuminate\Support\Facades\Schedule::command(
+    'compliance:sync-identities'
+)
+    ->everyMinute()
+    ->withoutOverlapping();
+
+/* NETWORK_COMPLIANCE_RETENTION_MAINTENANCE_V1 */
+\Illuminate\Support\Facades\Schedule::command(
+    'compliance:maintain'
+)
+    ->hourly()
+    ->withoutOverlapping();
+/* NETWORK_COMPLIANCE_RENTAL_MAINTENANCE_V1 */
+\Illuminate\Support\Facades\Schedule::command(
+    'compliance:rental-maintain'
+)
+    ->hourly()
+    ->withoutOverlapping();
+
+/*
+ * HOTSPOT_PERSISTENT_ALERTS_SCHEDULE_V1
+ *
+ * RouterOS = READ ONLY.
+ * MySQL persistent alert state only.
+ */
+\Illuminate\Support\Facades\Schedule::command(
+    'hotspot:health-scan'
+)
+    ->everyMinute()
+    ->withoutOverlapping(2);
+
+/*
+ * HOTSPOT_DEVICE_RESET_MAINTENANCE_V2
+ *
+ * DB-only audit maintenance.
+ * Captures the new voucher MAC after RouterOS auto-bind.
+ */
+\Illuminate\Support\Facades\Schedule::command(
+    'hotspot:device-reset-maintain'
+)
+    ->everyMinute()
+    ->withoutOverlapping(2);

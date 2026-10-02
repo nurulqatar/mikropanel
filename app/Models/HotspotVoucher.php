@@ -9,10 +9,22 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class HotspotVoucher extends Model
 {
+
+    /*
+     * Main Hotspot RouterOS credential remains encrypted in DB
+     * and usable internally, but is never exposed in JSON/Inertia.
+     */
+    protected $hidden = [
+        'password',
+    ];
+
+
     use SoftDeletes;
 
     protected $fillable = [
         'hotspot_batch_id',
+        'hotspot_seller_id',
+        'zone_id',
         'hotspot_server_id',
         'hotspot_plan_id',
         'username',
@@ -40,6 +52,31 @@ class HotspotVoucher extends Model
         'bytes_in' => 'integer',
         'bytes_out' => 'integer',
     ];
+
+    /* HOTSPOT_SELLER_LEDGER_V1 */
+    public function seller(): BelongsTo
+    {
+        return $this->belongsTo(
+            HotspotSeller::class,
+            'hotspot_seller_id'
+        );
+    }
+
+    public function zone(): BelongsTo
+    {
+        return $this->belongsTo(
+            NetworkZone::class,
+            'zone_id'
+        );
+    }
+
+    public function routerSyncs(): HasMany
+    {
+        return $this->hasMany(
+            HotspotVoucherRouterSync::class,
+            'hotspot_voucher_id'
+        );
+    }
 
     public function server(): BelongsTo
     {

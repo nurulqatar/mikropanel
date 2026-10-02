@@ -18,54 +18,49 @@ class SyncClientsAcrossRouters extends Command
         {--dry-run : Show work without changing anything}';
 
     protected $description =
-        'Synchronize global clients across every enabled MikroTik router';
+        'Synchronize eligible clients across enabled MikroTik routers';
 
     public function handle(
         ClientProvisionService $provision
     ): int {
-        $clientId = $this->option(
-            'client'
-        );
+        $clientId =
+            $this->option(
+                'client'
+            );
 
-        $routerId = $this->option(
-            'router'
-        );
+        $routerId =
+            $this->option(
+                'router'
+            );
 
-        $force = (bool) $this->option(
-            'force'
-        );
+        $force =
+            (bool)
+            $this->option(
+                'force'
+            );
 
-        $dryRun = (bool) $this->option(
-            'dry-run'
-        );
+        $dryRun =
+            (bool)
+            $this->option(
+                'dry-run'
+            );
 
-        $routers = Router::query()
-            ->where(
-                'enabled',
-                true
-            )
-            ->when(
-                $routerId,
-                fn ($query) =>
-                    $query->where(
-                        'id',
-                        $routerId
-                    )
-            )
-            ->orderBy('id')
-            ->get();
-
-        $clients = Client::withTrashed()
-            ->when(
-                $clientId,
-                fn ($query) =>
-                    $query->where(
-                        'id',
-                        $clientId
-                    )
-            )
-            ->orderBy('id')
-            ->get();
+        $routers =
+            Router::query()
+                ->where(
+                    'enabled',
+                    true
+                )
+                ->when(
+                    $routerId,
+                    fn ($query) =>
+                        $query->where(
+                            'id',
+                            $routerId
+                        )
+                )
+                ->orderBy('id')
+                ->get();
 
         $counts = [
             'would_sync' => 0,
@@ -75,77 +70,179 @@ class SyncClientsAcrossRouters extends Command
             'removed' => 0,
         ];
 
-        foreach ($clients as $client) {
+        /*
+         * TENANT_SAFE_ROUTER_SYNC_V2
+         *
+         * Each router receives only:
+         *
+         * - clients from the same reseller;
+         * - same-zone clients;
+         * - same-reseller all-zone package clients;
+         * - clients already bound to that router,
+         *   for convergence/cleanup.
+         *
+         * A platform router can never attempt
+         * synchronization of reseller clients.
+         */
+        foreach ($routers as $router) {
             /*
-             * Archived clients only need
-             * cleanup of bindings that still
-             * exist on routers.
+             * First clean archived clients that
+             * still have a non-removed binding
+             * specifically to this router.
              */
-            if ($client->trashed()) {
-                $bindings =
-                    ClientRouterBinding::query()
-                        ->where(
-                            'client_id',
-                            $client->id
-                        )
-                        ->where(
-                            'sync_status',
-                            '!=',
-                            'removed'
-                        )
-                        ->when(
-                            $routerId,
-                            fn ($query) =>
-                                $query->where(
+            $archived =
+                Client::withoutGlobalScopes()
+                    ->whereNotNull(
+                        'clients.deleted_at'
+                    )
+                    ->when(
+                        $clientId,
+                        fn ($query) =>
+                            $query->where(
+                                'clients.id',
+                                $clientId
+                            )
+                    )
+                    ->whereHas(
+                        'routerBindings',
+                        function (
+                            $bindingQuery
+                        ) use (
+                            $router
+                        ): void {
+                            $bindingQuery
+                                ->where(
                                     'router_id',
-                                    $routerId
+                                    $router->id
                                 )
-                        )
-                        ->get();
+                                ->where(
+                                    'sync_status',
+                                    '!=',
+                                    'removed'
+                                );
+                        }
+                    )
+                    ->orderBy(
+                        'clients.id'
+                    )
+                    ->get();
 
-                foreach (
-                    $bindings
-                    as $binding
-                ) {
-                    $router = Router::query()
-                        ->where(
-                            'id',
-                            $binding->router_id
-                        )
-                        ->where(
-                            'enabled',
-                            true
-                        )
-                        ->first();
+            foreach (
+                $archived
+                as $client
+            ) {
+                if ($dryRun) {
+                    $counts[
+                        'would_sync'
+                    ]++;
 
-                    if (!$router) {
-                        $counts['skipped']++;
-                        continue;
-                    }
-
-                    if ($dryRun) {
-                        $counts['would_sync']++;
-                        continue;
-                    }
-
-                    $ok =
-                        $provision
-                            ->syncClientToRouter(
-                                $client,
-                                $router
-                            );
-
-                    if ($ok) {
-                        $counts['removed']++;
-                    } else {
-                        $counts['failed']++;
-                    }
+                    continue;
                 }
 
-                continue;
+                $ok =
+                    $provision
+                        ->syncClientToRouter(
+                            $client,
+                            $router
+                        );
+
+                if ($ok) {
+                    $counts[
+                        'removed'
+                    ]++;
+                } else {
+                    $counts[
+                        'failed'
+                    ]++;
+                }
             }
 
-            foreach ($routers as $router) {
+            $clients =
+                Client::withoutGlobalScopes()
+                    ->whereNull(
+                        'clients.deleted_at'
+                    )
+                    ->when(
+                        $clientId,
+                        fn ($query) =>
+                            $query->where(
+                                'clients.id',
+                                $clientId
+                            )
+                    )
+                    ->where(
+                        function (
+                            $tenantQuery
+                        ) use (
+                            $router
+                        ): void {
+                            if (
+                                $router
+                                    ->reseller_id
+                                === null
+                            ) {
+                                $tenantQuery
+                                    ->whereNull(
+                                        'clients.reseller_id'
+                                    );
+
+                                return;
+                            }
+
+                            $tenantQuery
+                                ->where(
+                                    'clients.reseller_id',
+                                    $router
+                                        ->reseller_id
+                                );
+                        }
+                    )
+                    ->where(
+                        function (
+                            $eligibilityQuery
+                        ) use (
+                            $router
+                        ): void {
+                            $eligibilityQuery
+                                ->where(
+                                    'clients.zone_id',
+                                    $router->zone_id
+                                )
+                                ->orWhereHas(
+                                    'package',
+                                    function (
+                                        $packageQuery
+                                    ): void {
+                                        $packageQuery
+                                            ->withoutGlobalScopes()
+                                            ->where(
+                                                'coverage_mode',
+                                                'all_zones'
+                                            );
+                                    }
+                                )
+                                ->orWhereHas(
+                                    'routerBindings',
+                                    function (
+                                        $bindingQuery
+                                    ) use (
+                                        $router
+                                    ): void {
+                                        $bindingQuery
+                                            ->where(
+                                                'router_id',
+                                                $router->id
+                                            );
+                                    }
+                                );
+                        }
+                    )
+                    ->orderBy(
+                        'clients.id'
+                    )
+                    ->get();
+
+            foreach ($clients as $client) {
                 $binding =
                     ClientRouterBinding::query()
                         ->where(
@@ -161,15 +258,22 @@ class SyncClientsAcrossRouters extends Command
                 if (
                     !$force
                     && $binding
-                    && $binding->sync_status
+                    && $binding
+                        ->sync_status
                         === 'synced'
                 ) {
-                    $counts['skipped']++;
+                    $counts[
+                        'skipped'
+                    ]++;
+
                     continue;
                 }
 
                 if ($dryRun) {
-                    $counts['would_sync']++;
+                    $counts[
+                        'would_sync'
+                    ]++;
+
                     continue;
                 }
 
@@ -181,9 +285,13 @@ class SyncClientsAcrossRouters extends Command
                         );
 
                 if ($ok) {
-                    $counts['synced']++;
+                    $counts[
+                        'synced'
+                    ]++;
                 } else {
-                    $counts['failed']++;
+                    $counts[
+                        'failed'
+                    ]++;
                 }
             }
         }
@@ -196,23 +304,33 @@ class SyncClientsAcrossRouters extends Command
             [
                 [
                     'Would Sync',
-                    $counts['would_sync'],
+                    $counts[
+                        'would_sync'
+                    ],
                 ],
                 [
                     'Synced',
-                    $counts['synced'],
+                    $counts[
+                        'synced'
+                    ],
                 ],
                 [
                     'Removed',
-                    $counts['removed'],
+                    $counts[
+                        'removed'
+                    ],
                 ],
                 [
                     'Failed',
-                    $counts['failed'],
+                    $counts[
+                        'failed'
+                    ],
                 ],
                 [
                     'Skipped',
-                    $counts['skipped'],
+                    $counts[
+                        'skipped'
+                    ],
                 ],
             ]
         );

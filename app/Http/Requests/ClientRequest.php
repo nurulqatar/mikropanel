@@ -23,8 +23,20 @@ class ClientRequest extends FormRequest
 
         return [
 
+            'parent_client_id' => [
+                'nullable',
+                'integer',
+                'exists:clients,id',
+            ],
+
+            'device_label' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
             'ip_range_id' => [
-                'required',
+                'nullable',
                 'integer',
                 'exists:ip_ranges,id',
             ],
@@ -67,6 +79,125 @@ class ClientRequest extends FormRequest
              * Edit page compatibility.
              * Create page থেকে এগুলো পাঠাতে হবে না।
              */
+            /*
+             * Qatar ID / Passport information.
+             * Every document field is optional.
+             */
+            'qatar_id_number' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
+            'qatar_id_expiry_date' => [
+                'nullable',
+                'date',
+            ],
+
+            'occupation' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'passport_number' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
+            'passport_expiry_date' => [
+                'nullable',
+                'date',
+            ],
+
+            'document_serial_number' => [
+                'nullable',
+                'string',
+                'max:100',
+            ],
+
+            'residency_type' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'employer' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'place_of_birth' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+
+            'identity_type' => [
+                'nullable',
+                'string',
+                Rule::in([
+                    'qatar_id',
+                    'passport',
+                    'other',
+                ]),
+            ],
+
+            'identity_number' => [
+                'nullable',
+                'string',
+                'max:150',
+            ],
+
+            'identity_barcode' => [
+                'nullable',
+                'string',
+                'max:4000',
+            ],
+
+            /*
+             * Private staged identity images.
+             * UUID only; browser never submits a path.
+             */
+            'qatar_id_front_scan_token' => [
+                'nullable',
+                'uuid',
+            ],
+
+            'qatar_id_back_scan_token' => [
+                'nullable',
+                'uuid',
+            ],
+
+            'passport_scan_token' => [
+                'nullable',
+                'uuid',
+            ],
+
+            'nationality' => [
+                'nullable',
+                'string',
+                'max:120',
+            ],
+
+            'date_of_birth' => [
+                'nullable',
+                'date',
+            ],
+
+            'gender' => [
+                'nullable',
+                'string',
+                'in:M,F,X,male,female,other',
+            ],
+
+            'document_expiry_date' => [
+                'nullable',
+                'date',
+            ],
+
             'email' => [
                 'nullable',
                 'email',

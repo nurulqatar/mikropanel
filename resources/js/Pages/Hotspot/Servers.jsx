@@ -1,6 +1,7 @@
 import AppLayout from '@/Layouts/AppLayout';
 import {
     Head,
+    Link,
     router,
 } from '@inertiajs/react';
 
@@ -20,10 +21,19 @@ export default function Servers({
                         </h1>
 
                         <p className="mt-1 text-slate-500">
-                            MikroTik Hotspot server
-                            discovery and synchronization.
+                            Add MikroTik routers to Hotspot Zones,
+                            then discover and synchronize Hotspot servers.
                         </p>
                     </div>
+
+                    {capabilities.manage && (
+                        <Link
+                            href={route('routers.create')}
+                            className="rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white"
+                        >
+                            Add Hotspot Router
+                        </Link>
+                    )}
 
                     {capabilities.manage && (
                         <button
@@ -52,6 +62,7 @@ export default function Servers({
                             <tr>
                                 <Th>Server</Th>
                                 <Th>Router</Th>
+                                <Th>Network Zone</Th>
                                 <Th>Interface</Th>
                                 <Th>Pool</Th>
                                 <Th>Profile</Th>
@@ -82,6 +93,14 @@ export default function Servers({
                                         <Td>
                                             {server.router?.name ||
                                                 '-'}
+                                        </Td>
+
+                                        <Td>
+                                            {server.zone?.name ||
+                                                '-'}
+                                            {server.zone?.code
+                                                ? ` • ${server.zone.code}`
+                                                : ''}
                                         </Td>
 
                                         <Td>
@@ -154,7 +173,7 @@ export default function Servers({
                                 0 && (
                                 <tr>
                                     <td
-                                        colSpan="10"
+                                        colSpan="11"
                                         className="p-10 text-center text-slate-400"
                                     >
                                         No Hotspot server found.
